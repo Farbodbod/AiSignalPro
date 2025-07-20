@@ -1,6 +1,8 @@
 'use client';
 import React from 'react';
 
+// ------------------- Components -------------------
+
 const SystemStatus = () => {
   const services = [ { name: 'Kucoin', status: 'online', ping: '120ms' }, { name: 'Gate.io', status: 'online', ping: '180ms' }, { name: 'MEXC', status: 'online', ping: '210ms' }, { name: 'Telegram', status: 'online', ping: 'OK' }, ];
   const StatusIndicator = ({ status }) => (<span className={'w-2 h-2 rounded-full ' + (status === 'online' ? 'bg-green-400 animate-pulse' : 'bg-red-500')}></span>);
