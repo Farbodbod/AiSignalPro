@@ -83,7 +83,10 @@ export default function Home() {
     <div className="bg-black text-gray-200 min-h-screen">
       <div className="absolute top-0 left-0 w-full h-full bg-gradient-to-br from-gray-900 via-black to-gray-800 -z-10"/>
       <header className="flex justify-between items-center p-4 border-b border-yellow-500/30 sticky top-0 bg-gray-900/70 backdrop-blur-xl z-10">
-        <h1 className="text-xl md:text-2xl font-bold text-yellow-500 drop-shadow-[0_2px_2px_rgba(255,215,0,0.5)]">🤖 Ai Signal Pro</h1>
+        <h1 className="text-xl md:text-2xl font-bold text-yellow-500 ...">
+  🤖 Ai Signal Pro v2
+</h1>
+
         <div><button className="w-8 h-8 rounded-full bg-white/10 border border-yellow-500/30 text-yellow-500">☀️</button></div>
       </header>
       <main className="p-4 space-y-4 pb-20">
