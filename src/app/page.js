@@ -31,6 +31,7 @@ const Signals = () => {
 };
 
 const ActiveTradeCard = ({ trade }) => {
+const ActiveTradeCard = ({ trade }) => {
     const progress = Math.min(Math.abs(trade.current_price - trade.entry_price) / Math.abs(trade.targets[0] - trade.entry_price) * 100, 100);
     const isLong = trade.direction === 'long';
     const isProfit = (isLong && trade.current_price > trade.entry_price) || (!isLong && trade.current_price < trade.entry_price);
@@ -40,21 +41,16 @@ const ActiveTradeCard = ({ trade }) => {
     return(
         <div className="bg-gray-900/50 rounded-lg p-3 border border-yellow-500/30 space-y-3">
             <div className="flex justify-between items-center">
-                <div>
-                    <span className="font-bold text-lg text-white">{trade.symbol}</span>
-                    <span className={`text-xs ml-2 font-bold ${isLong ? 'text-green-400' : 'text-red-400'}`}>{isLong ? "LONG" : "SHORT"}</span>
-                </div>
-                <div className="text-right">
-                     <span className={`font-mono text-lg ${isProfit ? 'text-green-400' : 'text-red-400'}`}>{trade.pnl}</span>
-                     <p className="text-xs text-gray-400">Current: {trade.current_price}</p>
-                </div>
+                <span className="font-bold text-lg text-white">{trade.symbol}</span>
+                <span className="text-sm text-gray-400">{isLong ? "LONG" : "SHORT"} | {trade.timeframe}</span>
+                <span className={`font-mono text-lg ${isProfit ? 'text-green-400' : 'text-red-400'}`}>{trade.pnl}</span>
             </div>
             <div className="relative h-6 w-full bg-black/30 rounded-lg overflow-hidden border border-gray-700">
                  <div className="absolute top-0 h-full flex items-center justify-between w-full px-2 text-xs font-mono">
                     <span className="text-red-400 font-semibold">SL: {trade.sl}</span>
                     <span className="text-green-400 font-semibold">TP: {trade.targets[0]}</span>
                 </div>
-                <div className={`absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 h-4 w-0.5 bg-yellow-500`}></div>
+                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 h-4 w-0.5 bg-yellow-500"></div>
                 <div className={`absolute top-0 h-full ${barGradient} ${isLong ? 'left-0' : 'right-0'}`} style={progressStyle}></div>
                 <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-xs font-bold text-black bg-yellow-500 px-1 rounded-sm">Entry: {trade.entry_price}</div>
             </div>
@@ -64,6 +60,7 @@ const ActiveTradeCard = ({ trade }) => {
         </div>
     );
 };
+
 
 const ActiveTrades = () => {
     const sampleTrades = [
