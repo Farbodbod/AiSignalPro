@@ -8,7 +8,7 @@ const SystemStatus = () => {
 };
 
 const MarketOverview = () => {
-    const marketData = [ { label: 'Market Cap', value: '.3T', change: '+1.5%' }, { label: 'Volume 24h', value: '5B', change: '-5.2%' }, { label: 'BTC Dominance', value: '51.7%' }, { label: 'Fear & Greed', value: '72' }, ];
+    const marketData = [ { label: 'Market Cap', value: '$2.3T', change: '+1.5%' }, { label: 'Volume 24h', value: '$85B', change: '-5.2%' }, { label: 'BTC Dominance', value: '51.7%' }, { label: 'Fear & Greed', value: '72' }, ];
     return( <section className="bg-gray-800/30 backdrop-blur-lg rounded-xl p-4 border border-yellow-500/20"> <div className="grid grid-cols-2 md:grid-cols-4 gap-4"> {marketData.map(item => ( <div key={item.label}> <p className="text-xs text-gray-400">{item.label}</p> <p className="font-bold text-lg text-white">{item.value}</p> {item.change && <p className={'text-xs ' + (item.change.startsWith('+') ? 'text-green-400' : 'text-red-400')}>{item.change}</p>} </div> ))} </div> </section> )
 };
 
@@ -33,12 +33,12 @@ const ActiveTradeCard = ({ trade }) => {
     const isLong = trade.direction === 'long';
     const isProfit = (isLong && trade.current_price > trade.entry_price) || (!isLong && trade.current_price < trade.entry_price);
     const barGradient = isProfit ? 'bg-gradient-to-r from-green-500/50 to-green-500' : 'bg-gradient-to-r from-red-500/50 to-red-500';
-    const progressStyle = { width:  };
+    const progressStyle = { width: `${progress}%` };
     return( <div className="bg-gray-900/50 rounded-lg p-3 border border-yellow-500/30 space-y-3"> <div className="flex justify-between items-center"> <span className="font-bold text-lg text-white">{trade.symbol}</span> <span className="text-sm text-gray-400">{trade.timeframe}</span> <span className={'font-mono text-lg ' + (isProfit ? 'text-green-400' : 'text-red-400')}>{trade.pnl}</span> </div> <div className="relative h-6 w-full bg-black/30 rounded-lg overflow-hidden border border-gray-700"> <div className="absolute top-0 h-full flex items-center justify-between w-full px-2 text-xs font-mono"> <span className="text-red-400">{isLong ? trade.sl : trade.targets[0]}</span> <span className="text-green-400">{isLong ? trade.targets[0] : trade.sl}</span> </div> <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 h-4 w-0.5 bg-yellow-500"></div> <div className={'absolute top-0 h-full ' + barGradient + ' ' + (isLong ? 'left-0' : 'right-0')} style={progressStyle}></div> <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-xs font-bold text-black bg-yellow-500 px-1 rounded-sm">{trade.entry_price}</div> </div> <div className="text-xs text-gray-300 bg-black/20 p-2 rounded-md"> <p><span className="font-bold text-yellow-500">Live AI Score: {trade.ai_score}%</span> | {trade.status_text}</p> </div> </div> );
 };
 
 const ActiveTrades = () => {
-    const sampleTrades = [ { direction: 'long', symbol: 'BTC/USDT', timeframe: '4h', entry_price: 68100, current_price: 68500, sl: 67500, targets: [69000, 70000], ai_score: 91, pnl: "+50.00", status_text: "Trend is strong, hold position." }, { direction: 'short', symbol: 'ETH/USDT', timeframe: '1h', entry_price: 3555, current_price: 3540, sl: 3600, targets: [3500, 3450], ai_score: 85, pnl: "+5.00", status_text: "Approaching first target." }, ];
+    const sampleTrades = [ { direction: 'long', symbol: 'BTC/USDT', timeframe: '4h', entry_price: 68100, current_price: 68500, sl: 67500, targets: [69000, 70000], ai_score: 91, pnl: "+$250.00", status_text: "Trend is strong, hold position." }, { direction: 'short', symbol: 'ETH/USDT', timeframe: '1h', entry_price: 3555, current_price: 3540, sl: 3600, targets: [3500, 3450], ai_score: 85, pnl: "+$75.00", status_text: "Approaching first target." }, ];
     return ( <section className="bg-gray-800/30 backdrop-blur-lg rounded-xl p-4 border border-yellow-500/20"> <h3 className="text-yellow-500 font-bold text-lg mb-3">Active Trades</h3> <div className="space-y-4 h-96 overflow-y-auto pr-2">{sampleTrades.map((trade, i) => <ActiveTradeCard key={i} trade={trade} />)}</div> </section> );
 };
 
@@ -67,3 +67,4 @@ export default function Home() {
     </div>
   )
 }
+EOF
