@@ -126,3 +126,7 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 INSTALLED_APPS.append('corsheaders')
 MIDDLEWARE.insert(0, 'corsheaders.middleware.CorsMiddleware')
 CORS_ALLOW_ALL_ORIGINS = True
+
+# Allow Vercel deployments to connect
+ALLOWED_HOSTS.append('.vercel.app')
+CSRF_TRUSTED_ORIGINS = ['https://*.vercel.app']
