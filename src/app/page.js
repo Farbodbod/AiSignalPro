@@ -6,7 +6,7 @@ import React from 'react';
 const SystemStatus = () => {
   const services = [ { name: 'Kucoin', status: 'online', ping: '120ms' }, { name: 'Gate.io', status: 'online', ping: '180ms' }, { name: 'MEXC', status: 'online', ping: '210ms' }, { name: 'Telegram', status: 'online', ping: 'OK' }, ];
   const StatusIndicator = ({ status }) => (<span className={'w-2 h-2 rounded-full ' + (status === 'online' ? 'bg-green-400 animate-pulse' : 'bg-red-500')}></span>);
-  return ( <section className="bg-gray-800/30 backdrop-blur-lg rounded-xl p-3 border border-yellow-500/10"> <div className="grid grid-cols-3 md:grid-cols-5 gap-2 text-center"> {services.map((ex) => ( <div key={ex.name} className="bg-black/30 p-2 rounded-lg"> <p className="text-xs font-semibold text-gray-300">{ex.name}</p> <div className="flex items-center justify-center gap-2 mt-1"><StatusIndicator status={ex.status} /><span className="text-xs text-gray-400">{ex.ping}</span></div> </div> ))} <div className="bg-yellow-500/80 text-black p-2 rounded-lg text-sm font-bold flex items-center justify-center cursor-pointer hover:bg-yellow-500 col-span-3 md:col-span-1">Test All</div> </div> </section> );
+  return ( <section> <div className="grid grid-cols-3 md:grid-cols-5 gap-2 text-center"> {services.map((ex) => ( <div key={ex.name} className="bg-gray-800/30 backdrop-blur-lg rounded-lg p-2 border border-yellow-500/10"> <p className="text-xs font-semibold text-gray-300">{ex.name}</p> <div className="flex items-center justify-center gap-2 mt-1"><StatusIndicator status={ex.status} /><span className="text-xs text-gray-400">{ex.ping}</span></div> </div> ))} <div className="bg-yellow-500/80 text-black p-2 rounded-lg text-sm font-bold flex items-center justify-center cursor-pointer hover:bg-yellow-500 col-span-3 md:col-span-1">Test All</div> </div> </section> );
 };
 
 const MarketOverview = () => {
@@ -31,50 +31,18 @@ const Signals = () => {
 };
 
 const ActiveTradeCard = ({ trade }) => {
-    const denominator = Math.abs(trade.targets[0] - trade.entry_price);
-    const progress = denominator !== 0
-      ? Math.min(Math.abs(trade.current_price - trade.entry_price) / denominator * 100, 100)
-      : 0;
+    const progress = Math.abs(trade.targets[0] - trade.entry_price) !== 0 ? Math.min(Math.abs(trade.current_price - trade.entry_price) / Math.abs(trade.targets[0] - trade.entry_price) * 100, 100) : 0;
     const isLong = trade.direction === 'long';
     const isProfit = (isLong && trade.current_price > trade.entry_price) || (!isLong && trade.current_price < trade.entry_price);
     const barGradient = isProfit ? 'bg-gradient-to-r from-green-500/50 to-green-500' : 'bg-gradient-to-r from-red-500/50 to-red-500';
     const progressStyle = { width: `${progress}%` };
     const sl_text = `SL: ${trade.sl}`;
     const tp_text = `TP: ${trade.targets[0]}`;
-
-    return(
-        <div className="bg-gray-900/50 rounded-lg p-3 border border-yellow-500/30 space-y-3">
-            <div className="flex justify-between items-center">
-                <div>
-                    <span className="font-bold text-lg text-white">{trade.symbol}</span>
-                    <span className={'text-xs ml-2 font-bold ' + (isLong ? 'text-green-400' : 'text-red-400')}>{isLong ? "LONG" : "SHORT"}</span>
-                </div>
-                <div className="text-right">
-                     <span className={'font-mono text-lg ' + (isProfit ? 'text-green-400' : 'text-red-400')}>{trade.pnl}</span>
-                     <p className="text-xs text-gray-400">Current: {trade.current_price}</p>
-                </div>
-            </div>
-            <div className="relative h-6 w-full bg-black/30 rounded-lg overflow-hidden border border-gray-700">
-                 <div className="absolute top-0 h-full flex items-center justify-between w-full px-2 text-xs font-mono">
-                    <span className="text-red-400 font-semibold">{isLong ? sl_text : tp_text}</span>
-                    <span className="text-green-400 font-semibold">{isLong ? tp_text : sl_text}</span>
-                </div>
-                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 h-4 w-0.5 bg-yellow-500"></div>
-                <div className={'absolute top-0 h-full ' + barGradient + ' ' + (isLong ? 'left-0' : 'right-0')} style={progressStyle}></div>
-                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-xs font-bold text-black bg-yellow-500 px-1 rounded-sm">Entry: {trade.entry_price}</div>
-            </div>
-            <div className="text-xs text-gray-300 bg-black/20 p-2 rounded-md">
-                <p><span className="font-bold text-yellow-500">Live AI Score: {trade.ai_score}%</span> | {trade.status_text}</p>
-            </div>
-        </div>
-    );
+    return( <div className="bg-gray-900/50 rounded-lg p-3 border border-yellow-500/30 space-y-3"> <div className="flex justify-between items-center"> <div> <span className="font-bold text-lg text-white">{trade.symbol}</span> <span className={'text-xs ml-2 font-bold ' + (isLong ? 'text-green-400' : 'text-red-400')}>{isLong ? "LONG" : "SHORT"}</span> </div> <div className="text-right"> <span className={'font-mono text-lg ' + (isProfit ? 'text-green-400' : 'text-red-400')}>{trade.pnl}</span> <p className="text-xs text-gray-400">Current: {trade.current_price}</p> </div> </div> <div className="relative h-6 w-full bg-black/30 rounded-lg overflow-hidden border border-gray-700"> <div className="absolute top-0 h-full flex items-center justify-between w-full px-2 text-xs font-mono"> <span className="text-red-400 font-semibold">{isLong ? sl_text : tp_text}</span> <span className="text-green-400 font-semibold">{isLong ? tp_text : sl_text}</span> </div> <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 h-4 w-0.5 bg-yellow-500"></div> <div className={'absolute top-0 h-full ' + barGradient + ' ' + (isLong ? 'left-0' : 'right-0')} style={progressStyle}></div> <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-xs font-bold text-black bg-yellow-500 px-1 rounded-sm">Entry: {trade.entry_price}</div> </div> <div className="text-xs text-gray-300 bg-black/20 p-2 rounded-md"> <p><span className="font-bold text-yellow-500">Live AI Score: {trade.ai_score}%</span> | {trade.status_text}</p> </div> </div> );
 };
 
 const ActiveTrades = () => {
-    const sampleTrades = [
-        { direction: 'long', symbol: 'BTC/USDT', timeframe: '4h', entry_price: 68100, current_price: 68500, sl: 67500, targets: [69000, 70000], ai_score: 91, pnl: "+$250.00", status_text: "Trend is strong, hold position." },
-        { direction: 'short', symbol: 'ETH/USDT', timeframe: '1h', entry_price: 3555, current_price: 3540, sl: 3600, targets: [3500, 3450], ai_score: 85, pnl: "+$75.00", status_text: "Approaching first target." },
-    ];
+    const sampleTrades = [ { direction: 'long', symbol: 'BTC/USDT', timeframe: '4h', entry_price: 68100, current_price: 68500, sl: 67500, targets: [69000, 70000], ai_score: 91, pnl: "+$250.00", status_text: "Trend is strong, hold position." }, { direction: 'short', symbol: 'ETH/USDT', timeframe: '1h', entry_price: 3555, current_price: 3540, sl: 3600, targets: [3500, 3450], ai_score: 85, pnl: "+$75.00", status_text: "Approaching first target." }, ];
     return ( <section className="bg-gray-800/30 backdrop-blur-lg rounded-xl p-4 border border-yellow-500/20"> <h3 className="text-yellow-500 font-bold text-lg mb-3">Active Trades</h3> <div className="space-y-4 h-96 overflow-y-auto pr-2">{sampleTrades.map((trade, i) => <ActiveTradeCard key={i} trade={trade} />)}</div> </section> );
 };
 
@@ -83,10 +51,7 @@ export default function Home() {
     <div className="bg-black text-gray-200 min-h-screen">
       <div className="absolute top-0 left-0 w-full h-full bg-gradient-to-br from-gray-900 via-black to-gray-800 -z-10"/>
       <header className="flex justify-between items-center p-4 border-b border-yellow-500/30 sticky top-0 bg-gray-900/70 backdrop-blur-xl z-10">
-        <h1 className="text-xl md:text-2xl font-bold text-yellow-500 ...">
-  🤖 Ai Signal Pro v2
-</h1>
-
+        <h1 className="text-xl md:text-2xl font-bold text-yellow-500 drop-shadow-[0_2px_2px_rgba(255,215,0,0.5)]">🤖 Ai Signal Pro</h1>
         <div><button className="w-8 h-8 rounded-full bg-white/10 border border-yellow-500/30 text-yellow-500">☀️</button></div>
       </header>
       <main className="p-4 space-y-4 pb-20">
