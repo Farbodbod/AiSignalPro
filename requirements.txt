@@ -1,0 +1,13 @@
+django
+gunicorn
+dj-database-url
+psycopg2-binary
+whitenoise
+pandas
+numpy
+requests
+openai
+scikit-learn
+xgboost
+shap
+ta
