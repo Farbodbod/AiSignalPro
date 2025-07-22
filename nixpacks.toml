@@ -1,9 +1,0 @@
-# nixpacks.toml
-
-# فاز نصب: به صراحت می‌گوییم که از pip استفاده کن
-[phases.install]
-cmds = ["pip install -r requirements.txt"]
-
-# فاز راه‌اندازی: دستور شروع سرور را مشخص می‌کنیم
-[start]
-command = "python -m gunicorn trading_app.wsgi"
