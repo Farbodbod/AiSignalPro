@@ -1,5 +1,3 @@
-# core/views.py
-
 from django.http import JsonResponse
 
 def system_status_view(request):
@@ -15,4 +13,3 @@ def system_status_view(request):
     
     # داده‌ها را به صورت JSON به فرانت‌اند ارسال می‌کنیم
     return JsonResponse(data, safe=False)
-
