@@ -25,7 +25,8 @@ SECRET_KEY = 'django-insecure-gg$_ng&y__6+j%@-x02b5mm9%r%ga0x+#45m!6y26jktohk04(
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ['aisignalpro-production.up.railway.app', 'localhost', '127.0.0.1']
+
 
 
 # Application definition
