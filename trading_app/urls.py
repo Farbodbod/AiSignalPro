@@ -1,10 +1,10 @@
-from django.contrib import admin
-from django.urls import path
-# ویو را مستقیماً از اپلیکیشن core وارد می‌کنیم
-from core.views import system_status_view 
+from django.http import HttpResponse
 
+# ما یک ویو ساده را مستقیماً اینجا تعریف می‌کنیم
+def test_view(request):
+    return HttpResponse("<h1>Server is working! URL routing is OK.</h1>")
+
+# و آن را به آدرس اصلی سایت متصل می‌کنیم
 urlpatterns = [
-    path('admin/', admin.site.urls),
-    # آدرس کامل API را مستقیماً اینجا تعریف می‌کنیم
-    path('api/status/', system_status_view, name='system-status'),
+    path('', test_view),
 ]
