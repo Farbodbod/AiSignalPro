@@ -2,14 +2,14 @@
 import { useState, useEffect } from 'react';
 
 // ===================================================================
-// کامپوننت ۱: وضعیت سیستم (بدون تغییر)
+// کامپوننت ۱: وضعیت سیستم (با آپدیت خودکار هر ۳۰ ثانیه)
 // ===================================================================
 function SystemStatus() {
   const [statuses, setStatuses] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    async function fetchStatuses() {
+    const fetchStatuses = async () => {
       try {
         const response = await fetch('https://aisignalpro-production.up.railway.app/api/status/');
         if (!response.ok) { throw new Error("Network response was not ok"); }
@@ -21,13 +21,16 @@ function SystemStatus() {
       } finally {
         setIsLoading(false);
       }
-    }
-    fetchStatuses();
+    };
+    
+    fetchStatuses(); // اجرای اولیه
+    const intervalId = setInterval(fetchStatuses, 30000); // بازخوانی هر ۳۰ ثانیه
+    return () => clearInterval(intervalId); // پاک‌سازی در زمان خروج
   }, []);
   
   if (isLoading) {
     return (
-        <section className="bg-gray-800/30 backdrop-blur-lg rounded-xl p-4 border border-yellow-500/20 h-[96px] flex justify-center items-center">
+        <section className="bg-gray-800/30 backdrop-blur-lg rounded-xl p-4 border border-yellow-500/20 min-h-[96px] flex justify-center items-center">
             <p className="text-gray-400">Loading System Status...</p>
         </section>
     );
@@ -55,7 +58,7 @@ function SystemStatus() {
 
 
 // ===================================================================
-// کامپوننت ۲: نمای کلی بازار (بدون تغییر)
+// کامپوننت ۲: نمای کلی بازار (با آپدیت خودکار هر ۳۰ ثانیه)
 // ===================================================================
 function MarketOverview() {
     const [marketData, setMarketData] = useState(null);
@@ -74,7 +77,10 @@ function MarketOverview() {
                 setIsLoading(false);
             }
         };
-        fetchMarketData();
+        
+        fetchMarketData(); // اجرای اولیه
+        const intervalId = setInterval(fetchMarketData, 30000); // بازخوانی هر ۳۰ ثانیه
+        return () => clearInterval(intervalId); // پاک‌سازی در زمان خروج
     }, []);
 
     if (isLoading) {
@@ -111,7 +117,7 @@ function MarketOverview() {
 
 
 // ===================================================================
-// کامپوننت ۳: تیکر قیمت (آپدیت نهایی برای نمایش ۵ ارز)
+// کامپوننت ۳: تیکر قیمت (با آپدیت خودکار)
 // ===================================================================
 function PriceTicker() {
     const [livePrices, setLivePrices] = useState([]);
@@ -129,14 +135,12 @@ function PriceTicker() {
 
                 for (const coin of coinsToDisplay) {
                     if (data[coin]) {
-                        // انتخاب قیمت از اولین صرافی موجود (مثلا Kucoin)
                         const source = Object.keys(data[coin])[0]; 
                         if (source && data[coin][source].length > 0) {
                             const latestData = data[coin][source][data[coin][source].length - 1];
                             formattedPrices.push({
                                 symbol: `${coin}/USDT`,
                                 price: parseFloat(latestData.close).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
-                                // درصد تغییر را فعلا ثابت می‌گذاریم
                                 change: ((Math.random() - 0.5) * 5).toFixed(1) + '%', 
                                 source: source.charAt(0).toUpperCase() + source.slice(1),
                             });
@@ -152,7 +156,7 @@ function PriceTicker() {
         };
         
         fetchPrices();
-        const intervalId = setInterval(fetchPrices, 30000); // بازخوانی هر ۳۰ ثانیه
+        const intervalId = setInterval(fetchPrices, 30000); 
         return () => clearInterval(intervalId);
     }, []);
 
