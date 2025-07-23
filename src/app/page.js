@@ -6,7 +6,6 @@ import { useState, useEffect } from 'react';
 // ===================================================================
 function SystemStatus() {
   const [statuses, setStatuses] = useState([]);
-  const [isLoading, setIsLoading] = useState(true);
   useEffect(() => {
     async function fetchStatuses() {
       try {
@@ -14,21 +13,15 @@ function SystemStatus() {
         if (!response.ok) { throw new Error("Network response was not ok"); }
         const data = await response.json();
         setStatuses(data);
-      } catch (error) {
-        console.error("Failed to fetch statuses:", error);
-      } finally {
-        setIsLoading(false);
-      }
+      } catch (error) { console.error("Failed to fetch statuses:", error); }
     }
     fetchStatuses();
   }, []);
-
-  if (isLoading) { return <section><p className="text-gray-400 text-center">Loading System Status...</p></section>; }
   
   return (
     <section>
         <div className="grid grid-cols-2 md:grid-cols-5 gap-2 text-center">
-            {statuses.map((ex) => (
+            {statuses.length === 0 ? <p className="text-gray-400 col-span-full">Loading System Status...</p> : statuses.map((ex) => (
               <div key={ex.name} className="bg-gray-800/30 backdrop-blur-lg rounded-lg p-2 border border-yellow-500/10">
                 <p className="text-xs font-semibold text-gray-300">{ex.name}</p>
                 <div className="flex items-center justify-center gap-2 mt-1">
@@ -47,28 +40,58 @@ function SystemStatus() {
 
 
 // ===================================================================
-// کامپوننت ۲: نمای کلی بازار (هنوز با داده‌های نمونه)
+// کامپوننت ۲: نمای کلی بازار (آپدیت شده برای دریافت دیتای زنده)
 // ===================================================================
 function MarketOverview() {
-    const marketData = [
-        { label: 'Market Cap', value: '$2.3T', change: '+1.5%' },
-        { label: 'Volume 24h', value: '$85B', change: '-5.2%' },
-        { label: 'BTC Dominance', value: '51.7%', change: '+0.2%' },
-        { label: 'Fear & Greed', value: '72 (Greed)', change: '' },
-    ];
+    const [marketData, setMarketData] = useState(null);
+    const [isLoading, setIsLoading] = useState(true);
+
+    useEffect(() => {
+        const fetchMarketData = async () => {
+            try {
+                const response = await fetch('https://aisignalpro-production.up.railway.app/api/market-overview/');
+                if (!response.ok) { throw new Error("Network response was not ok"); }
+                const data = await response.json();
+                setMarketData(data);
+            } catch (error) {
+                console.error("Failed to fetch market data:", error);
+            } finally {
+                setIsLoading(false);
+            }
+        };
+        fetchMarketData();
+    }, []);
+
+    if (isLoading) {
+        return (
+            <section className="bg-gray-800/30 backdrop-blur-lg rounded-xl p-4 border border-yellow-500/20 h-[96px] flex justify-center items-center">
+                <p className="text-gray-400">Loading Market Overview...</p>
+            </section>
+        );
+    }
+
     return(
         <section className="bg-gray-800/30 backdrop-blur-lg rounded-xl p-4 border border-yellow-500/20">
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                {marketData.map(item => (
-                    <div key={item.label}>
-                        <p className="text-xs text-gray-400">{item.label}</p>
-                        <p className="font-bold text-lg text-white">{item.value}</p>
-                        {item.change && <p className={'text-xs ' + (item.change.startsWith('+') ? 'text-green-400' : 'text-red-400')}>{item.change}</p>}
-                    </div>
-                ))}
+                <div>
+                    <p className="text-xs text-gray-400">Market Cap</p>
+                    <p className="font-bold text-lg text-white">{marketData?.market_cap || 'N/A'}</p>
+                </div>
+                <div>
+                    <p className="text-xs text-gray-400">Volume 24h</p>
+                    <p className="font-bold text-lg text-white">{marketData?.volume_24h || 'N/A'}</p>
+                </div>
+                <div>
+                    <p className="text-xs text-gray-400">BTC Dominance</p>
+                    <p className="font-bold text-lg text-white">{marketData?.btc_dominance || 'N/A'}</p>
+                </div>
+                <div>
+                    <p className="text-xs text-gray-400">Fear & Greed</p>
+                    <p className="font-bold text-lg text-white">{marketData?.fear_and_greed || 'N/A'}</p>
+                </div>
             </div>
         </section>
-    )
+    );
 }
 
 
@@ -79,37 +102,35 @@ function PriceTicker() {
     const [livePrices, setLivePrices] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
 
-    const fetchPrices = async () => {
-        try {
-            const response = await fetch('https://aisignalpro-production.up.railway.app/api/data/all/');
-            if (!response.ok) { throw new Error("Network response was not ok"); }
-            const data = await response.json();
-            
-            const formattedPrices = [];
-            for (const source in data) {
-                if (data[source].length > 0) {
-                    const latestData = data[source][data[source].length - 1];
-                    formattedPrices.push({
-                        symbol: 'BTC/USDT',
-                        price: parseFloat(latestData.close).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
-                        change: '+2.1%', 
-                        source: source.charAt(0).toUpperCase() + source.slice(1),
-                    });
-                }
-            }
-            setLivePrices(formattedPrices);
-        } catch (error) {
-            console.error("Failed to fetch live prices:", error);
-        } finally {
-            setIsLoading(false);
-        }
-    };
-
     useEffect(() => {
-        fetchPrices(); // اجرای اولیه
-        const intervalId = setInterval(fetchPrices, 10000); // بازخوانی هر ۱۰ ثانیه
-
-        // پاک کردن اینتروال در زمان خروج از کامپوننت برای جلوگیری از نشت حافظه
+        const fetchPrices = async () => {
+            try {
+                const response = await fetch('https://aisignalpro-production.up.railway.app/api/data/all/');
+                if (!response.ok) { throw new Error("Network response was not ok"); }
+                const data = await response.json();
+                
+                const formattedPrices = [];
+                for (const source in data) {
+                    if (data[source].length > 0) {
+                        const latestData = data[source][data[source].length - 1];
+                        formattedPrices.push({
+                            symbol: 'BTC/USDT',
+                            price: parseFloat(latestData.close).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+                            change: '+2.1%', 
+                            source: source.charAt(0).toUpperCase() + source.slice(1),
+                        });
+                    }
+                }
+                setLivePrices(formattedPrices);
+            } catch (error) {
+                console.error("Failed to fetch live prices:", error);
+            } finally {
+                setIsLoading(false);
+            }
+        };
+        
+        fetchPrices();
+        const intervalId = setInterval(fetchPrices, 10000); 
         return () => clearInterval(intervalId);
     }, []);
 
@@ -139,7 +160,7 @@ function PriceTicker() {
 
 
 // ===================================================================
-// کامپوننت اصلی صفحه (بدون تغییر)
+// کامپوننت اصلی صفحه
 // ===================================================================
 export default function Home() {
   return (
