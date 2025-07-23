@@ -4,7 +4,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 
 # وارد کردن کلاس SafeRequest از فایل کناری
-from .exchange_fetcher import SafeRequest, fetch_all_sources_concurrently
+from .exchange_fetcher import SafeRequest, fetch_all_coins_concurrently
 
 # ===================================================================
 # ویو جدید برای نمای کلی بازار
