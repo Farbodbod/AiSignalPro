@@ -1,23 +1,57 @@
 from django.http import JsonResponse, HttpResponse
 import requests
 import time
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import traceback
 import os
 from .exchange_fetcher import SafeRequest, fetch_all_tickers_concurrently, MultiExchangeFetcher
 
+def fetch_from_coingecko():
+    """Fetches global market data from CoinGecko."""
+    coingecko_url = "https://api.coingecko.com/api/v3/global"
+    global_data = SafeRequest.get(coingecko_url)
+    if not global_data or 'data' not in global_data:
+        raise ValueError('Invalid data from CoinGecko')
+    
+    cg_data = global_data['data']
+    return {
+        'market_cap': cg_data.get('total_market_cap', {}).get('usd', 0),
+        'volume_24h': cg_data.get('total_volume', {}).get('usd', 0),
+        'btc_dominance': cg_data.get('market_cap_percentage', {}).get('btc', 0)
+    }
+
+def fetch_from_coinmarketcap():
+    """Fetches global market data from CoinMarketCap."""
+    cmc_fetcher = MultiExchangeFetcher('coinmarketcap').get_fetcher()
+    return cmc_fetcher.fetch_global_metrics()
+
 def market_overview_view(request):
     response_data = {'market_cap': 0, 'volume_24h': 0, 'btc_dominance': 0, 'fear_and_greed': 'N/A'}
-    try:
-        coingecko_url = "https://api.coingecko.com/api/v3/global"
-        global_data = SafeRequest.get(coingecko_url)
-        if global_data and 'data' in global_data:
-            cg_data = global_data['data']
-            response_data['market_cap'] = cg_data.get('total_market_cap', {}).get('usd', 0)
-            response_data['volume_24h'] = cg_data.get('total_volume', {}).get('usd', 0)
-            response_data['btc_dominance'] = cg_data.get('market_cap_percentage', {}).get('btc', 0)
-    except Exception as e_cg:
-        print(f"CoinGecko Error for Market Overview: {e_cg}.")
+    
+    # --- Parallel Fetching for Market Data ---
+    market_data_sources = [fetch_from_coingecko, fetch_from_coinmarketcap]
+    market_data = None
+    
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        futures = [executor.submit(func) for func in market_data_sources]
+        for future in as_completed(futures):
+            try:
+                market_data = future.result()
+                if market_data:
+                    break # Use the first successful result and stop waiting for others
+            except Exception as e:
+                print(f"A market data source failed: {e}")
+    
+    if market_data and market_data['market_cap'] > 0:
+        response_data['market_cap'] = f"${market_data['market_cap']:,.0f}"
+        response_data['volume_24h'] = f"${market_data['volume_24h']:,.0f}"
+        response_data['btc_dominance'] = f"{market_data['btc_dominance']:.1f}%"
+    else:
+        response_data['market_cap'] = 'N/A'
+        response_data['volume_24h'] = 'N/A'
+        response_data['btc_dominance'] = 'N/A'
+
+    # --- Fetch Fear & Greed Index (separately) ---
     try:
         fng_url = "https://api.alternative.me/fng/?limit=1"
         fng_data = SafeRequest.get(fng_url)
@@ -27,8 +61,13 @@ def market_overview_view(request):
             response_data['fear_and_greed'] = f"{value} ({text})"
     except Exception as e_fng:
         print(f"Could not fetch Fear & Greed index: {e_fng}")
+        
     return JsonResponse(response_data)
 
+
+# ===================================================================
+# Other views (no changes)
+# ===================================================================
 def check_exchange_status(exchange_info):
     name = exchange_info['name']; url = exchange_info['status_url']
     try:
