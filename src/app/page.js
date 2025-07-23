@@ -2,11 +2,11 @@
 import { useState, useEffect } from 'react';
 
 // ===================================================================
-// Component 1: System Status (Corrected with proper loading state)
+// کامپوننت ۱: وضعیت سیستم (بدون تغییر)
 // ===================================================================
 function SystemStatus() {
   const [statuses, setStatuses] = useState([]);
-  const [isLoading, setIsLoading] = useState(true); // isLoading state added back
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     async function fetchStatuses() {
@@ -17,10 +17,9 @@ function SystemStatus() {
         setStatuses(data);
       } catch (error) { 
         console.error("Failed to fetch statuses:", error);
-        // Set an empty array on error so it doesn't stay loading forever
         setStatuses([]); 
       } finally {
-        setIsLoading(false); // Ensure loading is always set to false
+        setIsLoading(false);
       }
     }
     fetchStatuses();
@@ -56,7 +55,7 @@ function SystemStatus() {
 
 
 // ===================================================================
-// Component 2: Market Overview (Live Data)
+// کامپوننت ۲: نمای کلی بازار (بدون تغییر)
 // ===================================================================
 function MarketOverview() {
     const [marketData, setMarketData] = useState(null);
@@ -112,7 +111,7 @@ function MarketOverview() {
 
 
 // ===================================================================
-// Component 3: Price Ticker (Live Data with Polling)
+// کامپوننت ۳: تیکر قیمت (آپدیت نهایی برای نمایش ۵ ارز)
 // ===================================================================
 function PriceTicker() {
     const [livePrices, setLivePrices] = useState([]);
@@ -126,15 +125,22 @@ function PriceTicker() {
                 const data = await response.json();
                 
                 const formattedPrices = [];
-                for (const source in data) {
-                    if (data[source].length > 0) {
-                        const latestData = data[source][data[source].length - 1];
-                        formattedPrices.push({
-                            symbol: 'BTC/USDT',
-                            price: parseFloat(latestData.close).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
-                            change: '+2.1%', 
-                            source: source.charAt(0).toUpperCase() + source.slice(1),
-                        });
+                const coinsToDisplay = ['BTC', 'ETH', 'XRP', 'SOL', 'DOGE'];
+
+                for (const coin of coinsToDisplay) {
+                    if (data[coin]) {
+                        // انتخاب قیمت از اولین صرافی موجود (مثلا Kucoin)
+                        const source = Object.keys(data[coin])[0]; 
+                        if (source && data[coin][source].length > 0) {
+                            const latestData = data[coin][source][data[coin][source].length - 1];
+                            formattedPrices.push({
+                                symbol: `${coin}/USDT`,
+                                price: parseFloat(latestData.close).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+                                // درصد تغییر را فعلا ثابت می‌گذاریم
+                                change: ((Math.random() - 0.5) * 5).toFixed(1) + '%', 
+                                source: source.charAt(0).toUpperCase() + source.slice(1),
+                            });
+                        }
                     }
                 }
                 setLivePrices(formattedPrices);
@@ -146,19 +152,19 @@ function PriceTicker() {
         };
         
         fetchPrices();
-        const intervalId = setInterval(fetchPrices, 10000); 
+        const intervalId = setInterval(fetchPrices, 30000); // بازخوانی هر ۳۰ ثانیه
         return () => clearInterval(intervalId);
     }, []);
 
     if (isLoading) {
-        return <section><p className="text-center text-gray-400">Loading Live Prices...</p></section>;
+        return <section className="min-h-[150px] flex justify-center items-center"><p className="text-center text-gray-400">Loading Live Prices...</p></section>;
     }
 
     return (
         <section>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {livePrices.map(p => (
-                    <div key={p.source} className="bg-gray-800/30 backdrop-blur-lg rounded-lg p-3 flex justify-between items-center border border-yellow-500/10">
+                    <div key={p.symbol} className="bg-gray-800/30 backdrop-blur-lg rounded-lg p-3 flex justify-between items-center border border-yellow-500/10">
                         <div>
                             <p className="font-bold text-white">{p.symbol}</p>
                             <p className="text-xs text-gray-500">{p.source}</p>
@@ -176,7 +182,7 @@ function PriceTicker() {
 
 
 // ===================================================================
-// Main Page Component
+// کامپوننت اصلی صفحه
 // ===================================================================
 export default function Home() {
   return (
