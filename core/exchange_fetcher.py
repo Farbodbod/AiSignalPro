@@ -17,42 +17,33 @@ class SafeRequest:
                 time.sleep(1)
         return None
 
-# کلاس‌های Fetcher بازنویسی شده برای دریافت قیمت لحظه‌ای (Ticker)
 class CoingeckoFetcher:
     def fetch_ticker(self, coin_id: str, **kwargs):
         url = "https://api.coingecko.com/api/v3/simple/price"
         params = {"ids": coin_id, "vs_currencies": "usd"}
         data = SafeRequest.get(url, params=params)
-        if data and coin_id in data and 'usd' in data[coin_id]:
-            return data[coin_id]['usd']
-        return None
+        return data[coin_id]['usd'] if data and coin_id in data and 'usd' in data[coin_id] else None
 
 class KucoinFetcher:
     def fetch_ticker(self, symbol: str, **kwargs):
         url = "https://api.kucoin.com/api/v1/market/ticker"
         params = {"symbol": symbol}
         data = SafeRequest.get(url, params=params)
-        if data and 'data' in data and data['data']['price']:
-            return float(data['data']['price'])
-        return None
+        return float(data['data']['price']) if data and 'data' in data and data['data']['price'] else None
 
 class GateioFetcher:
     def fetch_ticker(self, symbol: str, **kwargs):
         url = "https://api.gate.io/api/v4/spot/tickers"
         params = {"currency_pair": symbol}
         data = SafeRequest.get(url, params=params)
-        if data and len(data) > 0 and 'last' in data[0]:
-            return float(data[0]['last'])
-        return None
+        return float(data[0]['last']) if data and len(data) > 0 and 'last' in data[0] else None
 
 class OkxFetcher:
     def fetch_ticker(self, symbol: str, **kwargs):
         url = "https://www.okx.com/api/v5/market/ticker"
         params = {"instId": symbol}
         data = SafeRequest.get(url, params=params)
-        if data and 'data' in data and len(data['data']) > 0 and 'last' in data['data'][0]:
-            return float(data['data'][0]['last'])
-        return None
+        return float(data['data'][0]['last']) if data and 'data' in data and len(data['data']) > 0 and 'last' in data['data'][0] else None
         
 class MexcFetcher:
     def __init__(self, api_key: str, **kwargs): self.api_key = api_key
@@ -61,17 +52,13 @@ class MexcFetcher:
         params = {"symbol": symbol}
         headers = {'X-MEXC-APIKEY': self.api_key}
         data = SafeRequest.get(url, params=params, headers=headers)
-        if data and 'price' in data:
-            return float(data['price'])
-        return None
+        return float(data['price']) if data and 'price' in data else None
 
 class BitfinexFetcher:
     def fetch_ticker(self, symbol: str, **kwargs):
         url = f"https://api-pub.bitfinex.com/v2/ticker/t{symbol}"
         data = SafeRequest.get(url)
-        if data and isinstance(data, list) and len(data) >= 7:
-            return float(data[6]) # Index 6 is the last traded price
-        return None
+        return float(data[6]) if data and isinstance(data, list) and len(data) >= 7 else None
 
 class MultiExchangeFetcher:
     def __init__(self, source: str):
