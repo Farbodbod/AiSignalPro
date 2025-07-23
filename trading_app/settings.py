@@ -11,7 +11,7 @@ SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', 'dev-secret-key')
 DEBUG = os.getenv('DJANGO_DEBUG', 'True') == 'True'
 
 ALLOWED_HOSTS = [
-    '*',  # برای تست، بعداً فقط دامنه‌های Railway و Vercel را می‌گذاریم
+    '*',  # برای تست، بعداً محدود به Railway و Vercel می‌کنیم
 ]
 
 # ===========================
@@ -39,7 +39,7 @@ MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'whitenoise.middleware.WhiteNoiseMiddleware',
-    'django.contrib.sessions.middleware.SessionMiddleware',  # این باید قبل از Auth باشه
+    'django.contrib.sessions.middleware.SessionMiddleware',  # باید قبل از Auth باشد
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
@@ -71,7 +71,7 @@ TEMPLATES = [
 WSGI_APPLICATION = 'trading_app.wsgi.application'
 
 # ===========================
-# DATABASE (SQLite پیش‌فرض)
+# DATABASE
 # ===========================
 DATABASES = {
     'default': {
@@ -84,18 +84,10 @@ DATABASES = {
 # PASSWORD VALIDATION
 # ===========================
 AUTH_PASSWORD_VALIDATORS = [
-    {
-        'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator',
-    },
-    {
-        'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator',
-    },
-    {
-        'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator',
-    },
-    {
-        'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator',
-    },
+    {'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator'},
+    {'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator'},
+    {'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator'},
+    {'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator'},
 ]
 
 # ===========================
@@ -112,8 +104,6 @@ USE_TZ = True
 # ===========================
 STATIC_URL = '/static/'
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
-
-# WhiteNoise
 STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
 # ===========================
@@ -124,8 +114,7 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 # ===========================
 # CORS SETTINGS
 # ===========================
-CORS_ALLOW_ALL_ORIGINS = True  # فعلاً برای تست فعال است
-
+CORS_ALLOW_ALL_ORIGINS = True  # برای تست آزاد گذاشتیم
 CSRF_TRUSTED_ORIGINS = [
     "https://ai-signal-pro.vercel.app",
     "https://aisignalpro-production.up.railway.app",
