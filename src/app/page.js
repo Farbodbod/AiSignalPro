@@ -2,10 +2,12 @@
 import { useState, useEffect } from 'react';
 
 // ===================================================================
-// کامپوننت ۱: وضعیت سیستم (بدون تغییر)
+// Component 1: System Status (Corrected with proper loading state)
 // ===================================================================
 function SystemStatus() {
   const [statuses, setStatuses] = useState([]);
+  const [isLoading, setIsLoading] = useState(true); // isLoading state added back
+
   useEffect(() => {
     async function fetchStatuses() {
       try {
@@ -13,15 +15,29 @@ function SystemStatus() {
         if (!response.ok) { throw new Error("Network response was not ok"); }
         const data = await response.json();
         setStatuses(data);
-      } catch (error) { console.error("Failed to fetch statuses:", error); }
+      } catch (error) { 
+        console.error("Failed to fetch statuses:", error);
+        // Set an empty array on error so it doesn't stay loading forever
+        setStatuses([]); 
+      } finally {
+        setIsLoading(false); // Ensure loading is always set to false
+      }
     }
     fetchStatuses();
   }, []);
   
+  if (isLoading) {
+    return (
+        <section className="bg-gray-800/30 backdrop-blur-lg rounded-xl p-4 border border-yellow-500/20 h-[96px] flex justify-center items-center">
+            <p className="text-gray-400">Loading System Status...</p>
+        </section>
+    );
+  }
+
   return (
     <section>
         <div className="grid grid-cols-2 md:grid-cols-5 gap-2 text-center">
-            {statuses.length === 0 ? <p className="text-gray-400 col-span-full">Loading System Status...</p> : statuses.map((ex) => (
+            {statuses.map((ex) => (
               <div key={ex.name} className="bg-gray-800/30 backdrop-blur-lg rounded-lg p-2 border border-yellow-500/10">
                 <p className="text-xs font-semibold text-gray-300">{ex.name}</p>
                 <div className="flex items-center justify-center gap-2 mt-1">
@@ -40,7 +56,7 @@ function SystemStatus() {
 
 
 // ===================================================================
-// کامپوننت ۲: نمای کلی بازار (آپدیت شده برای دریافت دیتای زنده)
+// Component 2: Market Overview (Live Data)
 // ===================================================================
 function MarketOverview() {
     const [marketData, setMarketData] = useState(null);
@@ -96,7 +112,7 @@ function MarketOverview() {
 
 
 // ===================================================================
-// کامپوننت ۳: تیکر قیمت (آپدیت شده با بازخوانی دوره‌ای)
+// Component 3: Price Ticker (Live Data with Polling)
 // ===================================================================
 function PriceTicker() {
     const [livePrices, setLivePrices] = useState([]);
@@ -160,7 +176,7 @@ function PriceTicker() {
 
 
 // ===================================================================
-// کامپوننت اصلی صفحه
+// Main Page Component
 // ===================================================================
 export default function Home() {
   return (
