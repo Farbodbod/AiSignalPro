@@ -5,7 +5,6 @@ import { useState, useEffect } from 'react';
 // کامپوننت ۱: وضعیت سیستم (بدون تغییر)
 // ===================================================================
 function SystemStatus() {
-  // ... (این کامپوننت همانطور که بود باقی می‌ماند و به درستی کار می‌کند) ...
   const [statuses, setStatuses] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   useEffect(() => {
@@ -28,7 +27,6 @@ function SystemStatus() {
   
   return (
     <section>
-        {/* JSX for SystemStatus */}
         <div className="grid grid-cols-2 md:grid-cols-5 gap-2 text-center">
             {statuses.map((ex) => (
               <div key={ex.name} className="bg-gray-800/30 backdrop-blur-lg rounded-lg p-2 border border-yellow-500/10">
@@ -49,7 +47,7 @@ function SystemStatus() {
 
 
 // ===================================================================
-// کامپوننت ۲: نمای کلی بازار (بدون تغییر)
+// کامپوننت ۲: نمای کلی بازار (هنوز با داده‌های نمونه)
 // ===================================================================
 function MarketOverview() {
     const marketData = [
@@ -75,42 +73,44 @@ function MarketOverview() {
 
 
 // ===================================================================
-// کامپوننت ۳: تیکر قیمت (آپدیت شده برای دریافت دیتای زنده)
+// کامپوننت ۳: تیکر قیمت (آپدیت شده با بازخوانی دوره‌ای)
 // ===================================================================
 function PriceTicker() {
     const [livePrices, setLivePrices] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
 
-    useEffect(() => {
-        async function fetchPrices() {
-            try {
-                const response = await fetch('https://aisignalpro-production.up.railway.app/api/data/all/');
-                if (!response.ok) { throw new Error("Network response was not ok"); }
-                const data = await response.json();
-                
-                const formattedPrices = [];
-                // پردازش داده‌های دریافتی از API
-                for (const source in data) {
-                    if (data[source].length > 0) {
-                        const latestData = data[source][data[source].length - 1];
-                        formattedPrices.push({
-                            symbol: 'BTC/USDT',
-                            price: parseFloat(latestData.close).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
-                            // درصد تغییر را فعلا ثابت می‌گذاریم
-                            change: '+2.1%', 
-                            source: source.charAt(0).toUpperCase() + source.slice(1),
-                        });
-                    }
+    const fetchPrices = async () => {
+        try {
+            const response = await fetch('https://aisignalpro-production.up.railway.app/api/data/all/');
+            if (!response.ok) { throw new Error("Network response was not ok"); }
+            const data = await response.json();
+            
+            const formattedPrices = [];
+            for (const source in data) {
+                if (data[source].length > 0) {
+                    const latestData = data[source][data[source].length - 1];
+                    formattedPrices.push({
+                        symbol: 'BTC/USDT',
+                        price: parseFloat(latestData.close).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+                        change: '+2.1%', 
+                        source: source.charAt(0).toUpperCase() + source.slice(1),
+                    });
                 }
-                setLivePrices(formattedPrices);
-
-            } catch (error) {
-                console.error("Failed to fetch live prices:", error);
-            } finally {
-                setIsLoading(false);
             }
+            setLivePrices(formattedPrices);
+        } catch (error) {
+            console.error("Failed to fetch live prices:", error);
+        } finally {
+            setIsLoading(false);
         }
-        fetchPrices();
+    };
+
+    useEffect(() => {
+        fetchPrices(); // اجرای اولیه
+        const intervalId = setInterval(fetchPrices, 10000); // بازخوانی هر ۱۰ ثانیه
+
+        // پاک کردن اینتروال در زمان خروج از کامپوننت برای جلوگیری از نشت حافظه
+        return () => clearInterval(intervalId);
     }, []);
 
     if (isLoading) {
@@ -120,7 +120,6 @@ function PriceTicker() {
     return (
         <section>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {/* نمایش قیمت‌های زنده دریافت شده */}
                 {livePrices.map(p => (
                     <div key={p.source} className="bg-gray-800/30 backdrop-blur-lg rounded-lg p-3 flex justify-between items-center border border-yellow-500/10">
                         <div>
@@ -140,7 +139,7 @@ function PriceTicker() {
 
 
 // ===================================================================
-// کامپوننت اصلی صفحه که همه چیز را کنار هم می‌چیند
+// کامپوننت اصلی صفحه (بدون تغییر)
 // ===================================================================
 export default function Home() {
   return (
@@ -162,7 +161,6 @@ export default function Home() {
         <SystemStatus />
         <MarketOverview />
         <PriceTicker />
-        {/* بقیه کامپوننت‌ها در آینده اینجا اضافه می‌شوند */}
       </main>
 
       <footer className="fixed bottom-0 left-0 right-0 p-2 bg-gray-900/70 backdrop-blur-xl border-t border-yellow-500/30">
