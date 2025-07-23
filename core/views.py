@@ -4,50 +4,56 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 import traceback
 import os
+from .exchange_fetcher import SafeRequest, fetch_all_coins_concurrently, MultiExchangeFetcher
 
-# وارد کردن توابع از فایل کناری
-from .exchange_fetcher import fetch_all_coins_concurrently, SafeRequest
-
-# ===================================================================
-# ویو برای نمای کلی بازار
-# ===================================================================
 def market_overview_view(request):
+    response_data = {
+        'market_cap': 'N/A', 'volume_24h': 'N/A',
+        'btc_dominance': 'N/A', 'fear_and_greed': 'N/A'
+    }
     try:
+        print("Attempting to fetch from CoinGecko...")
         coingecko_url = "https://api.coingecko.com/api/v3/global"
         global_data = SafeRequest.get(coingecko_url)
         if not global_data or 'data' not in global_data:
-            raise Exception('Failed to fetch data from CoinGecko')
+            raise ValueError('CoinGecko failed, trying CoinMarketCap...')
         
         cg_data = global_data['data']
-        market_cap = cg_data['total_market_cap']['usd']
-        volume_24h = cg_data['total_volume']['usd']
-        btc_dominance = cg_data['market_cap_percentage']['btc']
+        market_cap = cg_data.get('total_market_cap', {}).get('usd', 0)
+        volume_24h = cg_data.get('total_volume', {}).get('usd', 0)
+        btc_dominance = cg_data.get('market_cap_percentage', {}).get('btc', 0)
+    
+    except Exception as e_cg:
+        print(f"CoinGecko Error: {e_cg}. Trying CoinMarketCap as fallback.")
+        try:
+            cmc_fetcher = MultiExchangeFetcher('coinmarketcap').get_fetcher()
+            cmc_data = cmc_fetcher.fetch_global_metrics()
+            market_cap = cmc_data['market_cap']
+            volume_24h = cmc_data['volume_24h']
+            btc_dominance = cmc_data['btc_dominance']
+        except Exception as e_cmc:
+            print(f"CoinMarketCap Error: {e_cmc}. Both sources failed.")
+            market_cap, volume_24h, btc_dominance = 0, 0, 0
 
+    if market_cap > 0:
+        response_data['market_cap'] = f"${market_cap:,.0f}"
+        response_data['volume_24h'] = f"${volume_24h:,.0f}"
+        response_data['btc_dominance'] = f"{btc_dominance:.1f}%"
+
+    try:
         fng_url = "https://api.alternative.me/fng/?limit=1"
         fng_data = SafeRequest.get(fng_url)
-        if not fng_data or 'data' not in fng_data or not fng_data['data']:
-            raise Exception('Failed to fetch Fear & Greed index')
-            
-        fear_and_greed_value = fng_data['data'][0]['value']
-        fear_and_greed_text = fng_data['data'][0]['value_classification']
-
-        response_data = {
-            'market_cap': f"${market_cap:,.0f}",
-            'volume_24h': f"${volume_24h:,.0f}",
-            'btc_dominance': f"{btc_dominance:.1f}%",
-            'fear_and_greed': f"{fear_and_greed_value} ({fear_and_greed_text})"
-        }
+        if fng_data and 'data' in fng_data and fng_data['data']:
+            value = fng_data['data'][0]['value']
+            text = fng_data['data'][0]['value_classification']
+            response_data['fear_and_greed'] = f"{value} ({text})"
+    except Exception as e_fng:
+        print(f"Could not fetch Fear & Greed index: {e_fng}")
         
-        return JsonResponse(response_data)
-    except Exception as e:
-        return JsonResponse({'error': str(e)}, status=500)
+    return JsonResponse(response_data)
 
-# ===================================================================
-# ویو برای وضعیت سیستم
-# ===================================================================
 def check_exchange_status(exchange_info):
-    name = exchange_info['name']
-    url = exchange_info['status_url']
+    name = exchange_info['name']; url = exchange_info['status_url']
     try:
         start_time = time.time()
         response = requests.head(url, timeout=5)
@@ -55,10 +61,8 @@ def check_exchange_status(exchange_info):
         if response.status_code == 200:
             ping = int((end_time - start_time) * 1000)
             return {'name': name, 'status': 'online', 'ping': f'{ping}ms'}
-        else:
-            return {'name': name, 'status': 'offline', 'ping': 'Error'}
-    except requests.exceptions.RequestException:
-        return {'name': name, 'status': 'offline', 'ping': '---'}
+        else: return {'name': name, 'status': 'offline', 'ping': 'Error'}
+    except requests.exceptions.RequestException: return {'name': name, 'status': 'offline', 'ping': '---'}
 
 def system_status_view(request):
     exchanges_to_check = [
@@ -72,23 +76,15 @@ def system_status_view(request):
     results = []
     with ThreadPoolExecutor(max_workers=len(exchanges_to_check)) as executor:
         futures = {executor.submit(check_exchange_status, ex): ex for ex in exchanges_to_check}
-        for future in futures:
-            results.append(future.result())
+        for future in futures: results.append(future.result())
     return JsonResponse(results, safe=False)
 
-# ===================================================================
-# ویو برای آدرس ریشه
-# ===================================================================
 def home_page_view(request):
     return HttpResponse("<h1>Django Server is Running!</h1>")
 
-# ===================================================================
-# ویو برای دریافت داده‌های تمام ارزها
-# ===================================================================
 def all_data_view(request):
     try:
         target_sources = ['coingecko', 'kucoin', 'gate.io', 'okx', 'bitfinex', 'mexc']
-        
         symbol_map = {
             'BTC': {'coingecko': 'bitcoin', 'kucoin': 'BTC-USDT', 'gate.io': 'BTC_USDT', 'okx': 'BTC-USDT', 'bitfinex': 'BTCUSD', 'mexc': 'BTCUSDT'},
             'ETH': {'coingecko': 'ethereum', 'kucoin': 'ETH-USDT', 'gate.io': 'ETH_USDT', 'okx': 'ETH-USDT', 'bitfinex': 'ETHUSD', 'mexc': 'ETHUSDT'},
