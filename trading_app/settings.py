@@ -1,56 +1,57 @@
+import os
 from pathlib import Path
-import os # این را اضافه می‌کنیم
 
-# Build paths inside the project like this: BASE_DIR / 'subdir'.
+# مسیر پایه پروژه
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-# SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.environ.get('SECRET_KEY', 'django-insecure-gg$_ng&y__6+j%@-x02b5mm9%r%ga0x+#45m!6y26jktohk04(')
+# ===========================
+# SECURITY
+# ===========================
+SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', 'dev-secret-key')
+DEBUG = os.getenv('DJANGO_DEBUG', 'True') == 'True'
 
-# SECURITY WARNING: don't run with debug turned on in production!
-# در محیط Railway، این به صورت خودکار False می‌شود.
-DEBUG = os.environ.get('DEBUG', 'True') == 'True'
-
-# === هاست‌های مجاز ===
 ALLOWED_HOSTS = [
-    'aisignalpro-production.up.railway.app',
-    '.vercel.app', # به Vercel اجازه اتصال می‌دهد
-    'localhost',
-    '127.0.0.1',
+    '*',  # برای تست، بعداً فقط دامنه‌های Railway و Vercel را می‌گذاریم
 ]
 
-# === اپلیکیشن‌های نصب شده ===
+# ===========================
+# INSTALLED APPS
+# ===========================
 INSTALLED_APPS = [
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
     'django.contrib.sessions',
     'django.contrib.messages',
-    'whitenoise.runserver_nostatic', # برای فایل‌های استاتیک
     'django.contrib.staticfiles',
-    'corsheaders', # اپلیکیشن CORS
-    'core',
+
+    # برنامه‌های پروژه
+    'trading_app',
+
+    # CORS
     'corsheaders',
 ]
 
-
-# === میان‌افزارها (Middleware) ===
+# ===========================
+# MIDDLEWARE
+# ===========================
 MIDDLEWARE = [
-    'corsheaders.middleware.CorsMiddleware',
-    'django.middleware.common.CommonMiddleware',
+    'corsheaders.middleware.CorsMiddleware',  # باید قبل از CommonMiddleware باشد
     'django.middleware.security.SecurityMiddleware',
-    'whitenoise.middleware.WhiteNoiseMiddleware', # میان‌افزار WhiteNoise
-    'corsheaders.middleware.CorsMiddleware', # میان‌افزار CORS
-    'django.contrib.sessions.middleware.SessionMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
+    'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'django.middleware.sessions.middleware.SessionMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
-    'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
 
 ROOT_URLCONF = 'trading_app.urls'
 
+# ===========================
+# TEMPLATES
+# ===========================
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
@@ -58,6 +59,7 @@ TEMPLATES = [
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [
+                'django.template.context_processors.debug',
                 'django.template.context_processors.request',
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
@@ -68,7 +70,9 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'trading_app.wsgi.application'
 
-# === پایگاه داده (Database) ===
+# ===========================
+# DATABASE (SQLite پیش‌فرض)
+# ===========================
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.sqlite3',
@@ -76,25 +80,53 @@ DATABASES = {
     }
 }
 
-# ... (بقیه تنظیمات اعتبارسنجی رمز عبور و زبان) ...
-AUTH_PASSWORD_VALIDATORS = [{'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator'},{'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator'},{'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator'},{'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator'}]
+# ===========================
+# PASSWORD VALIDATION
+# ===========================
+AUTH_PASSWORD_VALIDATORS = [
+    {
+        'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator',
+    },
+    {
+        'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator',
+    },
+    {
+        'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator',
+    },
+    {
+        'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator',
+    },
+]
+
+# ===========================
+# INTERNATIONALIZATION
+# ===========================
 LANGUAGE_CODE = 'en-us'
 TIME_ZONE = 'UTC'
 USE_I18N = True
+USE_L10N = True
 USE_TZ = True
 
-
-# === فایل‌های استاتیک (Static files) ===
-STATIC_URL = 'static/'
+# ===========================
+# STATIC FILES
+# ===========================
+STATIC_URL = '/static/'
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
+
+# WhiteNoise
 STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
-
+# ===========================
+# DEFAULT PRIMARY KEY FIELD
+# ===========================
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-# === تنظیمات CORS ===
-CORS_ALLOWED_ORIGINS = [
-    "https://ai-signal-pro.vercel.app",
-]
-CSRF_TRUSTED_ORIGINS = ["https://ai-signal-pro.vercel.app"]
+# ===========================
+# CORS SETTINGS
+# ===========================
+CORS_ALLOW_ALL_ORIGINS = True  # فعلاً برای تست فعال است
 
+CSRF_TRUSTED_ORIGINS = [
+    "https://ai-signal-pro.vercel.app",
+    "https://aisignalpro-production.up.railway.app",
+]
