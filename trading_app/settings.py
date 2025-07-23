@@ -30,7 +30,9 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'corsheaders', # اپلیکیشن CORS
     'core',
+    'corsheaders',
 ]
+
 
 # === میان‌افزارها (Middleware) ===
 MIDDLEWARE = [
