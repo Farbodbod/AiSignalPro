@@ -2,16 +2,16 @@ from django.http import JsonResponse, HttpResponse
 import requests
 import time
 from concurrent.futures import ThreadPoolExecutor
+import traceback
 
-# وارد کردن کلاس SafeRequest از فایل کناری
+# Correctly importing the renamed function
 from .exchange_fetcher import SafeRequest, fetch_all_coins_concurrently
 
 # ===================================================================
-# ویو جدید برای نمای کلی بازار
+# View for Market Overview
 # ===================================================================
 def market_overview_view(request):
     try:
-        # ۱. دریافت داده‌های کلی از CoinGecko
         coingecko_url = "https://api.coingecko.com/api/v3/global"
         global_data = SafeRequest.get(coingecko_url)
         if not global_data or 'data' not in global_data:
@@ -22,7 +22,6 @@ def market_overview_view(request):
         volume_24h = cg_data['total_volume']['usd']
         btc_dominance = cg_data['market_cap_percentage']['btc']
 
-        # ۲. دریافت شاخص ترس و طمع
         fng_url = "https://api.alternative.me/fng/?limit=1"
         fng_data = SafeRequest.get(fng_url)
         if not fng_data or 'data' not in fng_data or not fng_data['data']:
@@ -31,7 +30,6 @@ def market_overview_view(request):
         fear_and_greed_value = fng_data['data'][0]['value']
         fear_and_greed_text = fng_data['data'][0]['value_classification']
 
-        # ۳. آماده‌سازی پاسخ نهایی
         response_data = {
             'market_cap': f"${market_cap:,.0f}",
             'volume_24h': f"${volume_24h:,.0f}",
@@ -44,9 +42,8 @@ def market_overview_view(request):
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
 
-
 # ===================================================================
-# ویوهای دیگر (که از قبل ساخته بودیم)
+# View for System Status
 # ===================================================================
 def check_exchange_status(exchange_info):
     name = exchange_info['name']
@@ -79,19 +76,38 @@ def system_status_view(request):
             results.append(future.result())
     return JsonResponse(results, safe=False)
 
+# ===================================================================
+# View for testing the root URL
+# ===================================================================
 def home_page_view(request):
     return HttpResponse("<h1>Django Server is Running!</h1>")
 
+# ===================================================================
+# View that fetches all coin data
+# ===================================================================
 def all_data_view(request):
     try:
         target_sources = ['kucoin', 'gate.io']
-        symbol_map = {'kucoin': 'BTC-USDT', 'gate.io': 'BTC_USDT'}
-        all_data = fetch_all_sources_concurrently(target_sources, symbol_map, '1h')
+        symbol_map = {
+            'BTC': {'kucoin': 'BTC-USDT', 'gate.io': 'BTC_USDT'},
+            'ETH': {'kucoin': 'ETH-USDT', 'gate.io': 'ETH_USDT'},
+            'XRP': {'kucoin': 'XRP-USDT', 'gate.io': 'XRP_USDT'},
+            'SOL': {'kucoin': 'SOL-USDT', 'gate.io': 'SOL_USDT'},
+            'DOGE': {'kucoin': 'DOGE-USDT', 'gate.io': 'DOGE_USDT'},
+        }
+        
+        # === THIS LINE IS NOW CORRECTED ===
+        all_data = fetch_all_coins_concurrently(target_sources, symbol_map, '1h')
+        
         json_friendly_data = {}
-        for source, df in all_data.items():
-            df_reset = df.reset_index()
-            df_reset['timestamp'] = df_reset['timestamp'].dt.strftime('%Y-%m-%d %H:%M:%S')
-            json_friendly_data[source] = df_reset.to_dict('records')
+        for coin, sources in all_data.items():
+            json_friendly_data[coin] = {}
+            for source, df in sources.items():
+                df_reset = df.reset_index()
+                df_reset['timestamp'] = df_reset['timestamp'].dt.strftime('%Y-%m-%d %H:%M:%S')
+                json_friendly_data[coin][source] = df_reset.to_dict('records')
+
         return JsonResponse(json_friendly_data)
+        
     except Exception as e:
-        return JsonResponse({'error': str(e)}, status=500)
+        return JsonResponse({'error': str(e), 'traceback': traceback.format_exc()}, status=500)
