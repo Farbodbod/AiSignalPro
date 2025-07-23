@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react';
 
 // ===================================================================
-// کامپوننت ۱: وضعیت سیستم (با منطق جدید برای دریافت داده و نمایش خطا)
+// کامپوننت ۱: وضعیت سیستم (با آدرس صحیح بک‌اند)
 // ===================================================================
 const StatusIndicator = ({ status }) => (
   <span className={'w-2 h-2 rounded-full ' + (status === 'online' ? 'bg-green-400 animate-pulse' : 'bg-red-500')}></span>
@@ -16,10 +16,13 @@ function SystemStatus() {
   useEffect(() => {
     async function fetchStatuses() {
       try {
+        // === این آدرس آپدیت شده است ===
         const response = await fetch('https://aisignalpro-production.up.railway.app/api/status/');
+        
         if (!response.ok) {
           throw new Error(`Error: ${response.status} ${response.statusText}`);
         }
+        
         const data = await response.json();
         setStatuses(data);
       } catch (err) {
@@ -69,9 +72,8 @@ function SystemStatus() {
   );
 }
 
-
 // ===================================================================
-// کامپوننت ۲: نمای کلی بازار (با داده‌های نمونه)
+// کامپوننت ۲: نمای کلی بازار (بدون تغییر)
 // ===================================================================
 const marketData = [
     { label: 'Market Cap', value: '$2.3T', change: '+1.5%' },
@@ -96,9 +98,8 @@ function MarketOverview() {
     )
 }
 
-
 // ===================================================================
-// کامپوننت ۳: تیکر قیمت (با داده‌های نمونه)
+// کامپوننت ۳: تیکر قیمت (بدون تغییر)
 // ===================================================================
 const prices = [
     { symbol: 'BTC', price: '68,123.45', change: '+2.1%', source: 'Kucoin' },
@@ -144,9 +145,8 @@ function PriceTicker() {
     )
 }
 
-
 // ===================================================================
-// کامپوننت اصلی صفحه که همه چیز را کنار هم می‌چیند
+// کامپوننت اصلی صفحه (بدون تغییر)
 // ===================================================================
 export default function Home() {
   return (
@@ -168,7 +168,6 @@ export default function Home() {
         <SystemStatus />
         <MarketOverview />
         <PriceTicker />
-        {/* بقیه کامپوننت‌ها در آینده اینجا اضافه می‌شوند */}
       </main>
 
       <footer className="fixed bottom-0 left-0 right-0 p-2 bg-gray-900/70 backdrop-blur-xl border-t border-yellow-500/30">
@@ -182,4 +181,3 @@ export default function Home() {
     </div>
   )
 }
-
