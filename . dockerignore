@@ -1,0 +1,14 @@
+# چیزایی که لازم نیست وارد ایمیج بشن
+.git
+.gitignore
+node_modules
+.next
+npm-debug.log
+yarn.lock
+pnpm-lock.yaml
+dist
+build
+*.pyc
+__pycache__/
+.db.sqlite3-journal
+.DS_Store
