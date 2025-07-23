@@ -36,6 +36,8 @@ INSTALLED_APPS = [
 
 # === میان‌افزارها (Middleware) ===
 MIDDLEWARE = [
+    'corsheaders.middleware.CorsMiddleware',
+    'django.middleware.common.CommonMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'whitenoise.middleware.WhiteNoiseMiddleware', # میان‌افزار WhiteNoise
     'corsheaders.middleware.CorsMiddleware', # میان‌افزار CORS
