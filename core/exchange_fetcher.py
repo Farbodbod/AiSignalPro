@@ -1,8 +1,6 @@
 """
-multi_exchange_fetcher_v3.py
-
-Parallel Multi-Exchange OHLCV Fetcher
-قابلیت دریافت همزمان و موازی دیتا از چندین صرافی
+multi_exchange_fetcher_v4.py
+Parallel Multi-Coin & Multi-Exchange OHLCV Fetcher
 """
 
 import requests
@@ -13,8 +11,9 @@ from datetime import datetime
 from typing import List, Dict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-# ... (کلاس SafeRequest و تابع standardize_df بدون تغییر باقی می‌مانند) ...
+# ... (کلاس SafeRequest و تابع standardize_df بدون تغییر) ...
 class SafeRequest:
+    # ...
     @staticmethod
     def get(url, params=None, headers=None, retries=3, timeout=10):
         for attempt in range(retries):
@@ -27,11 +26,11 @@ class SafeRequest:
             except Exception as e:
                 print(f"Error fetching {url}: {e}")
             time.sleep(1)
-        return None # در صورت خطا None برمی‌گردانیم
+        return None
 
 def standardize_df(df):
-    if df is None or df.empty:
-        return pd.DataFrame()
+    if df is None or df.empty: return pd.DataFrame()
+    # ... (بقیه کد) ...
     df = df.dropna()
     df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
     df = df.sort_values('timestamp')
@@ -39,40 +38,18 @@ def standardize_df(df):
     df.set_index('timestamp', inplace=True)
     return df
 
+
 # ... (تمام کلاس‌های Fetcher برای هر صرافی بدون تغییر باقی می‌مانند) ...
-class CoingeckoFetcher:
-    # ... (کد قبلی) ...
-    BASE_URL = "https://api.coingecko.com/api/v3"
-    interval_map = {"1h": "hourly", "1d": "daily"}
-
-    def fetch_ohlcv(self, coin_id: str, vs_currency: str = "usd", days: str = "30", timeframe: str = "1h", **kwargs):
-        # ... (کد قبلی) ...
-        interval = self.interval_map.get(timeframe, "hourly")
-        url = f"{self.BASE_URL}/coins/{coin_id}/market_chart"
-        params = {"vs_currency": vs_currency, "days": days, "interval": interval}
-        data = SafeRequest.get(url, params=params)
-        if not data or 'prices' not in data:
-            raise ValueError("Invalid response from Coingecko.")
-        prices = pd.DataFrame(data['prices'], columns=['timestamp', 'close'])
-        volumes = pd.DataFrame(data['total_volumes'], columns=['timestamp', 'volume'])
-        df = prices.merge(volumes, on='timestamp')
-        for col in ['open', 'high', 'low']:
-            df[col] = df['close']
-        df = df[['timestamp', 'open', 'high', 'low', 'close', 'volume']]
-        return standardize_df(df)
-
 class KucoinFetcher:
-    # ... (کد قبلی) ...
+    # ...
     BASE_URL = "https://api.kucoin.com"
     interval_map = {"1m": "1min", "5m": "5min", "15m": "15min", "1h": "1hour", "4h": "4hour", "1d": "1day"}
     def fetch_ohlcv(self, symbol: str, timeframe: str = "1h", limit: int = 300, **kwargs):
-        # ... (کد قبلی) ...
         interval = self.interval_map.get(timeframe, "1hour")
         url = f"{self.BASE_URL}/api/v1/market/candles"
-        params = {"symbol": symbol, "type": interval, "limit": limit}
+        params = {"symbol": symbol, "type": interval}
         data = SafeRequest.get(url, params=params)
-        if not data or 'data' not in data:
-            return pd.DataFrame()
+        if not data or 'data' not in data: return pd.DataFrame()
         df = pd.DataFrame(data['data'], columns=['timestamp', 'open', 'close', 'high', 'low', 'volume', 'turnover'])
         df['timestamp'] = df['timestamp'].astype(float) * 1000
         df = df.astype({'open': float, 'high': float, 'low': float, 'close': float, 'volume': float})
@@ -84,12 +61,8 @@ class MultiExchangeFetcher:
     # ... (کد قبلی این کلاس بدون تغییر) ...
     def __init__(self, source: str):
         self.source = source.lower()
-        mexc_api_key = os.getenv('MEXC_API_KEY')
-        mexc_secret = os.getenv('MEXC_SECRET_KEY')
-        cmc_api_key = os.getenv('CMC_API_KEY')
-
-        if self.source == "coingecko": self.fetcher = CoingeckoFetcher()
-        elif self.source == "kucoin": self.fetcher = KucoinFetcher()
+        if self.source == "kucoin": self.fetcher = KucoinFetcher()
+        elif self.source == "gate.io": self.fetcher = GateioFetcher()
         # ... (بقیه elif ها) ...
         else: raise ValueError(f"Unknown exchange source: {self.source}")
 
@@ -98,70 +71,45 @@ class MultiExchangeFetcher:
 
 
 # ===================================================================
-# تابع جدید برای دریافت همزمان دیتا
+# تابع جدید برای دریافت همزمان دیتا برای چندین ارز
 # ===================================================================
-def fetch_all_sources_concurrently(sources: List[str], symbol_map: Dict[str, str], timeframe: str, limit: int = 100) -> Dict[str, pd.DataFrame]:
+def fetch_all_coins_concurrently(sources: List[str], symbol_map: Dict[str, Dict[str, str]], timeframe: str) -> Dict[str, Dict[str, pd.DataFrame]]:
     """
-    از چندین صرافی به صورت موازی دیتا دریافت می‌کند.
-    
+    از چندین صرافی برای چندین ارز به صورت موازی دیتا دریافت می‌کند.
     :param sources: لیستی از نام صرافی‌ها. e.g., ['kucoin', 'gate.io']
-    :param symbol_map: دیکشنری برای نگاشت نام عمومی به نماد خاص هر صرافی. 
-                      e.g., {'kucoin': 'BTC-USDT', 'gate.io': 'BTC_USDT'}
+    :param symbol_map: دیکشنری تو در تو برای نگاشت نمادها. 
+                      e.g., {'BTC': {'kucoin': 'BTC-USDT', 'gate.io': 'BTC_USDT'}, ...}
     :param timeframe: تایم فریم مورد نظر. e.g., '1h'
-    :param limit: تعداد کندل‌ها.
-    :return: دیکشنری حاوی دیتافریم هر صرافی.
+    :return: دیکشنری تو در تو حاوی دیتافریم‌ها. e.g., {'BTC': {'kucoin': df, 'gate.io': df}, ...}
     """
     results = {}
+    tasks = []
 
-    def _fetch_one(source: str):
-        """یک تابع داخلی برای اجرا در هر ترد"""
+    # ایجاد لیست وظایف
+    for coin, mapping in symbol_map.items():
+        results[coin] = {}
+        for source in sources:
+            if source in mapping:
+                symbol = mapping[source]
+                tasks.append({'coin': coin, 'source': source, 'symbol': symbol, 'timeframe': timeframe})
+
+    def _fetch_one(task):
+        """تابع داخلی برای اجرا در هر ترد"""
         try:
-            fetcher = MultiExchangeFetcher(source)
-            symbol = symbol_map.get(source)
-            if not symbol:
-                print(f"No symbol provided for {source}, skipping.")
-                return source, pd.DataFrame()
-            
-            # پارامترهای خاص هر صرافی را جدا می‌کنیم
-            kwargs = {'symbol': symbol, 'timeframe': timeframe, 'limit': limit}
-            if source == 'coingecko':
-                kwargs = {'coin_id': symbol, 'timeframe': timeframe, 'days': '7'} # مثال برای پارامتر متفاوت
-                
-            df = fetcher.fetch_ohlcv(**kwargs)
-            return source, df
+            fetcher = MultiExchangeFetcher(task['source'])
+            df = fetcher.fetch_ohlcv(symbol=task['symbol'], timeframe=task['timeframe'])
+            return task['coin'], task['source'], df
         except Exception as e:
-            print(f"Failed to fetch from {source}: {e}")
-            return source, pd.DataFrame()
+            print(f"Failed to fetch {task['symbol']} from {task['source']}: {e}")
+            return task['coin'], task['source'], pd.DataFrame()
 
-    with ThreadPoolExecutor(max_workers=len(sources)) as executor:
-        # ارسال تمام وظایف به ترد پول
-        future_to_source = {executor.submit(_fetch_one, source): source for source in sources}
+    with ThreadPoolExecutor(max_workers=len(tasks)) as executor:
+        future_to_task = {executor.submit(_fetch_one, task): task for task in tasks}
         
-        # جمع‌آوری نتایج به محض آماده شدن
-        for future in as_completed(future_to_source):
-            source, df = future.result()
+        for future in as_completed(future_to_task):
+            coin, source, df = future.result()
             if not df.empty:
-                results[source] = df
-
+                results[coin][source] = df
+    
     return results
 
-# مثال تست:
-if __name__ == "__main__":
-    # لیستی از صرافی‌هایی که می‌خواهیم از آنها دیتا بگیریم
-    target_sources = ['kucoin', 'gate.io'] # می‌توانید صرافی‌های دیگر را هم اضافه کنید
-    
-    # نگاشت نماد بیت‌کوین برای هر صرافی
-    btc_symbols = {
-        'kucoin': 'BTC-USDT',
-        'gate.io': 'BTC_USDT',
-        'okx': 'BTC-USDT',
-        'bitfinex': 'BTCUSD'
-    }
-
-    print("Fetching data concurrently...")
-    all_data = fetch_all_sources_concurrently(target_sources, btc_symbols, '1h')
-    
-    print("\n--- Results ---")
-    for source, dataframe in all_data.items():
-        print(f"\nData from: {source}")
-        print(dataframe.tail(3))
