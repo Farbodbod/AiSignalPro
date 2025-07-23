@@ -1,10 +1,9 @@
-from django.http import HttpResponse
+from django.contrib import admin
+from django.urls import path
+from core.views import system_status_view
 
-# ما یک ویو ساده را مستقیماً اینجا تعریف می‌کنیم
-def test_view(request):
-    return HttpResponse("<h1>Server is working! URL routing is OK.</h1>")
-
-# و آن را به آدرس اصلی سایت متصل می‌کنیم
 urlpatterns = [
-    path('', test_view),
+    path('admin/', admin.site.urls),
+    path('api/status/', system_status_view, name='system-status'),
+    path('', system_status_view),  # برای تست سریع
 ]
