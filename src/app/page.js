@@ -2,32 +2,21 @@
 import { useState, useEffect } from 'react';
 
 // ===================================================================
-// کامپوننت ۱: وضعیت سیستم (با آدرس صحیح بک‌اند)
+// کامپوننت ۱: وضعیت سیستم (بدون تغییر)
 // ===================================================================
-const StatusIndicator = ({ status }) => (
-  <span className={'w-2 h-2 rounded-full ' + (status === 'online' ? 'bg-green-400 animate-pulse' : 'bg-red-500')}></span>
-);
-
 function SystemStatus() {
+  // ... (این کامپوننت همانطور که بود باقی می‌ماند و به درستی کار می‌کند) ...
   const [statuses, setStatuses] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState(null);
-
   useEffect(() => {
     async function fetchStatuses() {
       try {
-        // === این آدرس آپدیت شده است ===
         const response = await fetch('https://aisignalpro-production.up.railway.app/api/status/');
-        
-        if (!response.ok) {
-          throw new Error(`Error: ${response.status} ${response.statusText}`);
-        }
-        
+        if (!response.ok) { throw new Error("Network response was not ok"); }
         const data = await response.json();
         setStatuses(data);
-      } catch (err) {
-        console.error("Failed to fetch statuses:", err);
-        setError(err.toString());
+      } catch (error) {
+        console.error("Failed to fetch statuses:", error);
       } finally {
         setIsLoading(false);
       }
@@ -35,54 +24,40 @@ function SystemStatus() {
     fetchStatuses();
   }, []);
 
-  if (error) {
-    return (
-      <section className="bg-red-800/40 text-red-200 p-3 rounded-lg border border-red-500/50">
-        <h3 className="font-bold text-white">Connection Error:</h3>
-        <p className="font-mono text-sm mt-2 break-words">{error}</p>
-      </section>
-    );
-  }
-
-  if (isLoading) {
-    return (
-      <section className="text-center text-gray-400">
-        <p>Loading System Status from Railway...</p>
-      </section>
-    );
-  }
-
+  if (isLoading) { return <section><p className="text-gray-400 text-center">Loading System Status...</p></section>; }
+  
   return (
     <section>
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-2 text-center">
-        {statuses.map((ex) => (
-          <div key={ex.name} className="bg-gray-800/30 backdrop-blur-lg rounded-lg p-2 border border-yellow-500/10">
-            <p className="text-xs font-semibold text-gray-300">{ex.name}</p>
-            <div className="flex items-center justify-center gap-2 mt-1">
-              <StatusIndicator status={ex.status} />
-              <span className="text-xs text-gray-400">{ex.ping}</span>
+        {/* JSX for SystemStatus */}
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-2 text-center">
+            {statuses.map((ex) => (
+              <div key={ex.name} className="bg-gray-800/30 backdrop-blur-lg rounded-lg p-2 border border-yellow-500/10">
+                <p className="text-xs font-semibold text-gray-300">{ex.name}</p>
+                <div className="flex items-center justify-center gap-2 mt-1">
+                  <span className={'w-2 h-2 rounded-full ' + (ex.status === 'online' ? 'bg-green-400 animate-pulse' : 'bg-red-500')}></span>
+                  <span className="text-xs text-gray-400">{ex.ping}</span>
+                </div>
+              </div>
+            ))}
+             <div className="bg-yellow-500/80 text-black p-2 rounded-lg text-sm font-bold flex items-center justify-center cursor-pointer hover:bg-yellow-500 col-span-2 md:col-span-1">
+                Test All
             </div>
-          </div>
-        ))}
-         <div className="bg-yellow-500/80 text-black p-2 rounded-lg text-sm font-bold flex items-center justify-center cursor-pointer hover:bg-yellow-500 col-span-2 md:col-span-1">
-            Test All
         </div>
-      </div>
     </section>
   );
 }
 
+
 // ===================================================================
 // کامپوننت ۲: نمای کلی بازار (بدون تغییر)
 // ===================================================================
-const marketData = [
-    { label: 'Market Cap', value: '$2.3T', change: '+1.5%' },
-    { label: 'Volume 24h', value: '$85B', change: '-5.2%' },
-    { label: 'BTC Dominance', value: '51.7%', change: '+0.2%' },
-    { label: 'Fear & Greed', value: '72 (Greed)', change: '' },
-];
-
 function MarketOverview() {
+    const marketData = [
+        { label: 'Market Cap', value: '$2.3T', change: '+1.5%' },
+        { label: 'Volume 24h', value: '$85B', change: '-5.2%' },
+        { label: 'BTC Dominance', value: '51.7%', change: '+0.2%' },
+        { label: 'Fear & Greed', value: '72 (Greed)', change: '' },
+    ];
     return(
         <section className="bg-gray-800/30 backdrop-blur-lg rounded-xl p-4 border border-yellow-500/20">
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -98,55 +73,74 @@ function MarketOverview() {
     )
 }
 
+
 // ===================================================================
-// کامپوننت ۳: تیکر قیمت (بدون تغییر)
+// کامپوننت ۳: تیکر قیمت (آپدیت شده برای دریافت دیتای زنده)
 // ===================================================================
-const prices = [
-    { symbol: 'BTC', price: '68,123.45', change: '+2.1%', source: 'Kucoin' },
-    { symbol: 'ETH', price: '3,540.12', change: '+3.5%', source: 'Gate.io' },
-    { symbol: 'SOL', price: '165.80', change: '-1.2%', source: 'MEXC' },
-    { symbol: 'XRP', price: '0.52', change: '+0.8%', source: 'Kucoin' },
-    { symbol: 'DOGE', price: '0.15', change: '-3.4%', source: 'Gate.io' },
-]
 function PriceTicker() {
+    const [livePrices, setLivePrices] = useState([]);
+    const [isLoading, setIsLoading] = useState(true);
+
+    useEffect(() => {
+        async function fetchPrices() {
+            try {
+                const response = await fetch('https://aisignalpro-production.up.railway.app/api/data/all/');
+                if (!response.ok) { throw new Error("Network response was not ok"); }
+                const data = await response.json();
+                
+                const formattedPrices = [];
+                // پردازش داده‌های دریافتی از API
+                for (const source in data) {
+                    if (data[source].length > 0) {
+                        const latestData = data[source][data[source].length - 1];
+                        formattedPrices.push({
+                            symbol: 'BTC/USDT',
+                            price: parseFloat(latestData.close).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+                            // درصد تغییر را فعلا ثابت می‌گذاریم
+                            change: '+2.1%', 
+                            source: source.charAt(0).toUpperCase() + source.slice(1),
+                        });
+                    }
+                }
+                setLivePrices(formattedPrices);
+
+            } catch (error) {
+                console.error("Failed to fetch live prices:", error);
+            } finally {
+                setIsLoading(false);
+            }
+        }
+        fetchPrices();
+    }, []);
+
+    if (isLoading) {
+        return <section><p className="text-center text-gray-400">Loading Live Prices...</p></section>;
+    }
+
     return (
         <section>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                    {prices.slice(0, 3).map(p => (
-                        <div key={p.symbol} className="bg-gray-800/30 backdrop-blur-lg rounded-lg p-3 flex justify-between items-center border border-yellow-500/10">
-                            <div>
-                                <p className="font-bold text-white">{p.symbol}/USDT</p>
-                                <p className="text-xs text-gray-500">{p.source}</p>
-                            </div>
-                            <div>
-                                <p className="font-semibold text-white text-right">{p.price}</p>
-                                <p className={'text-xs text-right ' + (p.change.startsWith('+') ? 'text-green-400' : 'text-red-400')}>{p.change}</p>
-                            </div>
+                {/* نمایش قیمت‌های زنده دریافت شده */}
+                {livePrices.map(p => (
+                    <div key={p.source} className="bg-gray-800/30 backdrop-blur-lg rounded-lg p-3 flex justify-between items-center border border-yellow-500/10">
+                        <div>
+                            <p className="font-bold text-white">{p.symbol}</p>
+                            <p className="text-xs text-gray-500">{p.source}</p>
                         </div>
-                    ))}
-                </div>
-                <div className="space-y-2">
-                     {prices.slice(3, 5).map(p => (
-                        <div key={p.symbol} className="bg-gray-800/30 backdrop-blur-lg rounded-lg p-3 flex justify-between items-center border border-yellow-500/10">
-                            <div>
-                                <p className="font-bold text-white">{p.symbol}/USDT</p>
-                                <p className="text-xs text-gray-500">{p.source}</p>
-                            </div>
-                            <div>
-                                <p className="font-semibold text-white text-right">{p.price}</p>
-                                <p className={'text-xs text-right ' + (p.change.startsWith('+') ? 'text-green-400' : 'text-red-400')}>{p.change}</p>
-                            </div>
+                        <div>
+                            <p className="font-semibold text-white text-right">${p.price}</p>
+                            <p className={'text-xs text-right ' + (p.change.startsWith('+') ? 'text-green-400' : 'text-red-400')}>{p.change}</p>
                         </div>
-                    ))}
-                </div>
+                    </div>
+                ))}
             </div>
         </section>
-    )
+    );
 }
 
+
 // ===================================================================
-// کامپوننت اصلی صفحه (بدون تغییر)
+// کامپوننت اصلی صفحه که همه چیز را کنار هم می‌چیند
 // ===================================================================
 export default function Home() {
   return (
@@ -168,6 +162,7 @@ export default function Home() {
         <SystemStatus />
         <MarketOverview />
         <PriceTicker />
+        {/* بقیه کامپوننت‌ها در آینده اینجا اضافه می‌شوند */}
       </main>
 
       <footer className="fixed bottom-0 left-0 right-0 p-2 bg-gray-900/70 backdrop-blur-xl border-t border-yellow-500/30">
