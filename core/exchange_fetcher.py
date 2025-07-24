@@ -1,11 +1,8 @@
 import requests
-import pandas as pd
-import time
 import os
 from typing import List, Dict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dotenv import load_dotenv
-import multiprocessing
 
 load_dotenv()
 
@@ -15,91 +12,63 @@ class SafeRequest:
         final_headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
         }
-        if headers:
-            final_headers.update(headers)
+        if headers: final_headers.update(headers)
         for _ in range(retries):
             try:
                 response = requests.get(url, params=params, headers=final_headers, timeout=timeout)
-                if response.status_code == 200:
-                    return response.json()
-                else:
-                    print(f"Request failed with status code {response.status_code} for URL: {url}")
-            except Exception as e:
-                print(f"Request exception for URL {url}: {e}")
-                time.sleep(1)
+                if response.status_code == 200: return response.json()
+            except Exception: pass
         return None
 
-class CoingeckoFetcher:
-    def fetch_ticker(self, coin_id: str, **kwargs):
-        url = "https://api.coingecko.com/api/v3/simple/price"
-        params = {"ids": coin_id, "vs_currencies": "usd"}
-        data = SafeRequest.get(url, params=params)
-        return data[coin_id]['usd'] if data and coin_id in data and 'usd' in data[coin_id] else None
-
+# Fetcher classes are now updated to return a dictionary with price and 24h change
 class KucoinFetcher:
     def fetch_ticker(self, symbol: str, **kwargs):
-        url = "https://api.kucoin.com/api/v1/market/ticker"
-        params = {"symbol": symbol}
-        data = SafeRequest.get(url, params=params)
-        return float(data['data']['price']) if data and 'data' in data and data['data']['price'] else None
-
-class GateioFetcher:
-    def fetch_ticker(self, symbol: str, **kwargs):
-        url = "https://api.gate.io/api/v4/spot/tickers"
-        params = {"currency_pair": symbol}
-        data = SafeRequest.get(url, params=params)
-        return float(data[0]['last']) if data and len(data) > 0 and 'last' in data[0] else None
-
-class OkxFetcher:
-    def fetch_ticker(self, symbol: str, **kwargs):
-        url = "https://www.okx.com/api/v5/market/ticker"
-        params = {"instId": symbol}
-        data = SafeRequest.get(url, params=params)
-        return float(data['data'][0]['last']) if data and 'data' in data and len(data['data']) > 0 and 'last' in data['data'][0] else None
-        
-class MexcFetcher:
-    def __init__(self, api_key: str, **kwargs): self.api_key = api_key
-    def fetch_ticker(self, symbol: str, **kwargs):
-        url = "https://api.mexc.com/api/v3/ticker/price"
-        params = {"symbol": symbol}
-        headers = {'X-MEXC-APIKEY': self.api_key}
-        data = SafeRequest.get(url, params=params, headers=headers)
-        if data is None:
-            print(f"[MEXC] No response for symbol: {symbol}")
-            return None
-        elif 'price' not in data:
-            print(f"[MEXC] Invalid response format for symbol {symbol}: {data}")
-            return None
-        return float(data['price'])
+        data = SafeRequest.get("https://api.kucoin.com/api/v1/market/ticker", params={"symbol": symbol})
+        if data and 'data' in data and data['data']['price']:
+            return {
+                'price': float(data['data']['price']),
+                'change_24h': float(data['data'].get('changeRate', 0)) * 100
+            }
+        return None
 
 class BitfinexFetcher:
     def fetch_ticker(self, symbol: str, **kwargs):
-        if symbol.endswith("USDT"):
-            cleaned_symbol = symbol.replace("USDT", "USD")
-        else:
-            cleaned_symbol = symbol.upper()
-        url = f"https://api-pub.bitfinex.com/v2/ticker/t{cleaned_symbol}"
-        data = SafeRequest.get(url)
-        return float(data[6]) if data and isinstance(data, list) and len(data) >= 7 else None
+        cleaned_symbol = symbol.replace("USDT", "USD").upper()
+        data = SafeRequest.get(f"https://api-pub.bitfinex.com/v2/ticker/t{cleaned_symbol}")
+        if data and isinstance(data, list) and len(data) >= 7:
+            return {
+                'price': float(data[6]),
+                'change_24h': float(data[5]) * 100
+            }
+        return None
+
+class MexcFetcher:
+    def __init__(self, api_key: str, **kwargs): self.api_key = api_key
+    def fetch_ticker(self, symbol: str, **kwargs):
+        data = SafeRequest.get("https://api.mexc.com/api/v3/ticker/24hr", params={"symbol": symbol})
+        if data and 'lastPrice' in data and 'priceChangePercent' in data:
+            # MEXC percent is already multiplied by 100
+            return {
+                'price': float(data['lastPrice']),
+                'change_24h': float(data['priceChangePercent']) * 100
+            }
+        return None
 
 class MultiExchangeFetcher:
     def __init__(self, source: str):
         self.source = source.lower()
         mexc_api_key = os.getenv('MEXC_API_KEY')
-        if self.source == "coingecko": self.fetcher = CoingeckoFetcher()
-        elif self.source == "kucoin": self.fetcher = KucoinFetcher()
-        elif self.source == "gate.io": self.fetcher = GateioFetcher()
-        elif self.source == "okx": self.fetcher = OkxFetcher()
+        if self.source == "kucoin": self.fetcher = KucoinFetcher()
+        elif self.source == "bitfinex": self.fetcher = BitfinexFetcher()
         elif self.source == "mexc":
             if not mexc_api_key: raise ValueError("MEXC API key not set.")
             self.fetcher = MexcFetcher(api_key=mexc_api_key)
-        elif self.source == "bitfinex": self.fetcher = BitfinexFetcher()
         else: raise ValueError(f"Unknown exchange source: {self.source}")
 
     def fetch_ticker(self, **kwargs):
         return self.fetcher.fetch_ticker(**kwargs)
 
-def fetch_all_tickers_concurrently(sources: List[str], symbol_map: Dict[str, Dict[str, str]]) -> Dict[str, Dict[str, float]]:
+def fetch_all_tickers_concurrently(sources: List[str], symbol_map: Dict[str, Dict[str, str]]) -> Dict[str, Dict[str, dict]]:
     results = {}
     tasks = []
     for coin, mapping in symbol_map.items():
@@ -111,21 +80,16 @@ def fetch_all_tickers_concurrently(sources: List[str], symbol_map: Dict[str, Dic
     def _fetch_one(task):
         try:
             fetcher = MultiExchangeFetcher(task['source'])
-            if task['source'] == 'coingecko':
-                kwargs = {'coin_id': task['symbol']}
-            else:
-                kwargs = {'symbol': task['symbol']}
-            price = fetcher.fetch_ticker(**kwargs)
-            return task['coin'], task['source'], price
+            data = fetcher.fetch_ticker(symbol=task['symbol'])
+            return task['coin'], task['source'], data
         except Exception as e:
             print(f"[{task['coin']} @ {task['source']}] Fetch failed: {e}")
             return task['coin'], task['source'], None
 
-    max_threads = min(multiprocessing.cpu_count() * 2, len(tasks), 20)
-    with ThreadPoolExecutor(max_workers=max_threads) as executor:
+    with ThreadPoolExecutor(max_workers=len(tasks)) as executor:
         future_to_task = {executor.submit(_fetch_one, task): task for task in tasks}
         for future in as_completed(future_to_task):
-            coin, source, price = future.result()
-            if price is not None:
-                results[coin][source] = price
+            coin, source, data = future.result()
+            if data is not None:
+                results[coin][source] = data
     return results
