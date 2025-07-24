@@ -2,7 +2,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 
 // ===================================================================
-// توابع کمکی
+// Helper Functions
 // ===================================================================
 const formatLargeNumber = (num) => {
   if (!num || num === 0) return 'N/A';
@@ -21,7 +21,7 @@ const capitalize = (s) => {
 };
 
 // ===================================================================
-// کامپوننت‌های زنده و فعال
+// Live Data Components
 // ===================================================================
 function SystemStatus() {
     const [statuses, setStatuses] = useState([]);
@@ -109,9 +109,9 @@ function PriceTicker() {
                     const changeClass = change >= 0 ? 'text-green-400' : 'text-red-400';
                     const changePrefix = change >= 0 ? '+' : '';
                     return (
-                        <div key={coin} className="bg-gray-800/30 backdrop-blur-lg rounded-lg p-3 flex justify-between items-center border border-yellow-500/10">
+                        <div key={p.symbol} className="bg-gray-800/30 backdrop-blur-lg rounded-lg p-3 flex justify-between items-center border border-yellow-500/10">
                             <div>
-                                <p className="font-bold text-white">{coin}/USDT</p>
+                                <p className="font-bold text-white">{p.symbol || `${coin}/USDT`}</p>
                                 <p className="text-xs text-gray-500">{capitalize(p.source)}</p>
                             </div>
                             <div>
@@ -127,23 +127,28 @@ function PriceTicker() {
 }
 
 // ===================================================================
-// کامپوننت‌های جدید با داده‌های نمونه
+// New UI Components with Sample Data
 // ===================================================================
 const SignalCard = ({ signal }) => {
     const colors = { buy: { border: 'border-green-500/50', text: 'text-green-400', bg: 'bg-green-500/10' }, sell: { border: 'border-red-500/50', text: 'text-red-400', bg: 'bg-red-500/10' }};
-    const color = colors[signal.type] || { border: 'border-yellow-500/50', text: 'text-yellow-400', bg: 'bg-yellow-500/10' };
+    const color = colors[signal.type.toLowerCase()] || { border: 'border-yellow-500/50', text: 'text-yellow-400', bg: 'bg-yellow-500/10' };
     return (
-        <div className={`rounded-xl p-4 border ${color.border} ${color.bg}`}>
+        <div className={`rounded-xl p-4 border ${color.border} ${color.bg} space-y-3`}>
             <div className="flex justify-between items-center pb-3 border-b border-gray-700/50">
                 <span className="font-bold text-xl text-white">{signal.symbol}</span>
                 <span className={`font-bold text-xl ${color.text}`}>{signal.type.toUpperCase()}</span>
                 <span className="text-sm text-gray-400">{signal.timeframe}</span>
             </div>
-            <div className="grid grid-cols-2 gap-x-4 gap-y-3 pt-3 text-sm">
+            <div className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
                 <div><p className="text-gray-400">Entry Zone</p><p className="font-mono text-white">{signal.entry}</p></div>
                 <div className="text-right"><p className="text-gray-400">Stop-Loss</p><p className="font-mono text-red-400">{signal.sl}</p></div>
                 <div><p className="text-gray-400">Targets</p><div className="flex flex-wrap gap-x-3">{signal.targets.map(t => <span key={t} className="text-green-400 font-mono">{t}</span>)}</div></div>
                 <div className="text-right"><p className="text-gray-400">Accuracy</p><p className="font-mono text-white">{signal.accuracy}</p></div>
+                <div><p className="text-gray-400">Support</p><div className="flex flex-wrap gap-x-3">{signal.support.map(s => <span key={s} className="text-white font-mono">{s}</span>)}</div></div>
+                <div className="text-right"><p className="text-gray-400">Resistance</p><div className="flex flex-wrap gap-x-3 justify-end">{signal.resistance.map(r => <span key={r} className="text-white font-mono">{r}</span>)}</div></div>
+            </div>
+            <div className="pt-3 border-t border-gray-700/50 text-xs space-y-1">
+                <p className="text-gray-400">Reasons: <span className="text-gray-200">{signal.reasons.join(', ')}</span></p>
             </div>
             <div className="pt-3 mt-3 border-t border-gray-700/50 flex justify-between items-center">
                 <div className="text-xs text-gray-400">Confidence: <span className="font-bold text-white">{signal.confidence}%</span> | AI Score: <span className="font-bold text-white">{signal.ai_score}%</span></div>
@@ -154,7 +159,7 @@ const SignalCard = ({ signal }) => {
 };
 
 const Signals = () => {
-    const sampleSignals = [ { type: 'sell', symbol: 'ETH/USDT', timeframe: '1h', entry: '3550-3560', sl: '3600', targets: ['3500','3450'], confidence: 92, ai_score: 90, accuracy: "81%" }, { type: 'buy', symbol: 'BTC/USDT', timeframe: '4h', entry: '68k-68.2k', sl: '67.5k', targets: ['69k','70k','71k'], confidence: 85, ai_score: 88, accuracy: "78%" } ];
+    const sampleSignals = [ { type: 'sell', symbol: 'ETH/USDT', timeframe: '1h', entry: '3550-3560', sl: '3600', targets: ['3500','3450'], confidence: 92, ai_score: 90, reasons: ['Bearish MACD Cross', 'Resistance Level Hit'], accuracy: "81%", support: ['3510', '3480'], resistance: ['3580', '3600'] }, { type: 'buy', symbol: 'BTC/USDT', timeframe: '4h', entry: '68k-68.2k', sl: '67.5k', targets: ['69k','70k','71k'], confidence: 85, ai_score: 88, reasons: ['Bullish Engulfing', 'RSI Divergence'], accuracy: "78%", support: ['67.8k', '67.2k'], resistance: ['69.1k', '70k'] } ];
     return (
         <section className="bg-gray-800/30 backdrop-blur-lg rounded-xl p-4 border border-yellow-500/20">
             <div className="flex justify-between items-center mb-3">
@@ -202,7 +207,7 @@ const ActiveTrades = () => {
 };
 
 const AiChat = () => {
-    const messages = [{ sender: 'ai', text: 'Good morning! Bitcoin is showing strong bullish divergence on the 4h chart.' }, { sender: 'ai', text: 'A new BUY signal for ETH/USDT has been generated. Confidence: 92%.' }];
+    const messages = [{ sender: 'ai', text: 'Good morning! BTC is showing strong bullish divergence.' }, { sender: 'user', text: 'Give me a detailed analysis for SOL/USDT.' }];
     return (
         <section className="bg-gray-800/30 backdrop-blur-lg rounded-xl p-4 border border-yellow-500/20">
             <h3 className="text-yellow-500 font-bold text-lg mb-3">AI Chat</h3>
@@ -216,7 +221,7 @@ const ComprehensiveAnalysis = () => {
     return (
         <section className="bg-gray-800/30 backdrop-blur-lg rounded-xl p-4 border border-yellow-500/20">
             <h3 className="text-yellow-500 font-bold text-lg mb-3">Comprehensive Analysis</h3>
-            <div className="flex gap-4 mb-4"><select className="flex-grow bg-black/30 border border-gray-700 rounded-lg p-2 text-sm w-1/2"><option>BTC/USDT</option><option>ETH/USDT</option></select><select className="flex-grow bg-black/30 border border-gray-700 rounded-lg p-2 text-sm w-1/2"><option>1h</option><option>4h</option></select></div>
+            <div className="flex gap-4 mb-4"><select className="flex-grow bg-black/30 border border-gray-700 rounded-lg p-2 text-sm w-1/2"><option>BTC/USDT</option></select><select className="flex-grow bg-black/30 border border-gray-700 rounded-lg p-2 text-sm w-1/2"><option>1h</option></select></div>
             <div className="text-sm text-gray-400">Analysis details will be shown here...</div>
         </section>
     );
@@ -231,7 +236,6 @@ const SystemHealth = () => {
         </section>
     );
 };
-
 
 // ===================================================================
 // کامپوننت اصلی صفحه
