@@ -13,4 +13,6 @@ shap
 ta
 django-cors-headers
 python-dotenv
+numpy
+mplfinance
 
