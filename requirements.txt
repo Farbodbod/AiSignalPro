@@ -12,4 +12,5 @@ xgboost
 shap
 ta
 django-cors-headers
-django-cors-headers
+python-dotenv
+
