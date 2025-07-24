@@ -126,9 +126,6 @@ function PriceTicker() {
     );
 }
 
-// ===================================================================
-// New UI Components with Sample Data
-// ===================================================================
 const SignalCard = ({ signal }) => {
     const colors = { buy: { border: 'border-green-500/50', text: 'text-green-400', bg: 'bg-green-500/10' }, sell: { border: 'border-red-500/50', text: 'text-red-400', bg: 'bg-red-500/10' }};
     const color = colors[signal.type.toLowerCase()] || { border: 'border-yellow-500/50', text: 'text-yellow-400', bg: 'bg-yellow-500/10' };
@@ -158,15 +155,24 @@ const SignalCard = ({ signal }) => {
     );
 };
 
+// ===================================================================
+// Signals Component - With Scrolling Fix
+// ===================================================================
 const Signals = () => {
-    const sampleSignals = [ { type: 'sell', symbol: 'ETH/USDT', timeframe: '1h', entry: '3550-3560', sl: '3600', targets: ['3500','3450'], confidence: 92, ai_score: 90, reasons: ['Bearish MACD Cross', 'Resistance Level Hit'], accuracy: "81%", support: ['3510', '3480'], resistance: ['3580', '3600'] }, { type: 'buy', symbol: 'BTC/USDT', timeframe: '4h', entry: '68k-68.2k', sl: '67.5k', targets: ['69k','70k','71k'], confidence: 85, ai_score: 88, reasons: ['Bullish Engulfing', 'RSI Divergence'], accuracy: "78%", support: ['67.8k', '67.2k'], resistance: ['69.1k', '70k'] } ];
+    const sampleSignals = [ 
+        { type: 'sell', symbol: 'ETH/USDT', timeframe: '1h', entry: '3550-3560', sl: '3600', targets: ['3500','3450'], confidence: 92, ai_score: 90, reasons: ['Bearish MACD Cross', 'Resistance Level Hit'], accuracy: "81%", support: ['3510', '3480'], resistance: ['3580', '3600'] }, 
+        { type: 'buy', symbol: 'BTC/USDT', timeframe: '4h', entry: '68k-68.2k', sl: '67.5k', targets: ['69k','70k','71k'], confidence: 85, ai_score: 88, reasons: ['Bullish Engulfing', 'RSI Divergence'], accuracy: "78%", support: ['67.8k', '67.2k'], resistance: ['69.1k', '70k'] } 
+    ];
     return (
         <section className="bg-gray-800/30 backdrop-blur-lg rounded-xl p-4 border border-yellow-500/20">
             <div className="flex justify-between items-center mb-3">
                 <h3 className="text-yellow-500 font-bold text-lg">Signals</h3>
                 <button className="bg-gray-700/50 text-yellow-400 text-xs font-bold py-1 px-3 rounded hover:bg-gray-700">Generate Manual</button>
             </div>
-            <div className="space-y-4">{sampleSignals.map((sig, i) => <SignalCard key={i} signal={sig} />)}</div>
+            {/* ***** CHANGE IS HERE ***** */}
+            <div className="space-y-4 max-h-96 overflow-y-auto pr-2">
+                {sampleSignals.map((sig, i) => <SignalCard key={i} signal={sig} />)}
+            </div>
         </section>
     );
 };
@@ -238,7 +244,7 @@ const SystemHealth = () => {
 };
 
 // ===================================================================
-// کامپوننت اصلی صفحه
+// Main Page Component
 // ===================================================================
 export default function Home() {
     return (
