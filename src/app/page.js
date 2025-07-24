@@ -1,51 +1,90 @@
 'use client';
 import { useState, useEffect, useRef } from 'react';
 
-// توابع کمکی (بدون تغییر)
+// ===================================================================
+// توابع کمکی
+// ===================================================================
 const formatLargeNumber = (num) => {
-  if (!num) return 'N/A';
+  if (num === null || num === undefined || num === 0) return 'N/A';
   if (num >= 1e12) return `$${(num / 1e12).toFixed(2)}T`;
   if (num >= 1e9) return `$${(num / 1e9).toFixed(2)}B`;
-  return `$${(num / 1e6).toFixed(2)}M`;
+  if (num >= 1e6) return `$${(num / 1e6).toFixed(2)}M`;
+  return `$${num.toLocaleString()}`;
 };
+
 const formatPrice = (price) => {
     if (price === null || price === undefined) return 'N/A';
-    const options = { minimumFractionDigits: 2, maximumFractionDigits: price < 10 ? 4 : 2 };
+    const options = {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: price < 10 ? 4 : 2,
+    };
     return price.toLocaleString('en-US', options);
 };
+
+// ===================================================================
+// کامپوننت‌های کمکی برای نمایش لودینگ و خطا
+// ===================================================================
+const ErrorDisplay = ({ componentName, error }) => (
+    <section className="bg-red-800/40 text-red-200 p-3 rounded-lg border border-red-500/50">
+        <h3 className="font-bold text-white">Error in {componentName}:</h3>
+        <p className="font-mono text-sm mt-2 break-words">{error.toString()}</p>
+    </section>
+);
+
+const StatusSkeleton = () => (
+    <section className="bg-gray-800/30 backdrop-blur-lg rounded-xl p-4 border border-yellow-500/20 min-h-[72px] animate-pulse">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-2 text-center">
+            {[...Array(5)].map((_, i) => <div key={i} className="h-12 bg-gray-700/50 rounded-lg"></div>)}
+        </div>
+    </section>
+);
+const MarketSkeleton = () => (
+    <section className="bg-gray-800/30 backdrop-blur-lg rounded-xl p-4 border border-yellow-500/20 h-[96px] animate-pulse">
+        <div className="grid grid-cols-4 gap-4">
+            {[...Array(4)].map((_, i) => <div key={i} className="h-10 bg-gray-700/50 rounded-lg"></div>)}
+        </div>
+    </section>
+);
+const TickerSkeleton = () => (
+    <section className="min-h-[250px] animate-pulse">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {[...Array(4)].map((_, i) => <div key={i} className="h-16 bg-gray-700/50 rounded-lg"></div>)}
+        </div>
+    </section>
+);
+
 
 // ===================================================================
 // کامپوننت ۱: وضعیت سیستم
 // ===================================================================
 function SystemStatus() {
     const [statuses, setStatuses] = useState([]);
+    const [error, setError] = useState(null);
     const [isLoading, setIsLoading] = useState(true);
+
     useEffect(() => {
         const fetchStatuses = async () => {
             try {
-                const response = await fetch('https://aisignalpro-production.up.railway.app/api/status/', {
-                    headers: { 'Cache-Control': 'no-cache', 'Accept': 'application/json' }
-                });
-                if (!response.ok) throw new Error("Network response was not ok");
+                const response = await fetch('https://aisignalpro-production.up.railway.app/api/status/', { headers: { 'Accept': 'application/json' } });
+                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
                 const data = await response.json();
                 setStatuses(data);
-            } catch (error) { console.error("Failed to fetch statuses:", error); } 
-            finally { setIsLoading(false); }
+                setError(null);
+            } catch (e) {
+                console.error("Failed to fetch statuses:", e);
+                setError(e);
+            } finally {
+                setIsLoading(false);
+            }
         };
         fetchStatuses();
         const intervalId = setInterval(fetchStatuses, 30000);
         return () => clearInterval(intervalId);
     }, []);
 
-    if (isLoading) {
-        return (
-            <section className="bg-gray-800/30 backdrop-blur-lg rounded-xl p-4 border border-yellow-500/20 min-h-[96px] animate-pulse">
-                <div className="grid grid-cols-2 md:grid-cols-5 gap-2 text-center">
-                    {[...Array(5)].map((_, i) => <div key={i} className="h-12 bg-gray-700/50 rounded-lg"></div>)}
-                </div>
-            </section>
-        );
-    }
+    if (isLoading) return <StatusSkeleton />;
+    if (error) return <ErrorDisplay componentName="System Status" error={error} />;
+    
     return (
         <section>
             <div className="grid grid-cols-2 md:grid-cols-5 gap-2 text-center">
@@ -58,7 +97,7 @@ function SystemStatus() {
                         </div>
                     </div>
                 ))}
-                <div className="bg-yellow-500/80 text-black p-2 rounded-lg text-sm font-bold flex items-center justify-center cursor-pointer hover:bg-yellow-500 col-span-2 md:col-span-1">Test All</div>
+                 <div className="bg-yellow-500/80 text-black p-2 rounded-lg text-sm font-bold flex items-center justify-center cursor-pointer hover:bg-yellow-500 col-span-2 md:col-span-1">Test All</div>
             </div>
         </section>
     );
@@ -69,33 +108,37 @@ function SystemStatus() {
 // ===================================================================
 function MarketOverview() {
     const [marketData, setMarketData] = useState(null);
+    const [error, setError] = useState(null);
+    const [isLoading, setIsLoading] = useState(true);
+    
     useEffect(() => {
         const fetchMarketData = async () => {
             try {
-                const response = await fetch('https://aisignalpro-production.up.railway.app/api/market-overview/', {
-                    headers: { 'Cache-Control': 'no-cache', 'Accept': 'application/json' }
-                });
-                if (!response.ok) throw new Error("Network response was not ok");
+                const response = await fetch('https://aisignalpro-production.up.railway.app/api/market-overview/', { headers: { 'Accept': 'application/json' } });
+                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
                 const data = await response.json();
                 if (data && data.market_cap && data.market_cap !== 'N/A') {
                     setMarketData(data);
+                    setError(null);
+                } else {
+                    // This handles cases where the API returns a valid response with "N/A"
+                    throw new Error("Received N/A from API. One of the external sources may be down.");
                 }
-            } catch (error) { console.error("Failed to fetch market data:", error); }
+            } catch (e) {
+                console.error("Failed to fetch market data:", e);
+                setError(e);
+            } finally {
+                setIsLoading(false);
+            }
         };
         fetchMarketData();
         const intervalId = setInterval(fetchMarketData, 30000);
         return () => clearInterval(intervalId);
     }, []);
+    
+    if (isLoading) return <MarketSkeleton />;
+    if (error && !marketData) return <ErrorDisplay componentName="Market Overview" error={error} />;
 
-    if (!marketData) {
-        return (
-            <section className="bg-gray-800/30 backdrop-blur-lg rounded-xl p-4 border border-yellow-500/20 h-[96px] animate-pulse">
-                <div className="grid grid-cols-4 gap-4">
-                    {[...Array(4)].map((_, i) => <div key={i} className="h-10 bg-gray-700/50 rounded-lg"></div>)}
-                </div>
-            </section>
-        );
-    }
     return (
         <section className="bg-gray-800/30 backdrop-blur-lg rounded-xl p-4 border border-yellow-500/20">
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -113,31 +156,26 @@ function MarketOverview() {
 // ===================================================================
 function PriceTicker() {
     const [livePrices, setLivePrices] = useState({});
-    const [lastUpdated, setLastUpdated] = useState(null);
+    const [error, setError] = useState(null);
+    const [isLoading, setIsLoading] = useState(true);
     const previousPricesRef = useRef({});
 
     useEffect(() => {
         const fetchPrices = async () => {
             try {
-                const response = await fetch('https://aisignalpro-production.up.railway.app/api/data/all/', {
-                    headers: { 'Cache-Control': 'no-cache', 'Accept': 'application/json' }
-                });
-                if (!response.ok) throw new Error("Network response was not ok");
+                const response = await fetch('https://aisignalpro-production.up.railway.app/api/data/all/', { headers: { 'Accept': 'application/json' } });
+                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
                 const data = await response.json();
+                if (!data || typeof data !== 'object') throw new Error("Invalid data format from API.");
                 
-                if (!data || typeof data !== 'object') return;
-
                 const coinsToDisplay = ['BTC', 'ETH', 'XRP', 'SOL', 'DOGE'];
                 const formattedPrices = {};
-                let pricesUpdated = false;
-
                 for (const coin of coinsToDisplay) {
                     if (data[coin] && Object.keys(data[coin]).length > 0) {
                         const source = Object.keys(data[coin])[0];
                         const price = data[coin][source];
-                        
                         const oldPrice = previousPricesRef.current[coin] || price;
-                        const changePercent = oldPrice && price ? ((price - oldPrice) / oldPrice * 100).toFixed(2) : '0.00';
+                        const changePercent = oldPrice ? ((price - oldPrice) / oldPrice * 100).toFixed(2) : '0.00';
 
                         formattedPrices[coin] = {
                             symbol: `${coin}/USDT`,
@@ -145,18 +183,22 @@ function PriceTicker() {
                             change: `${parseFloat(changePercent) >= 0 ? '+' : ''}${changePercent}%`,
                             source: source.charAt(0).toUpperCase() + source.slice(1),
                         };
-                        pricesUpdated = true;
                     }
                 }
-                if (pricesUpdated) {
+                if (Object.keys(formattedPrices).length > 0) {
                     setLivePrices(formattedPrices);
                     previousPricesRef.current = Object.keys(formattedPrices).reduce((acc, coin) => {
                         acc[coin] = formattedPrices[coin].price;
                         return acc;
                     }, {});
-                    setLastUpdated(new Date());
                 }
-            } catch (error) { console.error("Failed to fetch live prices:", error); }
+                setError(null);
+            } catch (e) {
+                console.error("Failed to fetch live prices:", e);
+                setError(e);
+            } finally {
+                setIsLoading(false);
+            }
         };
         
         fetchPrices();
@@ -164,15 +206,9 @@ function PriceTicker() {
         return () => clearInterval(intervalId);
     }, []);
 
-    if (Object.keys(livePrices).length === 0) {
-        return (
-            <section className="min-h-[250px] animate-pulse">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {[...Array(4)].map((_, i) => <div key={i} className="h-16 bg-gray-700/50 rounded-lg"></div>)}
-                </div>
-            </section>
-        );
-    }
+    if (isLoading) return <TickerSkeleton />;
+    if (error) return <ErrorDisplay componentName="Price Ticker" error={error} />;
+
     return (
         <section>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -180,7 +216,7 @@ function PriceTicker() {
                     const p = livePrices[coin];
                     if (!p) return null;
                     return (
-                        <div key={`${p.symbol}-${p.source}`} className="bg-gray-800/30 backdrop-blur-lg rounded-lg p-3 flex justify-between items-center border border-yellow-500/10">
+                        <div key={p.symbol} className="bg-gray-800/30 backdrop-blur-lg rounded-lg p-3 flex justify-between items-center border border-yellow-500/10">
                             <div><p className="font-bold text-white">{p.symbol}</p><p className="text-xs text-gray-500">{p.source}</p></div>
                             <div>
                                 <p className="font-semibold text-lg text-yellow-500 text-right">${formatPrice(p.price)}</p>
@@ -190,7 +226,6 @@ function PriceTicker() {
                     );
                 })}
             </div>
-            {lastUpdated && <p className="text-xs text-gray-600 text-center mt-4">Last updated: {lastUpdated.toLocaleTimeString()}</p>}
         </section>
     );
 }
