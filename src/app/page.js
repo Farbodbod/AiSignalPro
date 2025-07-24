@@ -1,50 +1,36 @@
 'use client';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 
 // ===================================================================
-// توابع کمکی
+// توابع کمکی (Helper Functions)
 // ===================================================================
 const formatLargeNumber = (num) => {
-  if (num === null || num === undefined || num === 0) return 'N/A';
+  if (!num || num === 0) return 'N/A';
   if (num >= 1e12) return `$${(num / 1e12).toFixed(2)}T`;
   if (num >= 1e9) return `$${(num / 1e9).toFixed(2)}B`;
-  if (num >= 1e6) return `$${(num / 1e6).toFixed(2)}M`;
-  return `$${num.toLocaleString()}`;
+  return `$${(num / 1e6).toFixed(2)}M`;
 };
-
 const formatPrice = (price) => {
     if (price === null || price === undefined) return 'N/A';
-    const options = {
-        minimumFractionDigits: 2,
-        maximumFractionDigits: price < 10 ? 4 : 2,
-    };
+    const options = { minimumFractionDigits: 2, maximumFractionDigits: price < 10 ? 4 : 2 };
     return price.toLocaleString('en-US', options);
+};
+const capitalize = (s) => {
+    if (typeof s !== 'string' || s.length === 0) return '';
+    return s.charAt(0).toUpperCase() + s.slice(1);
 };
 
 // ===================================================================
-// کامپوننت‌های کمکی برای نمایش لودینگ
+// کامپوننت‌های کمکی برای نمایش لودینگ و خطا
 // ===================================================================
-const StatusSkeleton = () => (
-    <section className="bg-gray-800/30 backdrop-blur-lg rounded-xl p-4 border border-yellow-500/20 min-h-[72px] animate-pulse">
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-2 text-center">
-            {[...Array(5)].map((_, i) => <div key={i} className="h-12 bg-gray-700/50 rounded-lg"></div>)}
-        </div>
-    </section>
+const ErrorDisplay = ({ componentName }) => (
+    <div className="bg-red-800/40 text-red-300 p-3 rounded-lg border border-red-500/50 text-center text-xs">
+        Failed to load {componentName} data.
+    </div>
 );
-const MarketSkeleton = () => (
-    <section className="bg-gray-800/30 backdrop-blur-lg rounded-xl p-4 border border-yellow-500/20 h-[96px] animate-pulse">
-        <div className="grid grid-cols-4 gap-4">
-            {[...Array(4)].map((_, i) => <div key={i} className="h-10 bg-gray-700/50 rounded-lg"></div>)}
-        </div>
-    </section>
-);
-const TickerSkeleton = () => (
-    <section className="min-h-[250px] animate-pulse">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {[...Array(4)].map((_, i) => <div key={i} className="h-16 bg-gray-700/50 rounded-lg"></div>)}
-        </div>
-    </section>
-);
+const StatusSkeleton = () => <section className="bg-gray-800/30 rounded-xl p-4 min-h-[72px] animate-pulse"><div className="grid grid-cols-5 gap-2"><div className="h-12 col-span-2 bg-gray-700/50 rounded-lg"></div><div className="h-12 bg-gray-700/50 rounded-lg"></div><div className="h-12 bg-gray-700/50 rounded-lg"></div><div className="h-12 bg-gray-700/50 rounded-lg"></div></div></section>;
+const MarketSkeleton = () => <section className="bg-gray-800/30 rounded-xl p-4 h-[96px] animate-pulse"><div className="grid grid-cols-4 gap-4">{[...Array(4)].map((_, i) => <div key={i} className="h-10 bg-gray-700/50 rounded-lg"></div>)}</div></section>;
+const TickerSkeleton = () => <section className="min-h-[250px] animate-pulse"><div className="grid grid-cols-1 md:grid-cols-2 gap-4">{[...Array(5)].map((_, i) => <div key={i} className="h-16 bg-gray-700/50 rounded-lg"></div>)}</div></section>;
 
 
 // ===================================================================
@@ -53,26 +39,42 @@ const TickerSkeleton = () => (
 function SystemStatus() {
     const [statuses, setStatuses] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
-    useEffect(() => {
-        const fetchStatuses = async () => {
-            try {
-                const response = await fetch('https://aisignalpro-production.up.railway.app/api/status/');
-                if (!response.ok) throw new Error("Network response was not ok");
-                const data = await response.json();
+    const [error, setError] = useState(false);
+
+    const fetchStatuses = useCallback(async (isMounted) => {
+        try {
+            const response = await fetch('https://aisignalpro-production.up.railway.app/api/status/', {
+                headers: { 'Cache-Control': 'no-cache', 'Accept': 'application/json' }
+            });
+            if (!response.ok) throw new Error("Network response was not ok");
+            let data;
+            try { data = await response.json(); } 
+            catch (e) { throw new Error("Invalid JSON response"); }
+
+            if (isMounted) {
                 setStatuses(data);
-            } catch (error) {
-                console.error("Failed to fetch statuses:", error);
-                setStatuses([]);
-            } finally {
-                setIsLoading(false);
+                setError(false);
             }
-        };
-        fetchStatuses();
-        const intervalId = setInterval(fetchStatuses, 30000);
-        return () => clearInterval(intervalId);
+        } catch (err) {
+            console.error("Failed to fetch statuses:", err);
+            if (isMounted) setError(true);
+        } finally {
+            if (isMounted) setIsLoading(false);
+        }
     }, []);
 
+    useEffect(() => {
+        let isMounted = true;
+        fetchStatuses(isMounted);
+        const intervalId = setInterval(() => fetchStatuses(isMounted), 30000);
+        return () => {
+            isMounted = false;
+            clearInterval(intervalId);
+        };
+    }, [fetchStatuses]);
+
     if (isLoading) { return <StatusSkeleton />; }
+    if (error) { return <ErrorDisplay componentName="System Status" />; }
     
     return (
         <section>
@@ -86,7 +88,7 @@ function SystemStatus() {
                         </div>
                     </div>
                 ))}
-                <div className="bg-yellow-500/80 text-black p-2 rounded-lg text-sm font-bold flex items-center justify-center cursor-pointer hover:bg-yellow-500 col-span-2 md:col-span-1">Test All</div>
+                <button onClick={() => fetchStatuses(true)} className="bg-yellow-500/80 text-black p-2 rounded-lg text-sm font-bold flex items-center justify-center cursor-pointer hover:bg-yellow-500 col-span-2 md:col-span-1">Test All</button>
             </div>
         </section>
     );
@@ -98,12 +100,18 @@ function SystemStatus() {
 function MarketOverview() {
     const [marketData, setMarketData] = useState(null);
     useEffect(() => {
+        let isMounted = true;
         const fetchMarketData = async () => {
             try {
-                const response = await fetch('https://aisignalpro-production.up.railway.app/api/market-overview/');
+                const response = await fetch('https://aisignalpro-production.up.railway.app/api/market-overview/', {
+                    headers: { 'Cache-Control': 'no-cache', 'Accept': 'application/json' }
+                });
                 if (!response.ok) throw new Error("Network response was not ok");
-                const data = await response.json();
-                if (data && data.market_cap && data.market_cap !== 0) {
+                let data;
+                try { data = await response.json(); }
+                catch (e) { throw new Error("Invalid JSON response"); }
+                
+                if (isMounted && data && data.market_cap && data.market_cap !== 'N/A') {
                     setMarketData(data);
                 }
             } catch (error) {
@@ -112,7 +120,7 @@ function MarketOverview() {
         };
         fetchMarketData();
         const intervalId = setInterval(fetchMarketData, 30000);
-        return () => clearInterval(intervalId);
+        return () => { isMounted = false; clearInterval(intervalId); };
     }, []);
 
     if (!marketData) { return <MarketSkeleton />; }
@@ -134,56 +142,61 @@ function MarketOverview() {
 // ===================================================================
 function PriceTicker() {
     const [livePrices, setLivePrices] = useState({});
-    const [isLoading, setIsLoading] = useState(true);
-
+    const [lastUpdated, setLastUpdated] = useState(null);
     useEffect(() => {
+        let isMounted = true;
         const fetchPrices = async () => {
             try {
-                const response = await fetch('https://aisignalpro-production.up.railway.app/api/data/all/');
+                const response = await fetch('https://aisignalpro-production.up.railway.app/api/data/all/', {
+                    headers: { 'Cache-Control': 'no-cache', 'Accept': 'application/json' }
+                });
                 if (!response.ok) throw new Error("Network response was not ok");
-                const data = await response.json();
-                if (data && typeof data === 'object') {
+                let data;
+                try { data = await response.json(); }
+                catch (e) { throw new Error("Invalid JSON response"); }
+                
+                if (isMounted && data && typeof data === 'object') {
                     setLivePrices(data);
+                    setLastUpdated(new Date());
                 }
             } catch (error) {
                 console.error("Failed to fetch live prices:", error);
-            } finally {
-                setIsLoading(false);
             }
         };
         
         fetchPrices();
         const intervalId = setInterval(fetchPrices, 10000);
-        return () => clearInterval(intervalId);
+        return () => { isMounted = false; clearInterval(intervalId); };
     }, []);
 
-    if (isLoading) { return <TickerSkeleton />; }
+    const coinsToRender = useMemo(() => ['BTC', 'ETH', 'XRP', 'SOL', 'DOGE'].map(coin => {
+        const p = livePrices[coin];
+        if (!p) return null;
+        const change = p.change_24h || 0;
+        const changeClass = change >= 0 ? 'text-green-400' : 'text-red-400';
+        const changePrefix = change >= 0 ? '+' : '';
+        return (
+            <div key={`${coin}-${p.source}`} className="bg-gray-800/30 backdrop-blur-lg rounded-lg p-3 flex justify-between items-center border border-yellow-500/10">
+                <div>
+                    <p className="font-bold text-white">{coin}/USDT</p>
+                    <p className="text-xs text-gray-500">{capitalize(p.source)}</p>
+                </div>
+                <div>
+                    <p className="font-semibold text-lg text-yellow-500 text-right">${formatPrice(p.price)}</p>
+                    <p className={`text-xs text-right ${changeClass}`}>{changePrefix}{change.toFixed(2)}%</p>
+                </div>
+            </div>
+        );
+    }), [livePrices]);
+
+    if (Object.keys(livePrices).length === 0) { return <TickerSkeleton />; }
     
     return (
         <section>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {['BTC', 'ETH', 'XRP', 'SOL', 'DOGE'].map(coin => {
-                    const p = livePrices[coin];
-                    if (!p) return null;
-                    
-                    const change = p.change_24h || 0;
-                    const changeClass = change >= 0 ? 'text-green-400' : 'text-red-400';
-                    const changePrefix = change >= 0 ? '+' : '';
-
-                    return (
-                        <div key={coin} className="bg-gray-800/30 backdrop-blur-lg rounded-lg p-3 flex justify-between items-center border border-yellow-500/10">
-                            <div>
-                                <p className="font-bold text-white">{coin}/USDT</p>
-                                <p className="text-xs text-gray-500">{p.source ? p.source.charAt(0).toUpperCase() + p.source.slice(1) : ''}</p>
-                            </div>
-                            <div>
-                                <p className="font-semibold text-lg text-yellow-500 text-right">${formatPrice(p.price)}</p>
-                                <p className={`text-xs text-right ${changeClass}`}>{changePrefix}{change.toFixed(2)}%</p>
-                            </div>
-                        </div>
-                    );
-                })}
+                {coinsToRender}
             </div>
+            {lastUpdated && <p className="text-xs text-gray-600 text-center mt-4">Last updated: {lastUpdated.toLocaleTimeString()}</p>}
         </section>
     );
 }
