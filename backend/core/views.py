@@ -1,3 +1,4 @@
+from engines.trend_analyzer import multi_tf_analysis
 from engines.market_structure_analyzer import LegPivotAnalyzer
 from engines.indicator_analyzer import calculate_indicators
 from django.http import JsonResponse
@@ -184,4 +185,34 @@ def market_structure_view(request):
 
     except Exception as e:
         logger.error(f"Error in market_structure_view: {e}\n{traceback.format_exc()}")
+        return JsonResponse({'error': str(e)}, status=500)
+
+def trend_analysis_view(request):
+    source = request.GET.get('source', 'kucoin').lower()
+    symbol = request.GET.get('symbol', 'BTC-USDT').upper()
+    timeframes = ['1h', '4h', '1d'] # تایم فریم‌های مورد نظر برای تحلیل
+
+    try:
+        fetcher = ExchangeFetcher()
+        tf_data = {}
+        # دریافت داده برای هر تایم فریم
+        for tf in timeframes:
+            kline_data = fetcher.get_klines(source=source, symbol=symbol, interval=tf, limit=300)
+            if kline_data:
+                df = pd.DataFrame(kline_data)
+                for col in ['open', 'high', 'low', 'close', 'volume']:
+                    df[col] = pd.to_numeric(df[col])
+                tf_data[tf] = df
+
+        if not tf_data:
+            return JsonResponse({'error': 'Could not fetch kline data for any timeframe.'}, status=404)
+
+        # اجرای موتور تحلیل روند مولتی-تایم‌فریم
+        # ما فعلا مدل ML نداریم، پس None را پاس می‌دهیم
+        analysis_results = multi_tf_analysis(tf_data, ml_model_path=None)
+
+        return JsonResponse(analysis_results)
+
+    except Exception as e:
+        logger.error(f"Error in trend_analysis_view: {e}\n{traceback.format_exc()}")
         return JsonResponse({'error': str(e)}, status=500)
