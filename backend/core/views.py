@@ -14,14 +14,17 @@ from engines.indicator_analyzer import calculate_indicators
 from engines.market_structure_analyzer import LegPivotAnalyzer
 from engines.trend_analyzer import analyze_trend
 from engines.whale_analyzer import WhaleAnalyzer
-# === این خط فراموش شده بود و اکنون اضافه شده است ===
 from engines.divergence_detector import detect_divergences
-
 
 logger = logging.getLogger(__name__)
 
-# تمام توابع قبلی (system_status_view, market_overview_view, و غیره)
-# در اینجا قرار دارند و بدون تغییر هستند.
+# لیست صرافی‌ها به ترتیب اولویت برای استفاده در تمام تحلیل‌ها
+EXCHANGE_FALLBACK_LIST = ['kucoin', 'mexc', 'okx', 'gateio']
+
+
+# ==========================================================
+# توابع عمومی و وضعیت سیستم (بدون تغییر)
+# ==========================================================
 
 def system_status_view(request):
     exchanges_to_check = [
@@ -102,49 +105,65 @@ def all_data_view(request):
         logger.error(f"Error in all_data_view: {e}\n{traceback.format_exc()}")
         return JsonResponse({'error': 'Internal server error'}, status=500)
 
+
+# ==========================================================
+# تابع کمکی برای دریافت داده با منطق فال‌بک
+# ==========================================================
+
+def _get_data_with_fallback(fetcher, symbol, interval, limit, min_length):
+    """
+    تابع کمکی برای دریافت داده با تلاش روی چند صرافی.
+    """
+    for source in EXCHANGE_FALLBACK_LIST:
+        logger.info(f"Attempting to fetch data from {source} for {symbol}...")
+        kline_data = fetcher.get_klines(source=source, symbol=symbol, interval=interval, limit=limit)
+        if kline_data and len(kline_data) >= min_length:
+            logger.info(f"Successfully fetched {len(kline_data)} candles from {source}.")
+            return pd.DataFrame(kline_data), source
+    return None, None
+
+
+# ==========================================================
+# توابع تحلیل با منطق فال‌بک (Fallback) هوشمند
+# ==========================================================
+
 def candlestick_analysis_view(request):
-    source = request.GET.get('source', 'kucoin').lower()
     symbol = request.GET.get('symbol', 'BTC-USDT').upper()
     interval = request.GET.get('interval', '1h').lower()
     try:
         fetcher = ExchangeFetcher()
-        kline_data = fetcher.get_klines(source=source, symbol=symbol, interval=interval, limit=100)
-        if not kline_data or len(kline_data) < 50:
-            return JsonResponse({'error': f'Not enough kline data from {source} for candlestick analysis.'}, status=404)
+        df, source = _get_data_with_fallback(fetcher, symbol, interval, limit=100, min_length=50)
+
+        if df is None:
+            return JsonResponse({'error': 'Not enough kline data from any supported exchange.'}, status=404)
         
-        df = pd.DataFrame(kline_data)
-        for col in ['open', 'high', 'low', 'close', 'volume']:
-            df[col] = pd.to_numeric(df[col])
+        for col in ['open', 'high', 'low', 'close', 'volume']: df[col] = pd.to_numeric(df[col])
         detector = CandlestickPatternDetector(df)
         patterns = detector.apply_filters(min_score=1.2, min_volume_ratio=0.8)
-        return JsonResponse(patterns, safe=False)
+        return JsonResponse({'source': source, 'patterns': patterns}, safe=False)
         
     except Exception as e:
         logger.error(f"Error in candlestick_analysis_view: {e}\n{traceback.format_exc()}")
         return JsonResponse({'error': str(e)}, status=500)
 
 def indicator_analysis_view(request):
-    source = request.GET.get('source', 'kucoin').lower()
     symbol = request.GET.get('symbol', 'BTC-USDT').upper()
     interval = request.GET.get('interval', '1h').lower()
     try:
         fetcher = ExchangeFetcher()
-        kline_data = fetcher.get_klines(source=source, symbol=symbol, interval=interval, limit=200)
-        if not kline_data or len(kline_data) < 100:
-            return JsonResponse({'error': f'Not enough kline data from {source} for indicator analysis.'}, status=404)
+        df, source = _get_data_with_fallback(fetcher, symbol, interval, limit=200, min_length=100)
 
-        df = pd.DataFrame(kline_data)
-        for col in ['open', 'high', 'low', 'close', 'volume']:
-            df[col] = pd.to_numeric(df[col])
-            
+        if df is None:
+            return JsonResponse({'error': 'Not enough kline data from any supported exchange.'}, status=404)
+
+        for col in ['open', 'high', 'low', 'close', 'volume']: df[col] = pd.to_numeric(df[col])
         df_with_indicators = calculate_indicators(df)
-        latest_values = {}
+        latest_values = {'source': source}
         for col in df_with_indicators.columns:
             if col not in ['timestamp', 'open', 'high', 'low', 'close', 'volume']:
                 if not df_with_indicators[col].dropna().empty:
                     last_valid_value = df_with_indicators[col].dropna().iloc[-1]
                     latest_values[col] = round(last_valid_value, 4) if isinstance(last_valid_value, (int, float)) else last_valid_value
-                
         return JsonResponse(latest_values)
 
     except Exception as e:
@@ -152,20 +171,20 @@ def indicator_analysis_view(request):
         return JsonResponse({'error': str(e)}, status=500)
 
 def market_structure_view(request):
-    source = request.GET.get('source', 'kucoin').lower()
     symbol = request.GET.get('symbol', 'BTC-USDT').upper()
     interval = request.GET.get('interval', '4h').lower()
     try:
         fetcher = ExchangeFetcher()
-        kline_data = fetcher.get_klines(source=source, symbol=symbol, interval=interval, limit=300)
-        if not kline_data or len(kline_data) < 250:
-             return JsonResponse({'error': f'Not enough kline data from {source} for market structure analysis.'}, status=404)
+        df, source = _get_data_with_fallback(fetcher, symbol, interval, limit=300, min_length=250)
+        
+        if df is None:
+            return JsonResponse({'error': 'Not enough kline data from any supported exchange.'}, status=404)
 
-        df = pd.DataFrame(kline_data)
         for col in ['open', 'high', 'low', 'close', 'volume']:
             df[col] = pd.to_numeric(df[col])
         analyzer = LegPivotAnalyzer(df, sensitivity=7)
         result = analyzer.analyze()
+        result['source'] = source
         return JsonResponse(result)
 
     except Exception as e:
@@ -173,19 +192,20 @@ def market_structure_view(request):
         return JsonResponse({'error': str(e)}, status=500)
 
 def trend_analysis_view(request):
-    source = request.GET.get('source', 'kucoin').lower()
     symbol = request.GET.get('symbol', 'BTC-USDT').upper()
-    interval = request.GET.get('interval', '1h').lower() 
+    interval = request.GET.get('interval', '1h').lower()
     try:
         fetcher = ExchangeFetcher()
-        kline_data = fetcher.get_klines(source=source, symbol=symbol, interval=interval, limit=300)
-        if not kline_data or len(kline_data) < 200:
-            return JsonResponse({'error': f'Not enough kline data from {source} for trend analysis.'}, status=404)
+        df, source = _get_data_with_fallback(fetcher, symbol, interval, limit=300, min_length=200)
+
+        if df is None:
+            return JsonResponse({'error': f'Not enough kline data from any supported exchange for trend analysis.'}, status=404)
         
-        df = pd.DataFrame(kline_data)
         for col in ['open', 'high', 'low', 'close', 'volume']:
             df[col] = pd.to_numeric(df[col])
+            
         analysis_result = analyze_trend(df, timeframe=interval, ml_model=None)
+        analysis_result['source'] = source
         return JsonResponse(analysis_result)
         
     except Exception as e:
@@ -193,22 +213,18 @@ def trend_analysis_view(request):
         return JsonResponse({'error': str(e)}, status=500)
 
 def whale_analysis_view(request):
-    source = request.GET.get('source', 'kucoin').lower()
     symbol = request.GET.get('symbol', 'BTC-USDT').upper()
     interval = request.GET.get('interval', '1h').lower()
     try:
         fetcher = ExchangeFetcher()
-        kline_data = fetcher.get_klines(source=source, symbol=symbol, interval=interval, limit=500)
+        df, source = _get_data_with_fallback(fetcher, symbol, interval, limit=500, min_length=100)
         
-        if not kline_data or len(kline_data) < 100:
-            return JsonResponse({'error': f'Not enough kline data from {source} for whale analysis.'}, status=404)
+        if df is None:
+            return JsonResponse({'error': 'Not enough kline data from any supported exchange.'}, status=404)
         
-        df = pd.DataFrame(kline_data)
         df['timestamp'] = pd.to_datetime(df['timestamp'], unit='s')
         df.set_index('timestamp', inplace=True)
-
-        for col in ['open', 'high', 'low', 'close', 'volume']:
-            df[col] = pd.to_numeric(df[col])
+        for col in ['open', 'high', 'low', 'close', 'volume']: df[col] = pd.to_numeric(df[col])
 
         analyzer = WhaleAnalyzer(timeframes=[interval])
         analyzer.update_data(interval, df)
@@ -219,33 +235,28 @@ def whale_analysis_view(request):
             if isinstance(s.get('time'), pd.Timestamp):
                 s['time'] = s['time'].isoformat()
         
-        return JsonResponse(signals, safe=False)
+        return JsonResponse({'source': source, 'signals': signals}, safe=False)
 
     except Exception as e:
         logger.error(f"Error in whale_analysis_view: {e}\n{traceback.format_exc()}")
         return JsonResponse({'error': str(e)}, status=500)
 
 def divergence_analysis_view(request):
-    source = request.GET.get('source', 'kucoin').lower()
     symbol = request.GET.get('symbol', 'BTC-USDT').upper()
     interval = request.GET.get('interval', '1h').lower()
-    
     try:
         fetcher = ExchangeFetcher()
-        kline_data = fetcher.get_klines(source=source, symbol=symbol, interval=interval, limit=300)
+        df, source = _get_data_with_fallback(fetcher, symbol, interval, limit=300, min_length=100)
 
-        if not kline_data or len(kline_data) < 100:
-            return JsonResponse({'error': f'Not enough kline data from {source} for divergence analysis.'}, status=404)
+        if df is None:
+            return JsonResponse({'error': 'Not enough kline data from any supported exchange.'}, status=404)
 
-        df = pd.DataFrame(kline_data)
-        for col in ['open', 'high', 'low', 'close', 'volume']:
-            df[col] = pd.to_numeric(df[col])
-        
+        for col in ['open', 'high', 'low', 'close', 'volume']: df[col] = pd.to_numeric(df[col])
         divergence_results = detect_divergences(df, order=5)
         
-        return JsonResponse(divergence_results, safe=False)
+        final_result = {'source': source, 'divergences': divergence_results}
+        return JsonResponse(final_result, safe=False)
 
     except Exception as e:
         logger.error(f"Error in divergence_analysis_view: {e}\n{traceback.format_exc()}")
         return JsonResponse({'error': str(e)}, status=500)
-
