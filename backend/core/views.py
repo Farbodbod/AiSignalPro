@@ -15,8 +15,9 @@ from engines.market_structure_analyzer import LegPivotAnalyzer
 from engines.trend_analyzer import analyze_trend
 from engines.whale_analyzer import WhaleAnalyzer
 from engines.divergence_detector import detect_divergences
-# === این خط برای موتور جدید اضافه شده است ===
 from engines.risk_manager import advanced_risk_analysis
+from engines.ai_predictor import AIEngineProAdvanced
+from engines.master_orchestrator import MasterOrchestrator
 
 
 logger = logging.getLogger(__name__)
@@ -30,7 +31,6 @@ EXCHANGE_FALLBACK_LIST = ['kucoin', 'mexc', 'okx', 'gateio']
 # ==========================================================
 
 def system_status_view(request):
-    # ... (کد این بخش بدون تغییر است)
     exchanges_to_check = [
         {'name': 'Kucoin', 'status_url': 'https://api.kucoin.com/api/v1/timestamp'},
         {'name': 'Gate.io', 'status_url': 'https://api.gate.io/api/v4/spot/time'},
@@ -45,7 +45,6 @@ def system_status_view(request):
     return JsonResponse(results, safe=False)
 
 def check_exchange_status(exchange_info):
-    # ... (کد این بخش بدون تغییر است)
     try:
         start = time.time()
         res = requests.head(exchange_info['status_url'], timeout=5)
@@ -60,7 +59,6 @@ def check_exchange_status(exchange_info):
         return {'name': exchange_info['name'], 'status': 'offline', 'ping': '---'}
 
 def market_overview_view(request):
-    # ... (کد این بخش بدون تغییر است)
     response_data = {'market_cap': 0, 'volume_24h': 0, 'btc_dominance': 0, 'fear_and_greed': 'N/A'}
     try:
         coingecko_url = "https://api.coingecko.com/api/v3/global"
@@ -86,7 +84,6 @@ def market_overview_view(request):
     return JsonResponse(response_data)
 
 def all_data_view(request):
-    # ... (کد این بخش بدون تغییر است)
     try:
         fetcher = ExchangeFetcher()
         sources = ['kucoin', 'mexc', 'gateio', 'okx']
@@ -130,7 +127,6 @@ def _get_data_with_fallback(fetcher, symbol, interval, limit, min_length):
 # ==========================================================
 
 def candlestick_analysis_view(request):
-    # ... (کد این بخش بدون تغییر است)
     symbol = request.GET.get('symbol', 'BTC-USDT').upper()
     interval = request.GET.get('interval', '1h').lower()
     try:
@@ -147,7 +143,6 @@ def candlestick_analysis_view(request):
         return JsonResponse({'error': str(e)}, status=500)
 
 def indicator_analysis_view(request):
-    # ... (کد این بخش بدون تغییر است)
     symbol = request.GET.get('symbol', 'BTC-USDT').upper()
     interval = request.GET.get('interval', '1h').lower()
     try:
@@ -169,7 +164,6 @@ def indicator_analysis_view(request):
         return JsonResponse({'error': str(e)}, status=500)
 
 def market_structure_view(request):
-    # ... (کد این بخش بدون تغییر است)
     symbol = request.GET.get('symbol', 'BTC-USDT').upper()
     interval = request.GET.get('interval', '4h').lower()
     try:
@@ -188,7 +182,6 @@ def market_structure_view(request):
         return JsonResponse({'error': str(e)}, status=500)
 
 def trend_analysis_view(request):
-    # ... (کد این بخش بدون تغییر است)
     symbol = request.GET.get('symbol', 'BTC-USDT').upper()
     interval = request.GET.get('interval', '1h').lower()
     try:
@@ -206,7 +199,6 @@ def trend_analysis_view(request):
         return JsonResponse({'error': str(e)}, status=500)
 
 def whale_analysis_view(request):
-    # ... (کد این بخش بدون تغییر است)
     symbol = request.GET.get('symbol', 'BTC-USDT').upper()
     interval = request.GET.get('interval', '1h').lower()
     try:
@@ -230,7 +222,6 @@ def whale_analysis_view(request):
         return JsonResponse({'error': str(e)}, status=500)
 
 def divergence_analysis_view(request):
-    # ... (کد این بخش بدون تغییر است)
     symbol = request.GET.get('symbol', 'BTC-USDT').upper()
     interval = request.GET.get('interval', '1h').lower()
     try:
@@ -246,7 +237,6 @@ def divergence_analysis_view(request):
         logger.error(f"Error in divergence_analysis_view: {e}\n{traceback.format_exc()}")
         return JsonResponse({'error': str(e)}, status=500)
 
-# === تابع جدید برای محاسبه ریسک ===
 def risk_analysis_view(request):
     try:
         balance = float(request.GET.get('balance', '10000'))
@@ -259,29 +249,79 @@ def risk_analysis_view(request):
         if not targets_str:
             raise ValueError("Parameter 'targets' is required.")
         targets = [float(t) for t in targets_str.split(',')]
-
         win_rate_str = request.GET.get('win_rate')
         win_rate = float(win_rate_str) if win_rate_str else 0.5
-
         atr_str = request.GET.get('atr')
         atr = float(atr_str) if atr_str else None
-
         analysis_results = advanced_risk_analysis(
-            balance=balance,
-            entry=entry,
-            stop=stop,
-            targets=targets,
-            risk_pct=risk_pct,
-            leverage=leverage,
-            win_rate=win_rate,
-            atr=atr,
-            ml_model=None,
-            ml_features=None
+            balance=balance, entry=entry, stop=stop, targets=targets,
+            risk_pct=risk_pct, leverage=leverage, win_rate=win_rate,
+            atr=atr, ml_model=None, ml_features=None
         )
         return JsonResponse(analysis_results)
-
     except (ValueError, TypeError) as ve:
         return JsonResponse({'error': f'Invalid or missing parameter: {str(ve)}'}, status=400)
     except Exception as e:
         logger.error(f"Error in risk_analysis_view: {e}\n{traceback.format_exc()}")
+        return JsonResponse({'error': str(e)}, status=500)
+
+def ai_prediction_view(request):
+    symbol = request.GET.get('symbol', 'BTC-USDT').upper()
+    interval = request.GET.get('interval', '1h').lower()
+    try:
+        fetcher = ExchangeFetcher()
+        df, source = _get_data_with_fallback(fetcher, symbol, interval, limit=100, min_length=50)
+        if df is None:
+            return JsonResponse({'error': 'Not enough kline data from any supported exchange.'}, status=404)
+        if 'price' not in df.columns:
+            df['price'] = df['close']
+        for col in ['open', 'high', 'low', 'close', 'volume', 'price']:
+            if col in df.columns:
+                 df[col] = pd.to_numeric(df[col])
+
+        engine = AIEngineProAdvanced()
+        engine.load_data(df)
+        engine.feature_engineering()
+        report = engine.generate_advanced_report()
+        report['source'] = source
+        return JsonResponse(report)
+    except Exception as e:
+        logger.error(f"Error in ai_prediction_view: {e}\n{traceback.format_exc()}")
+        return JsonResponse({'error': str(e)}, status=500)
+
+def get_final_signal_view(request):
+    symbol = request.GET.get('symbol', 'BTC-USDT').upper()
+    interval = request.GET.get('interval', '1h').lower()
+    try:
+        fetcher = ExchangeFetcher()
+        df, source = _get_data_with_fallback(fetcher, symbol, interval, limit=300, min_length=200)
+        if df is None:
+            return JsonResponse({'error': 'Not enough kline data from any supported exchange.'}, status=404)
+
+        # اجرای تمام موتورهای تحلیلی
+        trend_res = analyze_trend(df.copy(), timeframe=interval)
+        
+        whale_analyzer_instance = WhaleAnalyzer(timeframes=[interval])
+        whale_analyzer_instance.update_data(interval, df.copy())
+        whale_analyzer_instance.generate_signals()
+        whale_res = {"signals": whale_analyzer_instance.get_signals(interval)}
+        
+        divergence_res = {"divergences": detect_divergences(df.copy())}
+        indicator_res = calculate_indicators(df.copy())
+        candlestick_res = {"patterns": CandlestickPatternDetector(df.copy()).apply_filters()}
+        
+        # جمع‌آوری تمام نتایج در یک دیکشنری
+        all_analysis = {
+            "symbol": symbol, "interval": interval, "source": source,
+            "trend": trend_res, "whales": whale_res, "divergence": divergence_res,
+            "indicators": indicator_res, "candlesticks": candlestick_res
+        }
+        
+        # ارسال نتایج به ارکستراتور
+        orchestrator = MasterOrchestrator()
+        final_signal = orchestrator.get_consensus_signal(all_analysis)
+
+        return JsonResponse(final_signal, safe=False)
+    except Exception as e:
+        logger.error(f"Error in get_final_signal_view: {e}\n{traceback.format_exc()}")
         return JsonResponse({'error': str(e)}, status=500)
