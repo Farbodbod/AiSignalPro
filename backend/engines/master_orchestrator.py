@@ -22,7 +22,7 @@ class MasterOrchestrator:
 
         if self.gemini_key:
             genai.configure(api_key=self.gemini_key)
-            self.gemini_model = genai.GenerativeModel('gemini-1.0-pro')
+            self.gemini_model = genai.GenerativeModel('gemini-1.5-flash-latest')
         else:
             self.gemini_model = None
             logger.warning("Gemini API key not found.")
