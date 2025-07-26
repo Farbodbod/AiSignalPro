@@ -6,7 +6,9 @@ import logging
 import traceback
 import pandas as pd
 from .exchange_fetcher import ExchangeFetcher
-from .engines.candlestick_reader import CandlestickPatternDetector
+
+# ===== این خط اصلاح شده است (نقطه اول حذف شد) =====
+from engines.candlestick_reader import CandlestickPatternDetector
 
 logger = logging.getLogger(__name__)
 
