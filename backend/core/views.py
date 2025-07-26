@@ -19,7 +19,6 @@ from engines.risk_manager import advanced_risk_analysis
 from engines.ai_predictor import AIEngineProAdvanced
 from engines.master_orchestrator import MasterOrchestrator
 
-
 logger = logging.getLogger(__name__)
 
 # لیست صرافی‌ها به ترتیب اولویت برای استفاده در تمام تحلیل‌ها
@@ -298,23 +297,35 @@ def get_final_signal_view(request):
         if df is None:
             return JsonResponse({'error': 'Not enough kline data from any supported exchange.'}, status=404)
 
-        # اجرای تمام موتورهای تحلیلی
+        # اجرای موتور اندیکاتور و استخراج فقط آخرین مقادیر
+        df_with_indicators = calculate_indicators(df.copy())
+        latest_indicator_values = {}
+        for col in df_with_indicators.columns:
+            if col not in ['timestamp', 'open', 'high', 'low', 'close', 'volume']:
+                if not df_with_indicators[col].dropna().empty:
+                    last_valid_value = df_with_indicators[col].dropna().iloc[-1]
+                    latest_indicator_values[col] = round(last_valid_value, 4) if isinstance(last_valid_value, (int, float)) else last_valid_value
+        
+        # اجرای بقیه موتورهای تحلیلی
         trend_res = analyze_trend(df.copy(), timeframe=interval)
         
         whale_analyzer_instance = WhaleAnalyzer(timeframes=[interval])
-        whale_analyzer_instance.update_data(interval, df.copy())
+        df_for_whale = df.copy()
+        df_for_whale['timestamp'] = pd.to_datetime(df_for_whale['timestamp'], unit='s')
+        df_for_whale.set_index('timestamp', inplace=True)
+        whale_analyzer_instance.update_data(interval, df_for_whale)
         whale_analyzer_instance.generate_signals()
         whale_res = {"signals": whale_analyzer_instance.get_signals(interval)}
         
         divergence_res = {"divergences": detect_divergences(df.copy())}
-        indicator_res = calculate_indicators(df.copy())
         candlestick_res = {"patterns": CandlestickPatternDetector(df.copy()).apply_filters()}
         
         # جمع‌آوری تمام نتایج در یک دیکشنری
         all_analysis = {
             "symbol": symbol, "interval": interval, "source": source,
             "trend": trend_res, "whales": whale_res, "divergence": divergence_res,
-            "indicators": indicator_res, "candlesticks": candlestick_res
+            "indicators": latest_indicator_values,
+            "candlesticks": candlestick_res
         }
         
         # ارسال نتایج به ارکستراتور
@@ -322,6 +333,7 @@ def get_final_signal_view(request):
         final_signal = orchestrator.get_consensus_signal(all_analysis)
 
         return JsonResponse(final_signal, safe=False)
+
     except Exception as e:
         logger.error(f"Error in get_final_signal_view: {e}\n{traceback.format_exc()}")
         return JsonResponse({'error': str(e)}, status=500)
