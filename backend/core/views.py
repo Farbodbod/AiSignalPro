@@ -184,3 +184,41 @@ def trend_analysis_view(request):
     except Exception as e:
         logger.error(f"Error in trend_analysis_view: {e}\n{traceback.format_exc()}")
         return JsonResponse({'error': str(e)}, status=500)
+# این تابع جدید را به انتهای فایل core/views.py اضافه کنید
+
+def whale_analysis_view(request):
+    source = request.GET.get('source', 'kucoin').lower()
+    symbol = request.GET.get('symbol', 'BTC-USDT').upper()
+    interval = request.GET.get('interval', '1h').lower()
+    try:
+        fetcher = ExchangeFetcher()
+        # موتور تحلیل نهنگ به داده‌های بیشتری نیاز دارد
+        kline_data = fetcher.get_klines(source=source, symbol=symbol, interval=interval, limit=500)
+        
+        if not kline_data or len(kline_data) < 100:
+            return JsonResponse({'error': f'Not enough kline data from {source} for whale analysis.'}, status=404)
+        
+        df = pd.DataFrame(kline_data)
+        # اطمینان از اینکه ایندکس دیتافریم، timestamp است
+        df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
+        df.set_index('timestamp', inplace=True)
+
+        for col in ['open', 'high', 'low', 'close', 'volume']:
+            df[col] = pd.to_numeric(df[col])
+
+        # اجرای موتور تحلیل نهنگ
+        analyzer = WhaleAnalyzer(timeframes=[interval])
+        analyzer.update_data(interval, df)
+        analyzer.generate_signals()
+        signals = analyzer.get_signals(interval)
+
+        # تبدیل datetime به رشته برای ارسال در JSON
+        for s in signals:
+            if isinstance(s.get('time'), pd.Timestamp):
+                s['time'] = s['time'].isoformat()
+        
+        return JsonResponse(signals, safe=False)
+
+    except Exception as e:
+        logger.error(f"Error in whale_analysis_view: {e}\n{traceback.format_exc()}")
+        return JsonResponse({'error': str(e)}, status=500)
