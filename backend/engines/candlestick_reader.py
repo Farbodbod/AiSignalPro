@@ -1,148 +1,95 @@
-candlestick_reader_advanced.py
+# candlestick_reader.py - نسخه اصلاح شده و آماده برای بک‌اند
 
-نسخه نهایی و فوق‌پیشرفته کندل‌خوانی با فیلتر هوشمند و ویژوالیزیشن داخلی
+import pandas as pd
+import numpy as np
+# ما دیگر به mplfinance نیازی نداریم چون در سرور قابل استفاده نیست
+# import mplfinance as mpf
+from datetime import datetime
 
-شامل تمام الگوهای کلاسیک، حرفه‌ای، و برگشتی مهم بازار
+class CandlestickPatternDetector:
+    # مشکل اول در اینجا اصلاح شد: init -> __init__
+    def __init__(self, df):
+        if not isinstance(df, pd.DataFrame) or df.empty:
+            raise ValueError("Input must be a non-empty pandas DataFrame.")
+        
+        required_columns = {'timestamp', 'open', 'high', 'low', 'close', 'volume'}
+        if not required_columns.issubset(df.columns):
+            raise ValueError(f"DataFrame must contain columns: {required_columns}")
 
-import pandas as pd import numpy as np import mplfinance as mpf from datetime import datetime
+        self.df = df.copy()
+        self.patterns = []
 
-class CandlestickPatternDetector: def init(self, df): self.df = df.copy() self.patterns = []
+    def detect_patterns(self):
+        self.patterns = []
+        for i in range(2, len(self.df)):
+            row = self.df.iloc[i]
+            prev = self.df.iloc[i-1]
+            prev2 = self.df.iloc[i-2]
 
-def detect_patterns(self):
-    self.patterns = []
-    for i in range(2, len(self.df)):
-        row = self.df.iloc[i]
-        prev = self.df.iloc[i - 1]
-        prev2 = self.df.iloc[i - 2]
+            body = abs(row['close'] - row['open'])
+            upper_shadow = row['high'] - max(row['close'], row['open'])
+            lower_shadow = min(row['close'], row['open']) - row['low']
+            total_range = row['high'] - row['low']
+            if total_range == 0: continue # از تقسیم بر صفر جلوگیری می‌کند
 
-        body = abs(row['close'] - row['open'])
-        upper_shadow = row['high'] - max(row['close'], row['open'])
-        lower_shadow = min(row['close'], row['open']) - row['low']
-        total_range = row['high'] - row['low']
+            pattern = None
+            score = 0
 
-        pattern = None
-        score = 0
+            # الگوهای پوشا (Engulfing)
+            is_bullish_engulfing = row['close'] > prev['open'] and row['open'] < prev['close'] and prev['close'] < prev['open'] and row['close'] > row['open']
+            is_bearish_engulfing = row['open'] > prev['close'] and row['close'] < prev['open'] and prev['close'] > prev['open'] and row['close'] < row['open']
 
-        # Engulfing Patterns
-        if row['close'] > row['open'] and prev['close'] < prev['open'] and \
-           row['close'] > prev['open'] and row['open'] < prev['close']:
-            pattern = "Bullish Engulfing"
-            score = 1.5
+            if is_bullish_engulfing:
+                pattern, score = "Bullish Engulfing", 1.5
+            elif is_bearish_engulfing:
+                pattern, score = "Bearish Engulfing", 1.5
+            # چکش (Hammer)
+            elif body / total_range < 0.3 and lower_shadow > 2 * body and upper_shadow < body:
+                pattern, score = "Hammer", 1.2
+            # چکش معکوس (Inverted Hammer)
+            elif body / total_range < 0.3 and upper_shadow > 2 * body and lower_shadow < body:
+                pattern, score = "Inverted Hammer", 1.2
+            # ستاره صبحگاهی (Morning Star)
+            elif prev2['close'] < prev2['open'] and abs(prev['close'] - prev['open']) < abs(prev2['open'] - prev2['close']) * 0.3 and row['close'] > row['open'] and row['close'] > (prev2['open'] + prev2['close']) / 2:
+                pattern, score = "Morning Star", 2.0
+            # ستاره عصرگاهی (Evening Star)
+            elif prev2['close'] > prev2['open'] and abs(prev['close'] - prev['open']) < abs(prev2['close'] - prev2['open']) * 0.3 and row['close'] < row['open'] and row['close'] < (prev2['open'] + prev2['close']) / 2:
+                pattern, score = "Evening Star", 2.0
+            # ستاره ثاقب (Shooting Star)
+            elif body / total_range < 0.3 and upper_shadow > 2 * body and row['open'] > row['low'] and row['close'] < row['open']:
+                pattern, score = "Shooting Star", 1.3
+             # دوجی (Doji)
+            elif body / total_range < 0.05:
+                pattern, score = "Doji", 1.0
 
-        elif row['close'] < row['open'] and prev['close'] > prev['open'] and \
-             row['open'] > prev['close'] and row['close'] < prev['open']:
-            pattern = "Bearish Engulfing"
-            score = 1.5
 
-        # Hammer
-        elif body < total_range * 0.3 and lower_shadow > 2 * body and upper_shadow < body:
-            pattern = "Hammer"
-            score = 1.2
+            if pattern:
+                self.patterns.append({
+                    "index": i,
+                    "timestamp": self.df.iloc[i]['timestamp'],
+                    "pattern": pattern,
+                    "score": score,
+                    "volume": row['volume']
+                })
+        return self.patterns
 
-        # Inverted Hammer
-        elif body < total_range * 0.3 and upper_shadow > 2 * body and lower_shadow < body:
-            pattern = "Inverted Hammer"
-            score = 1.2
+    def apply_filters(self, min_score=1.2, min_volume_ratio=1.0):
+        if not self.patterns:
+            self.detect_patterns()
 
-        # Doji
-        elif body < total_range * 0.1:
-            pattern = "Doji"
-            score = 1.0
+        volume_mean = self.df['volume'].rolling(window=20).mean()
+        filtered_patterns = []
 
-        # Morning Star
-        elif prev2['close'] < prev2['open'] and abs(prev['close'] - prev['open']) < (prev2['open'] - prev2['close']) * 0.5 and \
-             row['close'] > row['open'] and row['close'] > (prev2['open'] + prev2['close']) / 2:
-            pattern = "Morning Star"
-            score = 2.0
+        for p in self.patterns:
+            if p['pattern'] is None:
+                continue
+            
+            vol = p['volume']
+            vol_avg = volume_mean.iloc[p['index']]
+            
+            if vol_avg > 0 and p['score'] >= min_score and vol > (vol_avg * min_volume_ratio):
+                filtered_patterns.append(p)
 
-        # Evening Star
-        elif prev2['close'] > prev2['open'] and abs(prev['close'] - prev['open']) < (prev2['close'] - prev2['open']) * 0.5 and \
-             row['close'] < row['open'] and row['close'] < (prev2['open'] + prev2['close']) / 2:
-            pattern = "Evening Star"
-            score = 2.0
+        return filtered_patterns
 
-        # Shooting Star
-        elif body < total_range * 0.3 and upper_shadow > 2 * body and lower_shadow < body and row['close'] < row['open']:
-            pattern = "Shooting Star"
-            score = 1.3
-
-        # Hanging Man
-        elif body < total_range * 0.3 and lower_shadow > 2 * body and upper_shadow < body and row['close'] < row['open']:
-            pattern = "Hanging Man"
-            score = 1.3
-
-        # Piercing Pattern
-        elif prev['close'] < prev['open'] and row['close'] > row['open'] and row['close'] > (prev['open'] + prev['close']) / 2 and \
-             row['open'] < prev['low']:
-            pattern = "Piercing Pattern"
-            score = 1.4
-
-        # Dark Cloud Cover
-        elif prev['close'] > prev['open'] and row['close'] < row['open'] and row['close'] < (prev['open'] + prev['close']) / 2 and \
-             row['open'] > prev['high']:
-            pattern = "Dark Cloud Cover"
-            score = 1.4
-
-        # Tweezer Top / Bottom
-        elif abs(row['high'] - prev['high']) < 1e-3:
-            pattern = "Tweezer Top" if row['close'] < row['open'] else "Tweezer Bottom"
-            score = 1.2
-
-        self.patterns.append({
-            "index": i,
-            "pattern": pattern,
-            "score": score,
-            "volume": row['volume']
-        })
-
-    return self.patterns
-
-def apply_filters(self, min_score=1.2, min_volume_ratio=1.0):
-    if not self.patterns:
-        self.detect_patterns()
-
-    volume_mean = self.df['volume'].rolling(window=20).mean()
-    filtered = []
-
-    for p in self.patterns:
-        if p['pattern'] is None:
-            continue
-        vol = self.df.iloc[p['index']]['volume']
-        vol_avg = volume_mean.iloc[p['index']]
-        if p['score'] >= min_score and vol > (vol_avg * min_volume_ratio):
-            filtered.append(p)
-
-    return filtered
-
-def visualize(self, title="Candlestick Chart with Patterns"):
-    df_plot = self.df.copy()
-    df_plot.index = pd.to_datetime(df_plot['timestamp'])
-    df_plot = df_plot[['open', 'high', 'low', 'close', 'volume']]
-
-    patterns_df = pd.DataFrame(self.patterns)
-    markers = []
-
-    for i, row in patterns_df.iterrows():
-        if pd.isna(row['pattern']):
-            continue
-        candle_row = self.df.iloc[int(row['index'])]
-        y_pos = candle_row['high'] + (candle_row['high'] * 0.005)
-        marker = mpf.make_addplot(
-            [np.nan if j != row['index'] else y_pos for j in range(len(self.df))],
-            type='scatter', markersize=100,
-            marker='^' if candle_row['close'] > candle_row['open'] else 'v',
-            color='green' if candle_row['close'] > candle_row['open'] else 'red')
-        markers.append(marker)
-
-    mpf.plot(df_plot, type='candle', style='yahoo', volume=True, addplot=markers, title=title)
-
-=== مثال استفاده ===
-
-if name == "main": df = pd.read_csv("sample_candles.csv")  # شامل ستون‌های: timestamp, open, high, low, close, volume reader = CandlestickPatternDetector(df) reader.detect_patterns() filtered_patterns = reader.apply_filters(min_score=1.2, min_volume_ratio=1.0)
-
-print("Filtered Patterns:")
-for p in filtered_patterns:
-    print(p)
-
-reader.visualize("نمودار کندل با الگوهای فیلتر شده")
-
+    # متد visualize حذف شد چون در سرور قابل استفاده نیست
