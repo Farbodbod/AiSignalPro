@@ -27,10 +27,10 @@ INSTALLED_APPS = [
 
     # برنامه‌های پروژه
     # ==========================================================
-    #           تغییر اصلی در این قسمت اعمال شده است
+    #           این نسخه نهایی و اصلاح شده است
     # ==========================================================
-    'core.apps.CoreConfig',       # <--- اپلیکیشن core اضافه شد
-    'engines.apps.EnginesConfig', # <--- پکیج engines اضافه شد
+    'core',       # <--- روش صحیح و ساده برای ثبت اپلیکیشن core
+    'engines',    # <--- روش صحیح و ساده برای ثبت پکیج engines
 
     # CORS
     'corsheaders',
@@ -123,3 +123,4 @@ CSRF_TRUSTED_ORIGINS = [
     "https://ai-signal-pro.vercel.app",
     "https://aisignalpro-production.up.railway.app",
 ]
+
