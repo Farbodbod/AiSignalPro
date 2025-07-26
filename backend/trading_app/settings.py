@@ -11,7 +11,7 @@ SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', 'dev-secret-key')
 DEBUG = os.getenv('DJANGO_DEBUG', 'True') == 'True'
 
 ALLOWED_HOSTS = [
-    '*',  # برای تست، بعداً محدود به Railway و Vercel می‌کنیم
+    '*',
 ]
 
 # ===========================
@@ -26,7 +26,11 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
 
     # برنامه‌های پروژه
-    'trading_app',
+    # ==========================================================
+    #           تغییر اصلی در این قسمت اعمال شده است
+    # ==========================================================
+    'core.apps.CoreConfig',       # <--- اپلیکیشن core اضافه شد
+    'engines.apps.EnginesConfig', # <--- پکیج engines اضافه شد
 
     # CORS
     'corsheaders',
@@ -39,7 +43,7 @@ MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'whitenoise.middleware.WhiteNoiseMiddleware',
-    'django.contrib.sessions.middleware.SessionMiddleware',  # باید قبل از Auth باشد
+    'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
@@ -114,7 +118,7 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 # ===========================
 # CORS SETTINGS
 # ===========================
-CORS_ALLOW_ALL_ORIGINS = True  # برای تست آزاد گذاشتیم
+CORS_ALLOW_ALL_ORIGINS = True
 CSRF_TRUSTED_ORIGINS = [
     "https://ai-signal-pro.vercel.app",
     "https://aisignalpro-production.up.railway.app",
