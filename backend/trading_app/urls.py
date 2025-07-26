@@ -1,14 +1,9 @@
-from django.contrib import admin
 from django.urls import path
-from core.views import (
-    system_status_view, 
-    market_overview_view, 
-    all_data_view
-)
+from core import views
 
 urlpatterns = [
-    path('admin/', admin.site.urls),
-    path('api/status/', system_status_view),
-    path('api/market-overview/', market_overview_view),
-    path('api/data/all/', all_data_view),
+    path('api/status/', views.system_status_view, name='system-status'),
+    path('api/market-overview/', views.market_overview_view, name='market-overview'),
+    path('api/data/all/', views.all_data_view, name='all-data'),
+    path('api/analyze/candlesticks/', views.candlestick_analysis_view, name='candlestick-analysis'),
 ]
