@@ -1,3 +1,4 @@
+from engines.market_structure_analyzer import LegPivotAnalyzer
 from engines.indicator_analyzer import calculate_indicators
 from django.http import JsonResponse
 import time
@@ -158,4 +159,29 @@ def indicator_analysis_view(request):
 
     except Exception as e:
         logger.error(f"Error in indicator_analysis_view: {e}\n{traceback.format_exc()}")
+        return JsonResponse({'error': str(e)}, status=500)
+def market_structure_view(request):
+    source = request.GET.get('source', 'kucoin').lower()
+    symbol = request.GET.get('symbol', 'BTC-USDT').upper()
+    interval = request.GET.get('interval', '4h').lower()
+
+    try:
+        fetcher = ExchangeFetcher()
+        kline_data = fetcher.get_klines(source=source, symbol=symbol, interval=interval, limit=300) # نیاز به داده بیشتر برای تحلیل ساختار
+
+        if not kline_data:
+            return JsonResponse({'error': 'Could not fetch kline data.'}, status=404)
+
+        df = pd.DataFrame(kline_data)
+        for col in ['open', 'high', 'low', 'close', 'volume']:
+            df[col] = pd.to_numeric(df[col])
+
+        # اجرای موتور تحلیل ساختار بازار
+        analyzer = LegPivotAnalyzer(df, sensitivity=7)
+        result = analyzer.analyze()
+
+        return JsonResponse(result)
+
+    except Exception as e:
+        logger.error(f"Error in market_structure_view: {e}\n{traceback.format_exc()}")
         return JsonResponse({'error': str(e)}, status=500)
