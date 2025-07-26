@@ -3,6 +3,7 @@ import requests
 import logging
 import traceback
 import pandas as pd
+import numpy as np
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from django.http import JsonResponse
@@ -24,6 +25,19 @@ logger = logging.getLogger(__name__)
 # لیست صرافی‌ها به ترتیب اولویت برای استفاده در تمام تحلیل‌ها
 EXCHANGE_FALLBACK_LIST = ['kucoin', 'mexc', 'okx', 'gateio']
 
+# --- تابع کمکی جدید برای حل مشکل int64 ---
+def convert_numpy_types(obj):
+    if isinstance(obj, np.integer):
+        return int(obj)
+    elif isinstance(obj, np.floating):
+        return float(obj)
+    elif isinstance(obj, np.ndarray):
+        return obj.tolist()
+    elif isinstance(obj, dict):
+        return {k: convert_numpy_types(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [convert_numpy_types(i) for i in obj]
+    return obj
 
 # ==========================================================
 # توابع عمومی و وضعیت سیستم
@@ -136,7 +150,7 @@ def candlestick_analysis_view(request):
         for col in ['open', 'high', 'low', 'close', 'volume']: df[col] = pd.to_numeric(df[col])
         detector = CandlestickPatternDetector(df)
         patterns = detector.apply_filters(min_score=1.2, min_volume_ratio=0.8)
-        return JsonResponse({'source': source, 'patterns': patterns}, safe=False)
+        return JsonResponse(convert_numpy_types({'source': source, 'patterns': patterns}), safe=False)
     except Exception as e:
         logger.error(f"Error in candlestick_analysis_view: {e}\n{traceback.format_exc()}")
         return JsonResponse({'error': str(e)}, status=500)
@@ -157,7 +171,7 @@ def indicator_analysis_view(request):
                 if not df_with_indicators[col].dropna().empty:
                     last_valid_value = df_with_indicators[col].dropna().iloc[-1]
                     latest_values[col] = round(last_valid_value, 4) if isinstance(last_valid_value, (int, float)) else last_valid_value
-        return JsonResponse(latest_values)
+        return JsonResponse(convert_numpy_types(latest_values))
     except Exception as e:
         logger.error(f"Error in indicator_analysis_view: {e}\n{traceback.format_exc()}")
         return JsonResponse({'error': str(e)}, status=500)
@@ -175,7 +189,7 @@ def market_structure_view(request):
         analyzer = LegPivotAnalyzer(df, sensitivity=7)
         result = analyzer.analyze()
         result['source'] = source
-        return JsonResponse(result)
+        return JsonResponse(convert_numpy_types(result))
     except Exception as e:
         logger.error(f"Error in market_structure_view: {e}\n{traceback.format_exc()}")
         return JsonResponse({'error': str(e)}, status=500)
@@ -192,7 +206,7 @@ def trend_analysis_view(request):
             df[col] = pd.to_numeric(df[col])
         analysis_result = analyze_trend(df, timeframe=interval, ml_model=None)
         analysis_result['source'] = source
-        return JsonResponse(analysis_result)
+        return JsonResponse(convert_numpy_types(analysis_result))
     except Exception as e:
         logger.error(f"Error in trend_analysis_view: {e}\n{traceback.format_exc()}")
         return JsonResponse({'error': str(e)}, status=500)
@@ -215,7 +229,7 @@ def whale_analysis_view(request):
         for s in signals:
             if isinstance(s.get('time'), pd.Timestamp):
                 s['time'] = s['time'].isoformat()
-        return JsonResponse({'source': source, 'signals': signals}, safe=False)
+        return JsonResponse(convert_numpy_types({'source': source, 'signals': signals}), safe=False)
     except Exception as e:
         logger.error(f"Error in whale_analysis_view: {e}\n{traceback.format_exc()}")
         return JsonResponse({'error': str(e)}, status=500)
@@ -231,7 +245,7 @@ def divergence_analysis_view(request):
         for col in ['open', 'high', 'low', 'close', 'volume']: df[col] = pd.to_numeric(df[col])
         divergence_results = detect_divergences(df, order=5)
         final_result = {'source': source, 'divergences': divergence_results}
-        return JsonResponse(final_result, safe=False)
+        return JsonResponse(convert_numpy_types(final_result), safe=False)
     except Exception as e:
         logger.error(f"Error in divergence_analysis_view: {e}\n{traceback.format_exc()}")
         return JsonResponse({'error': str(e)}, status=500)
@@ -257,7 +271,7 @@ def risk_analysis_view(request):
             risk_pct=risk_pct, leverage=leverage, win_rate=win_rate,
             atr=atr, ml_model=None, ml_features=None
         )
-        return JsonResponse(analysis_results)
+        return JsonResponse(convert_numpy_types(analysis_results))
     except (ValueError, TypeError) as ve:
         return JsonResponse({'error': f'Invalid or missing parameter: {str(ve)}'}, status=400)
     except Exception as e:
@@ -283,7 +297,7 @@ def ai_prediction_view(request):
         engine.feature_engineering()
         report = engine.generate_advanced_report()
         report['source'] = source
-        return JsonResponse(report)
+        return JsonResponse(convert_numpy_types(report))
     except Exception as e:
         logger.error(f"Error in ai_prediction_view: {e}\n{traceback.format_exc()}")
         return JsonResponse({'error': str(e)}, status=500)
@@ -299,10 +313,9 @@ def get_final_signal_view(request):
 
         # تبدیل هوشمند زمان در ابتدای کار
         if 'timestamp' in df.columns:
-            # تشخیص خودکار واحد زمان (ثانیه یا میلی‌ثانیه)
-            if df['timestamp'].iloc[0] > 10**12: # معمولاً ۱۳ رقم برای میلی‌ثانیه
+            if df['timestamp'].iloc[0] > 10**12:
                 df['timestamp_dt'] = pd.to_datetime(df['timestamp'], unit='ms')
-            else: # معمولاً ۱۰ رقم برای ثانیه
+            else:
                 df['timestamp_dt'] = pd.to_datetime(df['timestamp'], unit='s')
         
         # اجرای موتور اندیکاتور و استخراج فقط آخرین مقادیر
@@ -312,8 +325,8 @@ def get_final_signal_view(request):
             if col not in ['timestamp', 'open', 'high', 'low', 'close', 'volume', 'timestamp_dt']:
                 if not df_with_indicators[col].dropna().empty:
                     last_valid_value = df_with_indicators[col].dropna().iloc[-1]
-                    latest_indicator_values[col] = round(last_valid_value, 4) if isinstance(last_valid_value, (int, float)) else last_valid_value
-
+                    latest_indicator_values[col] = last_valid_value
+        
         # اجرای بقیه موتورهای تحلیلی
         trend_res = analyze_trend(df.copy(), timeframe=interval)
         
@@ -338,8 +351,10 @@ def get_final_signal_view(request):
         # ارسال نتایج به ارکستراتور
         orchestrator = MasterOrchestrator()
         final_signal = orchestrator.get_consensus_signal(all_analysis)
+        
+        final_signal_cleaned = convert_numpy_types(final_signal)
 
-        return JsonResponse(final_signal, safe=False)
+        return JsonResponse(final_signal_cleaned, safe=False)
 
     except Exception as e:
         logger.error(f"Error in get_final_signal_view: {e}\n{traceback.format_exc()}")
