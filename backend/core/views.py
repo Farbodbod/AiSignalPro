@@ -1,5 +1,3 @@
-# core/views.py - نسخه کامل و نهایی با اصلاح تاریخ
-
 import time
 import requests
 import logging
@@ -16,10 +14,15 @@ from engines.indicator_analyzer import calculate_indicators
 from engines.market_structure_analyzer import LegPivotAnalyzer
 from engines.trend_analyzer import analyze_trend
 from engines.whale_analyzer import WhaleAnalyzer
+# === این خط فراموش شده بود و اکنون اضافه شده است ===
+from engines.divergence_detector import detect_divergences
+
 
 logger = logging.getLogger(__name__)
 
-# توابع system_status_view, check_exchange_status, market_overview_view, all_data_view
+# تمام توابع قبلی (system_status_view, market_overview_view, و غیره)
+# در اینجا قرار دارند و بدون تغییر هستند.
+
 def system_status_view(request):
     exchanges_to_check = [
         {'name': 'Kucoin', 'status_url': 'https://api.kucoin.com/api/v1/timestamp'},
@@ -201,9 +204,6 @@ def whale_analysis_view(request):
             return JsonResponse({'error': f'Not enough kline data from {source} for whale analysis.'}, status=404)
         
         df = pd.DataFrame(kline_data)
-        # === این خط برای اصلاح مشکل تاریخ، آپدیت شد ===
-        # صرافی‌ها معمولا زمان را به صورت ثانیه (s) یا میلی‌ثانیه (ms) می‌دهند
-        # با توجه به خروجی 1970، به احتمال زیاد واحد ثانیه است
         df['timestamp'] = pd.to_datetime(df['timestamp'], unit='s')
         df.set_index('timestamp', inplace=True)
 
@@ -224,3 +224,28 @@ def whale_analysis_view(request):
     except Exception as e:
         logger.error(f"Error in whale_analysis_view: {e}\n{traceback.format_exc()}")
         return JsonResponse({'error': str(e)}, status=500)
+
+def divergence_analysis_view(request):
+    source = request.GET.get('source', 'kucoin').lower()
+    symbol = request.GET.get('symbol', 'BTC-USDT').upper()
+    interval = request.GET.get('interval', '1h').lower()
+    
+    try:
+        fetcher = ExchangeFetcher()
+        kline_data = fetcher.get_klines(source=source, symbol=symbol, interval=interval, limit=300)
+
+        if not kline_data or len(kline_data) < 100:
+            return JsonResponse({'error': f'Not enough kline data from {source} for divergence analysis.'}, status=404)
+
+        df = pd.DataFrame(kline_data)
+        for col in ['open', 'high', 'low', 'close', 'volume']:
+            df[col] = pd.to_numeric(df[col])
+        
+        divergence_results = detect_divergences(df, order=5)
+        
+        return JsonResponse(divergence_results, safe=False)
+
+    except Exception as e:
+        logger.error(f"Error in divergence_analysis_view: {e}\n{traceback.format_exc()}")
+        return JsonResponse({'error': str(e)}, status=500)
+
