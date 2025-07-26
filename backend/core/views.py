@@ -1,3 +1,4 @@
+from engines.indicator_analyzer import calculate_indicators
 from django.http import JsonResponse
 import time
 import requests
@@ -116,4 +117,45 @@ def candlestick_analysis_view(request):
         return JsonResponse(patterns, safe=False)
     except Exception as e:
         logger.error(f"Error in candlestick_analysis_view: {e}\n{traceback.format_exc()}")
+        return JsonResponse({'error': str(e)}, status=500)
+def indicator_analysis_view(request):
+    # دریافت پارامترها از URL با مقادیر پیش‌فرض
+    source = request.GET.get('source', 'kucoin').lower()
+    symbol = request.GET.get('symbol', 'BTC-USDT').upper()
+    interval = request.GET.get('interval', '1h').lower()
+
+    # دریافت لیست اندیکاتورهای درخواستی (اختیاری)
+    # مثال: ?indicators=rsi,ma,macd_line
+    indicators_query = request.GET.get('indicators')
+    selected_indicators = indicators_query.split(',') if indicators_query else None
+
+    try:
+        # 1. دریافت داده‌های کندل از ExchangeFetcher
+        fetcher = ExchangeFetcher()
+        kline_data = fetcher.get_klines(source=source, symbol=symbol, interval=interval, limit=200) # نیاز به کندل‌های بیشتر برای محاسبات
+
+        if not kline_data:
+            return JsonResponse({'error': 'Could not fetch kline data from exchange.'}, status=404)
+
+        df = pd.DataFrame(kline_data)
+        for col in ['open', 'high', 'low', 'close', 'volume']:
+            df[col] = pd.to_numeric(df[col])
+
+        # 2. اجرای موتور تحلیل اندیکاتورها
+        df_with_indicators = calculate_indicators(df, selected=selected_indicators)
+
+        # 3. استخراج آخرین مقادیر و آماده‌سازی پاسخ JSON
+        # ما فقط به آخرین مقدار هر اندیکاتور نیاز داریم
+        latest_values = {}
+        for col in df_with_indicators.columns:
+            # فقط ستون‌هایی که اندیکاتور هستند و در دیتافریم اولیه نبودند
+            if col not in ['timestamp', 'open', 'high', 'low', 'close', 'volume']:
+                # آخرین مقدار غیر NaN را پیدا کن
+                last_valid_value = df_with_indicators[col].dropna().iloc[-1]
+                latest_values[col] = round(last_valid_value, 4) if isinstance(last_valid_value, (int, float)) else last_valid_value
+
+        return JsonResponse(latest_values)
+
+    except Exception as e:
+        logger.error(f"Error in indicator_analysis_view: {e}\n{traceback.format_exc()}")
         return JsonResponse({'error': str(e)}, status=500)
