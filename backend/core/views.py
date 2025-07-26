@@ -7,12 +7,11 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from django.http import JsonResponse
 
+# موتورهای تحلیلی
 from .exchange_fetcher import ExchangeFetcher
 from engines.candlestick_reader import CandlestickPatternDetector
 from engines.indicator_analyzer import calculate_indicators
 from engines.market_structure_analyzer import LegPivotAnalyzer
-
-# ===== این import برای تابع بهینه‌سازی شده، تغییر کرده است =====
 from engines.trend_analyzer import analyze_trend
 
 logger = logging.getLogger(__name__)
@@ -23,9 +22,6 @@ def system_status_view(request):
         {'name': 'Gate.io', 'status_url': 'https://api.gate.io/api/v4/spot/time'},
         {'name': 'MEXC', 'status_url': 'https://api.mexc.com/api/v3/time'},
         {'name': 'OKX', 'status_url': 'https://www.okx.com/api/v5/system/time'},
-        {'name': 'Toobit', 'status_url': 'https://api.toobit.com/api/v1/ping'},
-        {'name': 'XT.com', 'status_url': 'https://api.xt.com/v4/public/ping'},
-        {'name': 'CoinGecko', 'status_url': 'https://api.coingecko.com/api/v3/ping'},
     ]
     results = []
     with ThreadPoolExecutor(max_workers=len(exchanges_to_check)) as executor:
@@ -106,14 +102,16 @@ def candlestick_analysis_view(request):
     try:
         fetcher = ExchangeFetcher()
         kline_data = fetcher.get_klines(source=source, symbol=symbol, interval=interval, limit=100)
-        if not kline_data:
-            return JsonResponse({'error': 'Could not fetch kline data from exchange.'}, status=404)
+        if not kline_data or len(kline_data) < 50:
+            return JsonResponse({'error': f'Not enough kline data from {source} for candlestick analysis.'}, status=404)
+        
         df = pd.DataFrame(kline_data)
         for col in ['open', 'high', 'low', 'close', 'volume']:
             df[col] = pd.to_numeric(df[col])
         detector = CandlestickPatternDetector(df)
         patterns = detector.apply_filters(min_score=1.2, min_volume_ratio=0.8)
         return JsonResponse(patterns, safe=False)
+        
     except Exception as e:
         logger.error(f"Error in candlestick_analysis_view: {e}\n{traceback.format_exc()}")
         return JsonResponse({'error': str(e)}, status=500)
@@ -122,23 +120,26 @@ def indicator_analysis_view(request):
     source = request.GET.get('source', 'kucoin').lower()
     symbol = request.GET.get('symbol', 'BTC-USDT').upper()
     interval = request.GET.get('interval', '1h').lower()
-    indicators_query = request.GET.get('indicators')
-    selected_indicators = indicators_query.split(',') if indicators_query else None
     try:
         fetcher = ExchangeFetcher()
         kline_data = fetcher.get_klines(source=source, symbol=symbol, interval=interval, limit=200)
-        if not kline_data:
-            return JsonResponse({'error': 'Could not fetch kline data from exchange.'}, status=404)
+        if not kline_data or len(kline_data) < 100:
+            return JsonResponse({'error': f'Not enough kline data from {source} for indicator analysis.'}, status=404)
+
         df = pd.DataFrame(kline_data)
         for col in ['open', 'high', 'low', 'close', 'volume']:
             df[col] = pd.to_numeric(df[col])
-        df_with_indicators = calculate_indicators(df, selected=selected_indicators)
+            
+        df_with_indicators = calculate_indicators(df)
         latest_values = {}
         for col in df_with_indicators.columns:
             if col not in ['timestamp', 'open', 'high', 'low', 'close', 'volume']:
-                last_valid_value = df_with_indicators[col].dropna().iloc[-1]
-                latest_values[col] = round(last_valid_value, 4) if isinstance(last_valid_value, (int, float)) else last_valid_value
+                if not df_with_indicators[col].dropna().empty:
+                    last_valid_value = df_with_indicators[col].dropna().iloc[-1]
+                    latest_values[col] = round(last_valid_value, 4) if isinstance(last_valid_value, (int, float)) else last_valid_value
+                
         return JsonResponse(latest_values)
+
     except Exception as e:
         logger.error(f"Error in indicator_analysis_view: {e}\n{traceback.format_exc()}")
         return JsonResponse({'error': str(e)}, status=500)
@@ -150,21 +151,20 @@ def market_structure_view(request):
     try:
         fetcher = ExchangeFetcher()
         kline_data = fetcher.get_klines(source=source, symbol=symbol, interval=interval, limit=300)
-        if not kline_data:
-            return JsonResponse({'error': 'Could not fetch kline data.'}, status=404)
+        if not kline_data or len(kline_data) < 250:
+             return JsonResponse({'error': f'Not enough kline data from {source} for market structure analysis.'}, status=404)
+
         df = pd.DataFrame(kline_data)
         for col in ['open', 'high', 'low', 'close', 'volume']:
             df[col] = pd.to_numeric(df[col])
         analyzer = LegPivotAnalyzer(df, sensitivity=7)
         result = analyzer.analyze()
         return JsonResponse(result)
+
     except Exception as e:
         logger.error(f"Error in market_structure_view: {e}\n{traceback.format_exc()}")
         return JsonResponse({'error': str(e)}, status=500)
 
-# ==========================================================
-#           تابع زیر بهینه‌سازی شده است
-# ==========================================================
 def trend_analysis_view(request):
     source = request.GET.get('source', 'kucoin').lower()
     symbol = request.GET.get('symbol', 'BTC-USDT').upper()
@@ -173,13 +173,14 @@ def trend_analysis_view(request):
         fetcher = ExchangeFetcher()
         kline_data = fetcher.get_klines(source=source, symbol=symbol, interval=interval, limit=300)
         if not kline_data or len(kline_data) < 200:
-            return JsonResponse({'error': f'Not enough kline data for {interval} timeframe.'}, status=404)
+            return JsonResponse({'error': f'Not enough kline data from {source} for trend analysis.'}, status=404)
+        
         df = pd.DataFrame(kline_data)
         for col in ['open', 'high', 'low', 'close', 'volume']:
             df[col] = pd.to_numeric(df[col])
-        # اجرای موتور تحلیل روند برای یک تایم فریم
         analysis_result = analyze_trend(df, timeframe=interval, ml_model=None)
         return JsonResponse(analysis_result)
+        
     except Exception as e:
         logger.error(f"Error in trend_analysis_view: {e}\n{traceback.format_exc()}")
         return JsonResponse({'error': str(e)}, status=500)
