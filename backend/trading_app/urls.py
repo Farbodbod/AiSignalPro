@@ -13,7 +13,8 @@ urlpatterns = [
     path('api/analyze/structure/', views.market_structure_view, name='market-structure-analysis'),
     path('api/analyze/trend/', views.trend_analysis_view, name='trend-analysis'),
     path('api/analyze/whales/', views.whale_analysis_view, name='whale-analysis'),
-
-    # === API جدید برای تشخیص واگرایی اضافه شد ===
     path('api/analyze/divergence/', views.divergence_analysis_view, name='divergence-analysis'),
+
+    # === API جدید برای محاسبه ریسک اضافه شد ===
+    path('api/calculate/risk/', views.risk_analysis_view, name='risk-analysis'),
 ]
