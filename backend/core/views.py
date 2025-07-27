@@ -68,8 +68,8 @@ def _generate_signal_object(symbol, requested_tf, strategy):
     else:
         final_result = orchestrator.get_multi_timeframe_signal(all_tf_analysis)
 
+    # --- اصلاحیه: ai_output اضافی از اینجا حذف شد ---
     adapter = SignalAdapter(
-        ai_output=final_result.get('gemini_confirmation', {}),
         analytics_output=final_result,
         strategy=strategy
     )
@@ -95,12 +95,10 @@ def execute_trade_view(request):
     symbol = request.GET.get('symbol', 'BTC-USDT').upper()
     strategy = request.GET.get('strategy', 'balanced')
     try:
-        # ۱. ابتدا سیگنال نهایی را با تحلیل مولتی-تایم فریم دریافت می‌کنیم
         final_signal_object = _generate_signal_object(symbol, None, strategy)
         if final_signal_object is None:
             return JsonResponse({'error': 'Could not generate a signal to execute.'}, status=404)
 
-        # ۲. سیگنال نهایی را به مدیر معاملات می‌دهیم تا معامله را باز کند
         trade_manager = TradeManager()
         new_trade = trade_manager.start_trade_from_signal(final_signal_object)
 
