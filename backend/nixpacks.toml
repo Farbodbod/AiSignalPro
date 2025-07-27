@@ -1,0 +1,5 @@
+# nixpacks.toml
+
+[phases.setup]
+# We need system build tools for some scientific Python packages
+aptPkgs = ["build-essential", "pkg-config"]
