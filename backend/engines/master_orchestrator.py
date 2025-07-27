@@ -1,84 +1,151 @@
 import os
 import google.generativeai as genai
 import logging
-from .ai_predictor import AIEngineProAdvanced
+import pandas as pd
+from typing import Dict, Any
+import json
+
+# وارد کردن تمام موتورهای تحلیلی مورد نیاز
+from engines.candlestick_reader import CandlestickPatternDetector
+from engines.indicator_analyzer import calculate_indicators
+from engines.trend_analyzer import analyze_trend
+from engines.whale_analyzer import WhaleAnalyzer
+from engines.divergence_detector import detect_divergences
+from engines.market_structure_analyzer import LegPivotAnalyzer
+from engines.ai_predictor import AIEngineProAdvanced
 
 logger = logging.getLogger(__name__)
+
+TIMEFRAME_WEIGHTS = {'1d': 3, '4h': 2, '1h': 1.5, '15m': 1, '5m': 0.5}
 
 class MasterOrchestrator:
     def __init__(self):
         self.gemini_key = os.getenv('GEMINI_API_KEY')
-        
         if self.gemini_key:
             genai.configure(api_key=self.gemini_key)
             self.gemini_model = genai.GenerativeModel('gemini-1.5-flash-latest')
         else:
             self.gemini_model = None
             logger.warning("Gemini API key not found.")
-            
-        # ساخت یک نمونه از موتور یادگیرنده خودمان
+        
         self.local_ai_engine = AIEngineProAdvanced()
 
-    def _generate_prompt(self, analysis_data: dict) -> str:
-        # ساخت یک خلاصه متنی از تمام تحلیل‌ها
-        prompt = f"""
-        Analyze the following market data for {analysis_data.get('symbol')} at the {analysis_data.get('interval')} timeframe and provide a final trading signal (BUY, SELL, or HOLD). 
-        Base your decision ONLY on the data provided. Be decisive. Your final answer must be just one word.
-
-        Data Summary:
-        - Data Source: {analysis_data.get('source')}
-        - Trend Analysis Signal: {analysis_data.get('trend', {}).get('signal')}
-        - Trend ADX: {analysis_data.get('trend', {}).get('adx')}
-        - Whale Signals Detected: {len(analysis_data.get('whales', {}).get('signals', []))}
-        - Divergences Detected: {analysis_data.get('divergence', {}).get('divergences')}
-        - Key Indicators: {analysis_data.get('indicators')}
-        - Candlestick Patterns: {analysis_data.get('candlesticks', {}).get('patterns')}
+    def analyze_single_dataframe(self, df: pd.DataFrame, timeframe: str) -> Dict[str, Any]:
+        """تمام تحلیل‌ها را روی یک دیتافریم اجرا می‌کند."""
         
-        Final Signal (BUY, SELL, or HOLD):
-        """
-        return prompt
+        if 'timestamp' in df.columns:
+            if df['timestamp'].iloc[0] > 10**12:
+                df['timestamp_dt'] = pd.to_datetime(df['timestamp'], unit='ms')
+            else:
+                df['timestamp_dt'] = pd.to_datetime(df['timestamp'], unit='s')
 
-    def _query_gemini(self, prompt: str) -> str:
+        df_with_indicators = calculate_indicators(df.copy())
+        latest_indicator_values = {}
+        for col in df_with_indicators.columns:
+            if col not in ['timestamp', 'open', 'high', 'low', 'close', 'volume', 'timestamp_dt']:
+                if not df_with_indicators[col].dropna().empty:
+                    last_valid_value = df_with_indicators[col].dropna().iloc[-1]
+                    latest_indicator_values[col] = last_valid_value
+        
+        trend_res = analyze_trend(df.copy(), timeframe=timeframe)
+        
+        whale_analyzer_instance = WhaleAnalyzer(timeframes=[timeframe])
+        df_for_whale = df.copy()
+        if 'timestamp_dt' in df_for_whale.columns:
+            df_for_whale = df_for_whale.set_index('timestamp_dt')
+        whale_analyzer_instance.update_data(timeframe, df_for_whale)
+        whale_res = {"signals": whale_analyzer_instance.get_signals(timeframe)}
+        
+        df_reset = df.copy().reset_index()
+        divergence_res = detect_divergences(df_reset)
+        candlestick_res = {"patterns": CandlestickPatternDetector(df_reset).apply_filters()}
+        
+        market_structure_res = LegPivotAnalyzer(df.copy()).analyze()
+        
+        self.local_ai_engine.load_data(df.copy())
+        self.local_ai_engine.feature_engineering()
+        local_ai_res = self.local_ai_engine.generate_advanced_report()
+
+        return {
+            "trend": trend_res, "whales": whale_res, "divergence": divergence_res,
+            "indicators": latest_indicator_values, "candlesticks": candlestick_res,
+            "market_structure": market_structure_res,
+            "local_ai": local_ai_res
+        }
+
+    def _generate_composite_prompt(self, all_tf_analysis: Dict[str, Any], scores: Dict[str, float]) -> str:
+        """یک پرامپت جامع و کامل‌تر برای Gemini می‌سازد."""
+        prompt = f"""
+        Analyze the following multi-timeframe market data and provide a final trading signal (BUY, SELL, or HOLD) and a confidence score (0-100). 
+        The rule-based system score is BUY: {scores['buy_score']:.2f} and SELL: {scores['sell_score']:.2f}.
+        Use this score as a primary factor, but also use your own intelligence based on the detailed data.
+        Respond ONLY with a valid JSON object like this: {{"signal": "...", "confidence": ...}}
+
+        --- Data Summary ---
+        """
+        for tf, data in all_tf_analysis.items():
+            prompt += f"\n--- Timeframe: {tf} ---\n"
+            prompt += f"- Trend: {data.get('trend', {}).get('signal')}\n"
+            prompt += f"- Market Phase: {data.get('market_structure', {}).get('market_phase')}\n"
+            prompt += f"- Local AI Signal: {data.get('local_ai', {}).get('signal')}\n"
+            prompt += f"- Whale Signals Detected: {len(data.get('whales', {}).get('signals', []))}\n"
+            prompt += f"- Bullish Divergences: {len([d for d in data.get('divergence', {}).get('rsi', []) if 'bullish' in d.get('type', '')])}\n"
+            prompt += f"- Bearish Divergences: {len([d for d in data.get('divergence', {}).get('rsi', []) if 'bearish' in d.get('type', '')])}\n"
+        return prompt
+        
+    def _query_gemini(self, prompt: str) -> Dict[str, Any]:
+        """پرس و جو از مدل Gemini و بازگرداندن پاسخ در فرمت دیکشنری."""
         if not self.gemini_model:
-            return "Not Available"
+            return {"signal": "N/A", "confidence": 0}
         try:
             response = self.gemini_model.generate_content(prompt)
-            # تمیز کردن خروجی برای گرفتن فقط یک کلمه
-            cleaned_response = response.text.strip().upper().split()[0]
-            if cleaned_response in ["BUY", "SELL", "HOLD"]:
-                return cleaned_response
-            return "HOLD" # اگر پاسخ نامفهوم بود
+            cleaned_text = response.text.strip().replace("```json", "").replace("```", "")
+            return json.loads(cleaned_text)
         except Exception as e:
-            logger.error(f"Gemini query failed: {e}")
-            return "Error"
+            logger.error(f"Gemini query or JSON parsing failed: {e}")
+            return {"signal": "Error", "confidence": 0}
+
+    def get_multi_timeframe_signal(self, all_tf_analysis: Dict[str, Any]) -> Dict[str, Any]:
+        """سیگنال نهایی را بر اساس تحلیل جامع مولتی-تایم‌فریم تولید می‌کند."""
+        buy_score = 0
+        sell_score = 0
+
+        for tf, data in all_tf_analysis.items():
+            weight = TIMEFRAME_WEIGHTS.get(tf, 1)
             
-    def get_consensus_signal(self, df, analysis_data: dict) -> dict:
-        prompt = self._generate_prompt(analysis_data)
-        
-        # ۱. دریافت سیگنال از Gemini
-        gemini_signal = self._query_gemini(prompt)
+            if "Uptrend" in data.get('trend', {}).get('signal', ''):
+                buy_score += 1 * weight
+            elif "Downtrend" in data.get('trend', {}).get('signal', ''):
+                sell_score += 1 * weight
 
-        # ۲. دریافت سیگنال از موتور یادگیرنده خودمان
-        self.local_ai_engine.load_data(df)
-        self.local_ai_engine.feature_engineering()
-        local_ai_report = self.local_ai_engine.generate_advanced_report()
+            if data.get('market_structure', {}).get('market_phase') == 'strong_trend':
+                buy_score += 1 * weight
 
-        # منطق رأی‌گیری نهایی
-        final_signal = "HOLD"
-        local_signal = local_ai_report.get('signal')
-        votes = [s for s in [gemini_signal, local_signal] if s in ["BUY", "SELL", "HOLD"]]
-        
-        if len(votes) == 2 and votes[0] == votes[1]: # اگر هر دو موافق بودند
-            final_signal = votes[0]
-        elif "BUY" in votes and "SELL" not in votes: # اگر حداقل یک خرید داشتیم و هیچ فروشی نبود
+            if len([d for d in data.get('divergence', {}).get('rsi', []) if 'bullish' in d.get('type', '')]) > 0:
+                buy_score += 1.5 * weight
+            if len([d for d in data.get('divergence', {}).get('rsi', []) if 'bearish' in d.get('type', '')]) > 0:
+                sell_score += 1.5 * weight
+            
+            if data.get('local_ai', {}).get('signal') == 'Buy':
+                buy_score += 1 * weight
+            elif data.get('local_ai', {}).get('signal') == 'Sell':
+                sell_score += 1 * weight
+
+        if buy_score > sell_score * 1.5:
             final_signal = "BUY"
-        elif "SELL" in votes and "BUY" not in votes: # اگر حداقل یک فروش داشتیم و هیچ خریدی نبود
+        elif sell_score > buy_score * 1.5:
             final_signal = "SELL"
-        # در غیر این صورت (مثلا یکی خرید و یکی فروش) سیگنال HOLD باقی می‌ماند
-            
+        else:
+            final_signal = "HOLD"
+
+        scores = {"buy_score": buy_score, "sell_score": sell_score}
+        prompt = self._generate_composite_prompt(all_tf_analysis, scores)
+        gemini_confirmation = self._query_gemini(prompt)
+
         return {
-            "final_signal": final_signal,
-            "gemini_vote": gemini_signal,
-            "local_ai_vote": local_ai_report,
-            "data_summary": analysis_data
+            "rule_based_signal": final_signal,
+            "buy_score": round(buy_score, 2),
+            "sell_score": round(sell_score, 2),
+            "gemini_confirmation": gemini_confirmation,
+            "details": all_tf_analysis
         }
