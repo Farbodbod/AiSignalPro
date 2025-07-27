@@ -22,10 +22,8 @@ from engines.master_orchestrator import MasterOrchestrator
 
 logger = logging.getLogger(__name__)
 
-# لیست صرافی‌ها به ترتیب اولویت برای استفاده در تمام تحلیل‌ها
 EXCHANGE_FALLBACK_LIST = ['kucoin', 'mexc', 'okx', 'gateio']
 
-# --- تابع کمکی جدید برای حل مشکل int64 ---
 def convert_numpy_types(obj):
     if isinstance(obj, np.integer):
         return int(obj)
@@ -38,10 +36,6 @@ def convert_numpy_types(obj):
     elif isinstance(obj, list):
         return [convert_numpy_types(i) for i in obj]
     return obj
-
-# ==========================================================
-# توابع عمومی و وضعیت سیستم
-# ==========================================================
 
 def system_status_view(request):
     exchanges_to_check = [
@@ -78,11 +72,7 @@ def market_overview_view(request):
         cg_data = requests.get(coingecko_url, timeout=10).json()
         if cg_data and 'data' in cg_data:
             data = cg_data['data']
-            response_data.update({
-                'market_cap': data.get('total_market_cap', {}).get('usd', 0),
-                'volume_24h': data.get('total_volume', {}).get('usd', 0),
-                'btc_dominance': data.get('market_cap_percentage', {}).get('btc', 0)
-            })
+            response_data.update({'market_cap': data.get('total_market_cap', {}).get('usd', 0),'volume_24h': data.get('total_volume', {}).get('usd', 0),'btc_dominance': data.get('market_cap_percentage', {}).get('btc', 0)})
     except Exception as e_cg:
         logger.error(f"[CoinGecko] fallback failed: {e_cg}")
     try:
@@ -120,11 +110,6 @@ def all_data_view(request):
         logger.error(f"Error in all_data_view: {e}\n{traceback.format_exc()}")
         return JsonResponse({'error': 'Internal server error'}, status=500)
 
-
-# ==========================================================
-# تابع کمکی برای دریافت داده با منطق فال‌بک
-# ==========================================================
-
 def _get_data_with_fallback(fetcher, symbol, interval, limit, min_length):
     for source in EXCHANGE_FALLBACK_LIST:
         logger.info(f"Attempting to fetch data from {source} for {symbol}...")
@@ -133,11 +118,6 @@ def _get_data_with_fallback(fetcher, symbol, interval, limit, min_length):
             logger.info(f"Successfully fetched {len(kline_data)} candles from {source}.")
             return pd.DataFrame(kline_data), source
     return None, None
-
-
-# ==========================================================
-# توابع تحلیل با منطق فال‌بک (Fallback) هوشمند
-# ==========================================================
 
 def candlestick_analysis_view(request):
     symbol = request.GET.get('symbol', 'BTC-USDT').upper()
@@ -170,7 +150,7 @@ def indicator_analysis_view(request):
             if col not in ['timestamp', 'open', 'high', 'low', 'close', 'volume']:
                 if not df_with_indicators[col].dropna().empty:
                     last_valid_value = df_with_indicators[col].dropna().iloc[-1]
-                    latest_values[col] = round(last_valid_value, 4) if isinstance(last_valid_value, (int, float)) else last_valid_value
+                    latest_values[col] = last_valid_value
         return JsonResponse(convert_numpy_types(latest_values))
     except Exception as e:
         logger.error(f"Error in indicator_analysis_view: {e}\n{traceback.format_exc()}")
@@ -219,8 +199,13 @@ def whale_analysis_view(request):
         df, source = _get_data_with_fallback(fetcher, symbol, interval, limit=500, min_length=100)
         if df is None:
             return JsonResponse({'error': 'Not enough kline data from any supported exchange.'}, status=404)
-        df['timestamp'] = pd.to_datetime(df['timestamp'], unit='s')
-        df.set_index('timestamp', inplace=True)
+        # Smart timestamp conversion
+        if 'timestamp' in df.columns:
+            if df['timestamp'].iloc[0] > 10**12:
+                df['timestamp_dt'] = pd.to_datetime(df['timestamp'], unit='ms')
+            else:
+                df['timestamp_dt'] = pd.to_datetime(df['timestamp'], unit='s')
+            df.set_index('timestamp_dt', inplace=True)
         for col in ['open', 'high', 'low', 'close', 'volume']: df[col] = pd.to_numeric(df[col])
         analyzer = WhaleAnalyzer(timeframes=[interval])
         analyzer.update_data(interval, df)
@@ -311,14 +296,12 @@ def get_final_signal_view(request):
         if df is None:
             return JsonResponse({'error': 'Not enough kline data from any supported exchange.'}, status=404)
 
-        # تبدیل هوشمند زمان در ابتدای کار
         if 'timestamp' in df.columns:
             if df['timestamp'].iloc[0] > 10**12:
                 df['timestamp_dt'] = pd.to_datetime(df['timestamp'], unit='ms')
             else:
                 df['timestamp_dt'] = pd.to_datetime(df['timestamp'], unit='s')
         
-        # اجرای موتور اندیکاتور و استخراج فقط آخرین مقادیر
         df_with_indicators = calculate_indicators(df.copy())
         latest_indicator_values = {}
         for col in df_with_indicators.columns:
@@ -327,7 +310,6 @@ def get_final_signal_view(request):
                     last_valid_value = df_with_indicators[col].dropna().iloc[-1]
                     latest_indicator_values[col] = last_valid_value
         
-        # اجرای بقیه موتورهای تحلیلی
         trend_res = analyze_trend(df.copy(), timeframe=interval)
         
         whale_analyzer_instance = WhaleAnalyzer(timeframes=[interval])
@@ -340,7 +322,6 @@ def get_final_signal_view(request):
         divergence_res = {"divergences": detect_divergences(df_reset)}
         candlestick_res = {"patterns": CandlestickPatternDetector(df_reset).apply_filters()}
         
-        # جمع‌آوری تمام نتایج در یک دیکشنری
         all_analysis = {
             "symbol": symbol, "interval": interval, "source": source,
             "trend": trend_res, "whales": whale_res, "divergence": divergence_res,
@@ -348,14 +329,12 @@ def get_final_signal_view(request):
             "candlesticks": candlestick_res
         }
         
-        # ارسال نتایج به ارکستراتور
         orchestrator = MasterOrchestrator()
-        final_signal = orchestrator.get_consensus_signal(all_analysis)
+        final_signal = orchestrator.get_consensus_signal(df.copy(), all_analysis)
         
         final_signal_cleaned = convert_numpy_types(final_signal)
-
         return JsonResponse(final_signal_cleaned, safe=False)
-
     except Exception as e:
         logger.error(f"Error in get_final_signal_view: {e}\n{traceback.format_exc()}")
         return JsonResponse({'error': str(e)}, status=500)
+
