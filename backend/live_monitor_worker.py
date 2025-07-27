@@ -23,7 +23,6 @@ class SignalCache:
     def __init__(self, ttl_seconds: int):
         self.cache = {}
         self.ttl = ttl_seconds
-
     def is_duplicate(self, symbol: str, signal_type: str) -> bool:
         now = time.time()
         if symbol in self.cache:
@@ -31,7 +30,6 @@ class SignalCache:
             if signal_type == last_signal and (now - last_time) < self.ttl:
                 return True
         return False
-
     def store(self, symbol: str, signal_type: str):
         self.cache[symbol] = (signal_type, time.time())
 
@@ -41,13 +39,10 @@ def format_professional_message(signal_obj: dict) -> str:
     price = signal_obj.get("current_price", 0.0)
     confidence = signal_obj.get("confidence", 0)
     risk = signal_obj.get("risk_level", "N/A")
-    
     scores = signal_obj.get("scores", {})
     buy_score = scores.get("buy_score", 0)
     sell_score = scores.get("sell_score", 0)
-    
     tags = ", ".join(signal_obj.get("tags", ["No specific factors"]))
-
     message = (
         f"SIGNAL ALERT: *{signal_type} {symbol}*\n"
         f"----------------------------------------\n"
@@ -131,4 +126,3 @@ def monitor_loop():
 
 if __name__ == "__main__":
     monitor_loop()
-
