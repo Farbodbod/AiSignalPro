@@ -12,6 +12,7 @@ from django.http import JsonResponse
 from .exchange_fetcher import ExchangeFetcher
 from engines.master_orchestrator import MasterOrchestrator
 from engines.signal_adapter import SignalAdapter
+from engines.trade_manager import TradeManager
 
 logger = logging.getLogger(__name__)
 
@@ -39,56 +40,86 @@ def _get_data_with_fallback(fetcher, symbol, interval, limit, min_length):
             return pd.DataFrame(kline_data), source
     return None, None
 
-# ==========================================================
-# API نهایی و هوشمند
-# ==========================================================
+def _generate_signal_object(symbol, requested_tf, strategy):
+    """تابع کمکی برای تولید آبجکت سیگنال نهایی جهت جلوگیری از تکرار کد"""
+    fetcher = ExchangeFetcher()
+    orchestrator = MasterOrchestrator()
+    
+    all_tf_analysis = {}
+    timeframes_to_analyze = [requested_tf] if requested_tf else ['5m', '15m', '1h', '4h', '1d']
+
+    for tf in timeframes_to_analyze:
+        limit = 300 if tf in ['1h', '4h', '1d'] else 100
+        min_length = 200 if tf in ['1h', '4h', '1d'] else 50
+        
+        df, source = _get_data_with_fallback(fetcher, symbol, tf, limit=limit, min_length=min_length)
+        if df is not None:
+            analysis = orchestrator.analyze_single_dataframe(df, tf)
+            analysis['source'] = source
+            analysis['symbol'] = symbol
+            analysis['interval'] = tf
+            all_tf_analysis[tf] = analysis
+    
+    if not all_tf_analysis:
+        return None
+
+    if requested_tf and requested_tf in all_tf_analysis:
+         final_result = all_tf_analysis[requested_tf]
+    else:
+        final_result = orchestrator.get_multi_timeframe_signal(all_tf_analysis)
+
+    adapter = SignalAdapter(
+        ai_output=final_result.get('gemini_confirmation', {}),
+        analytics_output=final_result,
+        strategy=strategy
+    )
+    return adapter.combine()
+
+
 def get_composite_signal_view(request):
     symbol = request.GET.get('symbol', 'BTC-USDT').upper()
     requested_tf = request.GET.get('timeframe') 
     strategy = request.GET.get('strategy', 'balanced')
-
     try:
-        fetcher = ExchangeFetcher()
-        orchestrator = MasterOrchestrator()
-        
-        all_tf_analysis = {}
-        # اگر کاربر تایم‌فریم خواسته بود فقط همان، در غیر این صورت لیست کامل
-        timeframes_to_analyze = [requested_tf] if requested_tf else ['5m', '15m', '1h', '4h', '1d']
-
-        for tf in timeframes_to_analyze:
-            # برای تایم‌فریم‌های کوتاه‌تر، دیتای کمتری نیاز داریم
-            limit = 300 if tf in ['1h', '4h', '1d'] else 100
-            min_length = 200 if tf in ['1h', '4h', '1d'] else 50
-            
-            df, source = _get_data_with_fallback(fetcher, symbol, tf, limit=limit, min_length=min_length)
-            if df is not None:
-                analysis = orchestrator.analyze_single_dataframe(df, tf)
-                analysis['source'] = source
-                analysis['symbol'] = symbol
-                analysis['interval'] = tf
-                all_tf_analysis[tf] = analysis
-        
-        if not all_tf_analysis:
+        final_signal_object = _generate_signal_object(symbol, requested_tf, strategy)
+        if final_signal_object is None:
             return JsonResponse({'error': 'Could not fetch enough data for any requested timeframe.'}, status=404)
-
-        # اگر فقط یک تایم‌فریم تحلیل شده بود، نتیجه همان را برمی‌گردانیم
-        if requested_tf:
-             final_result = all_tf_analysis[requested_tf]
-        else:
-            # اجرای ارکستراتور برای دریافت تحلیل خام مولتی-تایم‌فریم
-            final_result = orchestrator.get_multi_timeframe_signal(all_tf_analysis)
-
-        # --- مرحله نهایی: استفاده از آداپتور برای استانداردسازی خروجی ---
-        adapter = SignalAdapter(
-            ai_output=final_result.get('gemini_confirmation', {}),
-            analytics_output=final_result,
-            strategy=strategy
-        )
-        final_signal_object = adapter.combine()
-        # --- پایان مرحله نهایی ---
-
         return JsonResponse(convert_numpy_types(final_signal_object), safe=False)
-
     except Exception as e:
         logger.error(f"Error in get_composite_signal_view: {e}\n{traceback.format_exc()}")
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+def execute_trade_view(request):
+    """آخرین سیگنال را تحلیل کرده و در صورت BUY/SELL، یک معامله باز می‌کند."""
+    symbol = request.GET.get('symbol', 'BTC-USDT').upper()
+    strategy = request.GET.get('strategy', 'balanced')
+    try:
+        # ۱. ابتدا سیگنال نهایی را با تحلیل مولتی-تایم فریم دریافت می‌کنیم
+        final_signal_object = _generate_signal_object(symbol, None, strategy)
+        if final_signal_object is None:
+            return JsonResponse({'error': 'Could not generate a signal to execute.'}, status=404)
+
+        # ۲. سیگنال نهایی را به مدیر معاملات می‌دهیم تا معامله را باز کند
+        trade_manager = TradeManager()
+        new_trade = trade_manager.start_trade_from_signal(final_signal_object)
+
+        if new_trade:
+            return JsonResponse({"status": "Trade Opened", "trade_id": str(new_trade.id)})
+        else:
+            return JsonResponse({"status": "No Trade Opened", "signal": final_signal_object.get("signal_type")})
+
+    except Exception as e:
+        logger.error(f"Error in execute_trade_view: {e}\n{traceback.format_exc()}")
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+def list_open_trades_view(request):
+    """لیست تمام معاملات باز را نمایش می‌دهد."""
+    try:
+        trade_manager = TradeManager()
+        open_trades = trade_manager.get_open_trades()
+        return JsonResponse(open_trades, safe=False)
+    except Exception as e:
+        logger.error(f"Error in list_open_trades_view: {e}\n{traceback.format_exc()}")
         return JsonResponse({'error': str(e)}, status=500)
