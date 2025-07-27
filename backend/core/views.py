@@ -13,24 +13,19 @@ from .exchange_fetcher import ExchangeFetcher
 from engines.master_orchestrator import MasterOrchestrator
 from engines.signal_adapter import SignalAdapter
 from engines.trade_manager import TradeManager
-from engines.indicator_analyzer import calculate_indicators
-from engines.trend_analyzer import analyze_trend
+from engines.indicator_analyzer import calculate_indicators # برای ویوهای قدیمی
+from engines.trend_analyzer import analyze_trend # برای ویوهای قدیمی
 
 logger = logging.getLogger(__name__)
 
 EXCHANGE_FALLBACK_LIST = ['kucoin', 'mexc', 'okx', 'gateio']
 
 def convert_numpy_types(obj):
-    if isinstance(obj, np.integer):
-        return int(obj)
-    elif isinstance(obj, np.floating):
-        return float(obj)
-    elif isinstance(obj, np.ndarray):
-        return obj.tolist()
-    elif isinstance(obj, dict):
-        return {k: convert_numpy_types(v) for k, v in obj.items()}
-    elif isinstance(obj, list):
-        return [convert_numpy_types(i) for i in obj]
+    if isinstance(obj, np.integer): return int(obj)
+    if isinstance(obj, np.floating): return float(obj)
+    if isinstance(obj, np.ndarray): return obj.tolist()
+    if isinstance(obj, dict): return {k: convert_numpy_types(v) for k, v in obj.items()}
+    if isinstance(obj, list): return [convert_numpy_types(i) for i in obj]
     return obj
 
 def _get_data_with_fallback(fetcher, symbol, interval, limit, min_length):
@@ -45,9 +40,8 @@ def _get_data_with_fallback(fetcher, symbol, interval, limit, min_length):
     return None, None
 
 # ==========================================================
-# توابع عمومی که داشبورد به آنها نیاز دارد
+# توابع عمومی که داشبورد به آنها نیاز دارد (بازگردانده شدند)
 # ==========================================================
-
 def system_status_view(request):
     exchanges_to_check = [
         {'name': 'Kucoin', 'status_url': 'https://api.kucoin.com/api/v1/timestamp'},
@@ -66,8 +60,7 @@ def check_exchange_status(exchange_info):
     try:
         start = time.time()
         res = requests.head(exchange_info['status_url'], timeout=5)
-        if res.status_code == 405: 
-            res = requests.get(exchange_info['status_url'], timeout=5)
+        if res.status_code == 405: res = requests.get(exchange_info['status_url'], timeout=5)
         latency = round((time.time() - start) * 1000, 1)
         if 200 <= res.status_code < 300:
             return {'name': exchange_info['name'], 'status': 'online', 'ping': f"{latency}ms"}
@@ -101,13 +94,7 @@ def all_data_view(request):
     try:
         fetcher = ExchangeFetcher()
         sources = ['kucoin', 'mexc', 'gateio', 'okx']
-        symbol_map = {
-            'BTC': {'kucoin': 'BTC-USDT', 'mexc': 'BTCUSDT', 'gateio': 'BTC_USDT', 'okx': 'BTC-USDT'},
-            'ETH': {'kucoin': 'ETH-USDT', 'mexc': 'ETHUSDT', 'gateio': 'ETH_USDT', 'okx': 'ETH-USDT'},
-            'XRP': {'kucoin': 'XRP-USDT', 'mexc': 'XRPUSDT', 'gateio': 'XRP_USDT', 'okx': 'XRP-USDT'},
-            'SOL': {'kucoin': 'SOL-USDT', 'mexc': 'SOLUSDT', 'gateio': 'SOL_USDT', 'okx': 'SOL-USDT'},
-            'DOGE': {'kucoin': 'DOGE-USDT', 'mexc': 'DOGEUSDT', 'gateio': 'DOGE_USDT', 'okx': 'DOGE-USDT'},
-        }
+        symbol_map = {'BTC': {'kucoin': 'BTC-USDT', 'mexc': 'BTCUSDT', 'gateio': 'BTC_USDT', 'okx': 'BTC-USDT'},'ETH': {'kucoin': 'ETH-USDT', 'mexc': 'ETHUSDT', 'gateio': 'ETH_USDT', 'okx': 'ETH-USDT'},'XRP': {'kucoin': 'XRP-USDT', 'mexc': 'XRPUSDT', 'gateio': 'XRP_USDT', 'okx': 'XRP-USDT'},'SOL': {'kucoin': 'SOL-USDT', 'mexc': 'SOLUSDT', 'gateio': 'SOL_USDT', 'okx': 'SOL-USDT'},'DOGE': {'kucoin': 'DOGE-USDT', 'mexc': 'DOGEUSDT', 'gateio': 'DOGE_USDT', 'okx': 'DOGE-USDT'},}
         all_data = fetcher.fetch_all_tickers_concurrently(sources, symbol_map)
         prioritized_data = {}
         priority_order = ['kucoin', 'mexc', 'okx', 'gateio']
@@ -121,6 +108,7 @@ def all_data_view(request):
         logger.error(f"Error in all_data_view: {e}\n{traceback.format_exc()}")
         return JsonResponse({'error': 'Internal server error'}, status=500)
 
+
 # ==========================================================
 # API های نهایی
 # ==========================================================
@@ -132,14 +120,11 @@ def get_composite_signal_view(request):
     try:
         fetcher = ExchangeFetcher()
         orchestrator = MasterOrchestrator()
-        
         all_tf_analysis = {}
         timeframes_to_analyze = [requested_tf] if requested_tf else ['5m', '15m', '1h', '4h', '1d']
-
         for tf in timeframes_to_analyze:
             limit = 300 if tf in ['1h', '4h', '1d'] else 100
             min_length = 200 if tf in ['1h', '4h', '1d'] else 50
-            
             df, source = _get_data_with_fallback(fetcher, symbol, tf, limit=limit, min_length=min_length)
             if df is not None:
                 analysis = orchestrator.analyze_single_dataframe(df, tf)
@@ -147,30 +132,20 @@ def get_composite_signal_view(request):
                 analysis['symbol'] = symbol
                 analysis['interval'] = tf
                 all_tf_analysis[tf] = analysis
-        
         if not all_tf_analysis:
             return JsonResponse({'error': 'Could not fetch enough data for any requested timeframe.'}, status=404)
-
         if requested_tf and requested_tf in all_tf_analysis:
              final_result = all_tf_analysis[requested_tf]
         else:
             final_result = orchestrator.get_multi_timeframe_signal(all_tf_analysis)
-
         adapter = SignalAdapter(analytics_output=final_result, strategy=strategy)
         final_signal_object = adapter.combine()
-
         return JsonResponse(convert_numpy_types(final_signal_object), safe=False)
     except Exception as e:
         logger.error(f"Error in get_composite_signal_view: {e}\n{traceback.format_exc()}")
         return JsonResponse({'error': str(e)}, status=500)
 
-def execute_trade_view(request):
-    # This view is complex and depends on a signal object. 
-    # For now, it's a placeholder. We can build its logic later.
-    return JsonResponse({"status": "Endpoint is under construction."})
-
 def list_open_trades_view(request):
-    """لیست تمام معاملات باز را نمایش می‌دهد."""
     try:
         trade_manager = TradeManager()
         open_trades = trade_manager.get_open_trades()
