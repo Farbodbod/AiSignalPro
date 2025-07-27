@@ -1,1 +1,2 @@
-web: python manage.py collectstatic --no-input && python -m gunicorn trading_app.wsgi
+web: gunicorn trading_app.wsgi --log-file -
+worker: python -u live_monitor_worker.py
