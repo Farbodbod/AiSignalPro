@@ -1,5 +1,6 @@
 'use client';
-import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { TbBrain } from "react-icons/tb";
 
 // ===================================================================
 // Helper Functions
@@ -50,7 +51,6 @@ function SystemStatus() {
                         </div>
                     </div>
                 ))}
-                <button onClick={fetchStatuses} className="bg-yellow-500/80 text-black p-2 rounded-lg text-sm font-bold flex items-center justify-center cursor-pointer hover:bg-yellow-500 col-span-3 md:col-span-1">Test All</button>
             </div>
         </section>
     );
@@ -68,7 +68,7 @@ function MarketOverview() {
             } catch (error) { console.error("Failed to fetch market data:", error); }
         };
         fetchMarketData();
-        const intervalId = setInterval(fetchMarketData, 30000);
+        const intervalId = setInterval(fetchMarketData, 60000);
         return () => clearInterval(intervalId);
     }, []);
     return (
@@ -95,13 +95,13 @@ function PriceTicker() {
             } catch (error) { console.error("Failed to fetch live prices:", error); }
         };
         fetchPrices();
-        const intervalId = setInterval(fetchPrices, 10000);
+        const intervalId = setInterval(fetchPrices, 15000);
         return () => clearInterval(intervalId);
     }, []);
     const coinsToRender = useMemo(() => ['BTC', 'ETH', 'XRP', 'SOL', 'DOGE'], []);
     return (
         <section>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
                 {coinsToRender.map(coin => {
                     const p = livePrices[coin];
                     if (!p) return (<div key={coin} className="h-16 bg-gray-700/50 rounded-lg animate-pulse"></div>);
@@ -127,87 +127,128 @@ function PriceTicker() {
 }
 
 const SignalCard = ({ signal }) => {
-    const colors = { buy: { border: 'border-green-500/50', text: 'text-green-400', bg: 'bg-green-500/10' }, sell: { border: 'border-red-500/50', text: 'text-red-400', bg: 'bg-red-500/10' }};
-    const color = colors[signal.type.toLowerCase()] || { border: 'border-yellow-500/50', text: 'text-yellow-400', bg: 'bg-yellow-500/10' };
+    const colors = {
+        BUY: { border: 'border-green-500/50', text: 'text-green-400', bg: 'bg-green-500/10' },
+        SELL: { border: 'border-red-500/50', text: 'text-red-400', bg: 'bg-red-500/10' },
+        HOLD: { border: 'border-yellow-500/50', text: 'text-yellow-400', bg: 'bg-yellow-500/10' }
+    };
+    const color = colors[signal.signal_type] || colors.HOLD;
+
     return (
         <div className={`rounded-xl p-4 border ${color.border} ${color.bg} space-y-3`}>
             <div className="flex justify-between items-center pb-3 border-b border-gray-700/50">
                 <span className="font-bold text-xl text-white">{signal.symbol}</span>
-                <span className={`font-bold text-xl ${color.text}`}>{signal.type.toUpperCase()}</span>
+                <span className={`font-bold text-xl ${color.text}`}>{signal.signal_type}</span>
                 <span className="text-sm text-gray-400">{signal.timeframe}</span>
             </div>
-            <div className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
-                <div><p className="text-gray-400">Entry Zone</p><p className="font-mono text-white">{signal.entry}</p></div>
-                <div className="text-right"><p className="text-gray-400">Stop-Loss</p><p className="font-mono text-red-400">{signal.sl}</p></div>
-                <div><p className="text-gray-400">Targets</p><div className="flex flex-wrap gap-x-3">{signal.targets.map(t => <span key={t} className="text-green-400 font-mono">{t}</span>)}</div></div>
-                <div className="text-right"><p className="text-gray-400">Accuracy</p><p className="font-mono text-white">{signal.accuracy}</p></div>
-                <div><p className="text-gray-400">Support</p><div className="flex flex-wrap gap-x-3">{signal.support.map(s => <span key={s} className="text-white font-mono">{s}</span>)}</div></div>
-                <div className="text-right"><p className="text-gray-400">Resistance</p><div className="flex flex-wrap gap-x-3 justify-end">{signal.resistance.map(r => <span key={r} className="text-white font-mono">{r}</span>)}</div></div>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-x-4 gap-y-3 text-sm">
+                <div><p className="text-gray-400">Entry Zone</p><p className="font-mono text-white">{signal.entry_zone?.map(formatPrice).join(' - ')}</p></div>
+                <div className="text-right"><p className="text-gray-400">Stop-Loss</p><p className="font-mono text-red-400">${formatPrice(signal.stop_loss)}</p></div>
+                <div className="text-right"><p className="text-gray-400">R/R Ratio</p><p className="font-mono text-white">{signal.risk_reward_ratio} R</p></div>
+                <div className="md:col-span-3"><p className="text-gray-400">Targets</p><div className="flex flex-wrap gap-x-3">{signal.targets?.map(t => <span key={t} className="text-green-400 font-mono">${formatPrice(t)}</span>)}</div></div>
             </div>
             <div className="pt-3 border-t border-gray-700/50 text-xs space-y-1">
-                <p className="text-gray-400">Reasons: <span className="text-gray-200">{signal.reasons.join(', ')}</span></p>
+                <p className="text-gray-400">Reasons: <span className="text-gray-200">{signal.signal_reasons?.join(', ')}</span></p>
             </div>
             <div className="pt-3 mt-3 border-t border-gray-700/50 flex justify-between items-center">
-                <div className="text-xs text-gray-400">Confidence: <span className="font-bold text-white">{signal.confidence}%</span> | AI Score: <span className="font-bold text-white">{signal.ai_score}%</span></div>
+                <div className="text-xs text-gray-400">System Confidence: <span className="font-bold text-white">{signal.system_confidence_percent}%</span> | AI: <span className="font-bold text-white">{signal.ai_confidence_percent}%</span></div>
                 <button className="bg-yellow-500 text-black text-sm font-bold py-2 px-4 rounded-lg hover:bg-yellow-400">Enter Trade</button>
             </div>
         </div>
     );
 };
 
-// ===================================================================
-// Signals Component - With Scrolling Fix
-// ===================================================================
 const Signals = () => {
-    const sampleSignals = [ 
-        { type: 'sell', symbol: 'ETH/USDT', timeframe: '1h', entry: '3550-3560', sl: '3600', targets: ['3500','3450'], confidence: 92, ai_score: 90, reasons: ['Bearish MACD Cross', 'Resistance Level Hit'], accuracy: "81%", support: ['3510', '3480'], resistance: ['3580', '3600'] }, 
-        { type: 'buy', symbol: 'BTC/USDT', timeframe: '4h', entry: '68k-68.2k', sl: '67.5k', targets: ['69k','70k','71k'], confidence: 85, ai_score: 88, reasons: ['Bullish Engulfing', 'RSI Divergence'], accuracy: "78%", support: ['67.8k', '67.2k'], resistance: ['69.1k', '70k'] } 
-    ];
+    const [signal, setSignal] = useState(null);
+    const [loading, setLoading] = useState(true);
+
+    const fetchSignal = useCallback(async () => {
+        setLoading(true);
+        try {
+            const response = await fetch('https://aisignalpro-production.up.railway.app/api/get-composite-signal/');
+            const data = await response.json();
+            if (response.ok) {
+                setSignal(data);
+            } else {
+                throw new Error(data.error || "Failed to fetch signal");
+            }
+        } catch (error) {
+            console.error("Failed to fetch signal:", error);
+        } finally {
+            setLoading(false);
+        }
+    }, []);
+
+    useEffect(() => {
+        fetchSignal();
+    }, [fetchSignal]);
+
     return (
         <section className="bg-gray-800/30 backdrop-blur-lg rounded-xl p-4 border border-yellow-500/20">
             <div className="flex justify-between items-center mb-3">
-                <h3 className="text-yellow-500 font-bold text-lg">Signals</h3>
-                <button className="bg-gray-700/50 text-yellow-400 text-xs font-bold py-1 px-3 rounded hover:bg-gray-700">Generate Manual</button>
+                <h3 className="text-yellow-500 font-bold text-lg">Live Signal</h3>
+                <button onClick={fetchSignal} disabled={loading} className="bg-gray-700/50 text-yellow-400 text-xs font-bold py-1 px-3 rounded hover:bg-gray-700 disabled:opacity-50">
+                    {loading ? 'Analyzing...' : 'Refresh Signal'}
+                </button>
             </div>
-            {/* ***** CHANGE IS HERE ***** */}
-            <div className="space-y-4 max-h-96 overflow-y-auto pr-2">
-                {sampleSignals.map((sig, i) => <SignalCard key={i} signal={sig} />)}
+            {/* کانتینر برای اسکرول داخلی */}
+            <div className="space-y-4 max-h-[30rem] overflow-y-auto pr-2">
+                {loading && <div className="h-64 bg-gray-700/50 rounded-lg animate-pulse flex items-center justify-center"><p>🧠 Analyzing Market...</p></div>}
+                {!loading && signal && <SignalCard signal={signal} />}
+                {!loading && !signal && <p className="text-center text-gray-400">No signal available right now.</p>}
             </div>
         </section>
     );
 };
 
 const ActiveTradeCard = ({ trade }) => {
-    const isLong = trade.direction === 'long';
-    const isProfit = (isLong && trade.current_price > trade.entry_price) || (!isLong && trade.current_price < trade.entry_price);
-    const barGradient = isProfit ? 'bg-gradient-to-r from-green-500/50 to-green-500' : 'bg-gradient-to-r from-red-500/50 to-red-500';
-    const progress = Math.min(Math.abs(trade.current_price - trade.entry_price) / Math.abs(trade.targets[0] - trade.entry_price) * 100, 100);
-    return(
+    return (
         <div className="bg-gray-900/50 rounded-lg p-3 border border-yellow-500/30 space-y-3">
             <div className="flex justify-between items-center">
-                <div><span className="font-bold text-lg text-white">{trade.symbol}</span><span className={`text-xs ml-2 font-bold ${isLong ? 'text-green-400' : 'text-red-400'}`}>{isLong ? "LONG" : "SHORT"}</span></div>
-                <div className="text-right"><span className={`font-mono text-lg ${isProfit ? 'text-green-400' : 'text-red-400'}`}>{trade.pnl}</span><p className="text-xs text-gray-400">Current: {trade.current_price}</p></div>
+                <div><span className="font-bold text-lg text-white">{trade.symbol}</span><span className={`text-xs ml-2 font-bold ${trade.direction === 'long' ? 'text-green-400' : 'text-red-400'}`}>{trade.direction.toUpperCase()}</span></div>
+                <div className="text-right"><span className="text-sm text-gray-400">Status: {capitalize(trade.status)}</span></div>
             </div>
-            <div className="relative h-6 w-full bg-black/30 rounded-lg overflow-hidden border border-gray-700">
-                <div className="absolute top-0 h-full flex items-center justify-between w-full px-2 text-xs font-mono">
-                    <span className="text-red-400 font-semibold">{isLong ? `SL: ${trade.sl}` : `TP: ${trade.targets[0]}`}</span>
-                    <span className="text-green-400 font-semibold">{isLong ? `TP: ${trade.targets[0]}` : `SL: ${trade.sl}`}</span>
-                </div>
-                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 h-4 w-0.5 bg-yellow-500"></div>
-                <div className={`absolute top-0 h-full ${barGradient} ${isLong ? 'left-0' : 'right-0'}`} style={{width: `${progress}%`}}></div>
-                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-xs font-bold text-black bg-yellow-500 px-1 rounded-sm">Entry: {trade.entry_price}</div>
+            <div className="text-xs grid grid-cols-2 gap-2">
+                <p className="text-gray-400">Entry Price: <span className="font-mono text-white">${formatPrice(trade.entry_price)}</span></p>
+                <p className="text-gray-400">Entry Time: <span className="font-mono text-white">{new Date(trade.entry_time).toLocaleTimeString()}</span></p>
+                <p className="text-gray-400">Stop Loss: <span className="font-mono text-red-400">${formatPrice(trade.stop_loss)}</span></p>
+                <p className="text-gray-400">Targets: <span className="font-mono text-green-400">{trade.targets?.map(formatPrice).join(', ')}</span></p>
             </div>
-            <div className="text-xs text-gray-300 bg-black/20 p-2 rounded-md"><p><span className="font-bold text-yellow-500">Live AI Score: {trade.ai_score}%</span> | {trade.status_text}</p></div>
         </div>
     );
 };
 
 const ActiveTrades = () => {
-    const sampleTrades = [ { direction: 'long', symbol: 'BTC/USDT', entry_price: 68100, current_price: 68500, sl: 67500, targets: [69000], ai_score: 91, pnl: "+$250.00", status_text: "Trend is strong, hold position." }, { direction: 'short', symbol: 'ETH/USDT', entry_price: 3555, current_price: 3540, sl: 3600, targets: [3500], ai_score: 85, pnl: "+$75.00", status_text: "Approaching first target." }, ];
+    const [trades, setTrades] = useState([]);
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+        const fetchTrades = async () => {
+            try {
+                const response = await fetch('https://aisignalpro-production.up.railway.app/api/trades/open/');
+                 if (!response.ok) throw new Error("Network response was not ok");
+                const data = await response.json();
+                setTrades(data);
+            } catch (error) {
+                console.error("Failed to fetch active trades:", error);
+            } finally {
+                setLoading(false);
+            }
+        };
+        fetchTrades();
+        const intervalId = setInterval(fetchTrades, 20000);
+        return () => clearInterval(intervalId);
+    }, []);
+
     return (
         <section className="bg-gray-800/30 backdrop-blur-lg rounded-xl p-4 border border-yellow-500/20">
             <h3 className="text-yellow-500 font-bold text-lg mb-3">Active Trades</h3>
-            <div className="space-y-4">{sampleTrades.map((trade, i) => <ActiveTradeCard key={i} trade={trade} />)}</div>
+            {loading && <div className="h-24 bg-gray-700/50 rounded-lg animate-pulse"></div>}
+            {/* کانتینر برای اسکرول داخلی */}
+            <div className="space-y-4 max-h-96 overflow-y-auto pr-2">
+                {!loading && trades.length === 0 && <p className="text-center text-sm text-gray-400">No active trades.</p>}
+                {!loading && trades.map((trade) => <ActiveTradeCard key={trade.id} trade={trade} />)}
+            </div>
         </section>
     );
 };
@@ -251,7 +292,12 @@ export default function Home() {
         <div className="bg-black text-gray-200 min-h-screen">
             <div className="absolute top-0 left-0 w-full h-full bg-gradient-to-br from-gray-900 via-black to-gray-800 -z-10"/>
             <header className="flex justify-between items-center p-4 border-b border-yellow-500/30 sticky top-0 bg-gray-900/70 backdrop-blur-xl z-10">
-                <h1 className="text-xl md:text-2xl font-bold text-yellow-500 drop-shadow-[0_2px_2px_rgba(255,215,0,0.5)]">🤖 Ai Signal Pro</h1>
+                <div className="flex items-center gap-3">
+                    <TbBrain className="text-yellow-400 text-3xl drop-shadow-[0_0_8px_rgba(250,204,21,0.5)]" />
+                    <h1 className="text-xl md:text-2xl font-bold bg-gradient-to-r from-yellow-400 to-orange-400 bg-clip-text text-transparent drop-shadow-[0_0_5px_rgba(255,165,0,0.8)]">
+                        Ai Signal Pro
+                    </h1>
+                </div>
                 <div><button className="w-8 h-8 rounded-full bg-white/10 border border-yellow-500/30 text-yellow-500">☀️</button></div>
             </header>
             <main className="p-4 space-y-6 pb-20">
