@@ -117,7 +117,6 @@ def monitor_loop():
                         time.sleep(5)
                     else:
                         logging.info(f"Duplicate signal '{signal_type}' for {symbol}. Skipping alert.")
-
             except Exception as e:
                 logging.error(f"Error processing symbol {symbol}: {e}", exc_info=True)
             
@@ -126,3 +125,4 @@ def monitor_loop():
 
 if __name__ == "__main__":
     monitor_loop()
+
