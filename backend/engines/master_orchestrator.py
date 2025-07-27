@@ -47,6 +47,10 @@ class MasterOrchestrator:
                     last_valid_value = df_with_indicators[col].dropna().iloc[-1]
                     latest_indicator_values[col] = last_valid_value
         
+        # اصلاحیه: اضافه کردن آخرین قیمت به دیکشنری اندیکاتورها برای حل مشکل قیمت صفر
+        if not df.empty and 'close' in df.columns:
+            latest_indicator_values['close'] = df['close'].iloc[-1]
+
         trend_res = analyze_trend(df.copy(), timeframe=timeframe)
         
         whale_analyzer_instance = WhaleAnalyzer(timeframes=[timeframe])
