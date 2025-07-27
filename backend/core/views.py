@@ -11,6 +11,7 @@ from django.http import JsonResponse
 # موتورهای تحلیلی
 from .exchange_fetcher import ExchangeFetcher
 from engines.master_orchestrator import MasterOrchestrator
+from engines.signal_adapter import SignalAdapter
 
 logger = logging.getLogger(__name__)
 
@@ -44,38 +45,50 @@ def _get_data_with_fallback(fetcher, symbol, interval, limit, min_length):
 def get_composite_signal_view(request):
     symbol = request.GET.get('symbol', 'BTC-USDT').upper()
     requested_tf = request.GET.get('timeframe') 
+    strategy = request.GET.get('strategy', 'balanced')
 
     try:
         fetcher = ExchangeFetcher()
         orchestrator = MasterOrchestrator()
+        
+        all_tf_analysis = {}
+        # اگر کاربر تایم‌فریم خواسته بود فقط همان، در غیر این صورت لیست کامل
+        timeframes_to_analyze = [requested_tf] if requested_tf else ['5m', '15m', '1h', '4h', '1d']
 
+        for tf in timeframes_to_analyze:
+            # برای تایم‌فریم‌های کوتاه‌تر، دیتای کمتری نیاز داریم
+            limit = 300 if tf in ['1h', '4h', '1d'] else 100
+            min_length = 200 if tf in ['1h', '4h', '1d'] else 50
+            
+            df, source = _get_data_with_fallback(fetcher, symbol, tf, limit=limit, min_length=min_length)
+            if df is not None:
+                analysis = orchestrator.analyze_single_dataframe(df, tf)
+                analysis['source'] = source
+                analysis['symbol'] = symbol
+                analysis['interval'] = tf
+                all_tf_analysis[tf] = analysis
+        
+        if not all_tf_analysis:
+            return JsonResponse({'error': 'Could not fetch enough data for any requested timeframe.'}, status=404)
+
+        # اگر فقط یک تایم‌فریم تحلیل شده بود، نتیجه همان را برمی‌گردانیم
         if requested_tf:
-            df, source = _get_data_with_fallback(fetcher, symbol, requested_tf, limit=300, min_length=200)
-            if df is None:
-                return JsonResponse({'error': f'Not enough data for timeframe {requested_tf}.'}, status=404)
-            
-            single_analysis = orchestrator.analyze_single_dataframe(df, requested_tf)
-            single_analysis['source'] = source
-            final_result = single_analysis
-
+             final_result = all_tf_analysis[requested_tf]
         else:
-            timeframes_to_analyze = ['5m', '15m', '1h', '4h', '1d']
-            all_tf_analysis = {}
-            for tf in timeframes_to_analyze:
-                df, source = _get_data_with_fallback(fetcher, symbol, tf, limit=300, min_length=200)
-                if df is not None:
-                    analysis = orchestrator.analyze_single_dataframe(df, tf)
-                    analysis['source'] = source
-                    all_tf_analysis[tf] = analysis
-            
-            if not all_tf_analysis:
-                return JsonResponse({'error': 'Could not fetch enough data for any timeframe.'}, status=404)
-
+            # اجرای ارکستراتور برای دریافت تحلیل خام مولتی-تایم‌فریم
             final_result = orchestrator.get_multi_timeframe_signal(all_tf_analysis)
 
-        return JsonResponse(convert_numpy_types(final_result), safe=False)
+        # --- مرحله نهایی: استفاده از آداپتور برای استانداردسازی خروجی ---
+        adapter = SignalAdapter(
+            ai_output=final_result.get('gemini_confirmation', {}),
+            analytics_output=final_result,
+            strategy=strategy
+        )
+        final_signal_object = adapter.combine()
+        # --- پایان مرحله نهایی ---
+
+        return JsonResponse(convert_numpy_types(final_signal_object), safe=False)
 
     except Exception as e:
         logger.error(f"Error in get_composite_signal_view: {e}\n{traceback.format_exc()}")
         return JsonResponse({'error': str(e)}, status=500)
-
