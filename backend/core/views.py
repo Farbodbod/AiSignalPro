@@ -13,8 +13,6 @@ from .exchange_fetcher import ExchangeFetcher
 from engines.master_orchestrator import MasterOrchestrator
 from engines.signal_adapter import SignalAdapter
 from engines.trade_manager import TradeManager
-from engines.indicator_analyzer import calculate_indicators # برای ویوهای قدیمی
-from engines.trend_analyzer import analyze_trend # برای ویوهای قدیمی
 
 logger = logging.getLogger(__name__)
 
@@ -39,16 +37,33 @@ def _get_data_with_fallback(fetcher, symbol, interval, limit, min_length):
             logging.warning(f"Could not fetch from {source} for {symbol}: {e}")
     return None, None
 
-# ==========================================================
-# توابع عمومی که داشبورد به آنها نیاز دارد (بازگردانده شدند)
-# ==========================================================
+def _generate_signal_object(symbol, requested_tf, strategy):
+    fetcher = ExchangeFetcher()
+    orchestrator = MasterOrchestrator()
+    all_tf_analysis = {}
+    timeframes_to_analyze = [requested_tf] if requested_tf else ['5m', '15m', '1h', '4h', '1d']
+    for tf in timeframes_to_analyze:
+        limit = 300 if tf in ['1h', '4h', '1d'] else 100
+        min_length = 200 if tf in ['1h', '4h', '1d'] else 50
+        df, source = _get_data_with_fallback(fetcher, symbol, tf, limit=limit, min_length=min_length)
+        if df is not None:
+            analysis = orchestrator.analyze_single_dataframe(df, tf)
+            analysis['source'] = source
+            analysis['symbol'] = symbol
+            analysis['interval'] = tf
+            all_tf_analysis[tf] = analysis
+    if not all_tf_analysis:
+        return None
+    if requested_tf and requested_tf in all_tf_analysis:
+         final_result = all_tf_analysis[requested_tf]
+    else:
+        final_result = orchestrator.get_multi_timeframe_signal(all_tf_analysis)
+    adapter = SignalAdapter(analytics_output=final_result, strategy=strategy)
+    return adapter.combine()
+
+# === توابع عمومی که داشبورد نیاز دارد ===
 def system_status_view(request):
-    exchanges_to_check = [
-        {'name': 'Kucoin', 'status_url': 'https://api.kucoin.com/api/v1/timestamp'},
-        {'name': 'Gate.io', 'status_url': 'https://api.gate.io/api/v4/spot/time'},
-        {'name': 'MEXC', 'status_url': 'https://api.mexc.com/api/v3/time'},
-        {'name': 'OKX', 'status_url': 'https://www.okx.com/api/v5/system/time'},
-    ]
+    exchanges_to_check = [{'name': 'Kucoin', 'status_url': 'https://api.kucoin.com/api/v1/timestamp'},{'name': 'Gate.io', 'status_url': 'https://api.gate.io/api/v4/spot/time'},{'name': 'MEXC', 'status_url': 'https://api.mexc.com/api/v3/time'},{'name': 'OKX', 'status_url': 'https://www.okx.com/api/v5/system/time'}]
     results = []
     with ThreadPoolExecutor(max_workers=len(exchanges_to_check)) as executor:
         futures = [executor.submit(check_exchange_status, ex) for ex in exchanges_to_check]
@@ -77,8 +92,7 @@ def market_overview_view(request):
         if cg_data and 'data' in cg_data:
             data = cg_data['data']
             response_data.update({'market_cap': data.get('total_market_cap', {}).get('usd', 0),'volume_24h': data.get('total_volume', {}).get('usd', 0),'btc_dominance': data.get('market_cap_percentage', {}).get('btc', 0)})
-    except Exception as e_cg:
-        logger.error(f"[CoinGecko] fallback failed: {e_cg}")
+    except Exception: pass
     try:
         fng_url = "https://api.alternative.me/fng/?limit=1"
         fng_data = requests.get(fng_url, timeout=10).json()
@@ -86,15 +100,14 @@ def market_overview_view(request):
             value = fng_data['data'][0].get('value', 'N/A')
             text = fng_data['data'][0].get('value_classification', 'Unknown')
             response_data['fear_and_greed'] = f"{value} ({text})"
-    except Exception as e_fng:
-        logger.warning(f"[FNG] fetch failed: {e_fng}")
+    except Exception: pass
     return JsonResponse(response_data)
 
 def all_data_view(request):
     try:
         fetcher = ExchangeFetcher()
         sources = ['kucoin', 'mexc', 'gateio', 'okx']
-        symbol_map = {'BTC': {'kucoin': 'BTC-USDT', 'mexc': 'BTCUSDT', 'gateio': 'BTC_USDT', 'okx': 'BTC-USDT'},'ETH': {'kucoin': 'ETH-USDT', 'mexc': 'ETHUSDT', 'gateio': 'ETH_USDT', 'okx': 'ETH-USDT'},'XRP': {'kucoin': 'XRP-USDT', 'mexc': 'XRPUSDT', 'gateio': 'XRP_USDT', 'okx': 'XRP-USDT'},'SOL': {'kucoin': 'SOL-USDT', 'mexc': 'SOLUSDT', 'gateio': 'SOL_USDT', 'okx': 'SOL-USDT'},'DOGE': {'kucoin': 'DOGE-USDT', 'mexc': 'DOGEUSDT', 'gateio': 'DOGE_USDT', 'okx': 'DOGE-USDT'},}
+        symbol_map = {'BTC': {'kucoin': 'BTC-USDT', 'mexc': 'BTCUSDT', 'gateio': 'BTC_USDT', 'okx': 'BTC-USDT'},'ETH': {'kucoin': 'ETH-USDT', 'mexc': 'ETHUSDT', 'gateio': 'ETH_USDT', 'okx': 'ETH-USDT'},'SOL': {'kucoin': 'SOL-USDT', 'mexc': 'SOLUSDT', 'gateio': 'SOL_USDT', 'okx': 'SOL-USDT'}}
         all_data = fetcher.fetch_all_tickers_concurrently(sources, symbol_map)
         prioritized_data = {}
         priority_order = ['kucoin', 'mexc', 'okx', 'gateio']
@@ -105,44 +118,35 @@ def all_data_view(request):
                     break
         return JsonResponse(prioritized_data)
     except Exception as e:
-        logger.error(f"Error in all_data_view: {e}\n{traceback.format_exc()}")
         return JsonResponse({'error': 'Internal server error'}, status=500)
 
-
-# ==========================================================
-# API های نهایی
-# ==========================================================
-
+# === API های نهایی ===
 def get_composite_signal_view(request):
     symbol = request.GET.get('symbol', 'BTC-USDT').upper()
     requested_tf = request.GET.get('timeframe') 
     strategy = request.GET.get('strategy', 'balanced')
     try:
-        fetcher = ExchangeFetcher()
-        orchestrator = MasterOrchestrator()
-        all_tf_analysis = {}
-        timeframes_to_analyze = [requested_tf] if requested_tf else ['5m', '15m', '1h', '4h', '1d']
-        for tf in timeframes_to_analyze:
-            limit = 300 if tf in ['1h', '4h', '1d'] else 100
-            min_length = 200 if tf in ['1h', '4h', '1d'] else 50
-            df, source = _get_data_with_fallback(fetcher, symbol, tf, limit=limit, min_length=min_length)
-            if df is not None:
-                analysis = orchestrator.analyze_single_dataframe(df, tf)
-                analysis['source'] = source
-                analysis['symbol'] = symbol
-                analysis['interval'] = tf
-                all_tf_analysis[tf] = analysis
-        if not all_tf_analysis:
+        final_signal_object = _generate_signal_object(symbol, requested_tf, strategy)
+        if final_signal_object is None:
             return JsonResponse({'error': 'Could not fetch enough data for any requested timeframe.'}, status=404)
-        if requested_tf and requested_tf in all_tf_analysis:
-             final_result = all_tf_analysis[requested_tf]
-        else:
-            final_result = orchestrator.get_multi_timeframe_signal(all_tf_analysis)
-        adapter = SignalAdapter(analytics_output=final_result, strategy=strategy)
-        final_signal_object = adapter.combine()
         return JsonResponse(convert_numpy_types(final_signal_object), safe=False)
     except Exception as e:
-        logger.error(f"Error in get_composite_signal_view: {e}\n{traceback.format_exc()}")
+        return JsonResponse({'error': str(e)}, status=500)
+
+def execute_trade_view(request):
+    symbol = request.GET.get('symbol', 'BTC-USDT').upper()
+    strategy = request.GET.get('strategy', 'balanced')
+    try:
+        final_signal_object = _generate_signal_object(symbol, None, strategy)
+        if final_signal_object is None:
+            return JsonResponse({'error': 'Could not generate a signal to execute.'}, status=404)
+        trade_manager = TradeManager()
+        new_trade = trade_manager.start_trade_from_signal(final_signal_object)
+        if new_trade:
+            return JsonResponse({"status": "Trade Opened", "trade_id": str(new_trade.id)})
+        else:
+            return JsonResponse({"status": "No Trade Opened", "signal": final_signal_object.get("signal_type")})
+    except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
 
 def list_open_trades_view(request):
@@ -151,5 +155,4 @@ def list_open_trades_view(request):
         open_trades = trade_manager.get_open_trades()
         return JsonResponse(open_trades, safe=False)
     except Exception as e:
-        logger.error(f"Error in list_open_trades_view: {e}\n{traceback.format_exc()}")
         return JsonResponse({'error': str(e)}, status=500)
