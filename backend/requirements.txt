@@ -16,5 +16,4 @@ python-dotenv
 numpy
 scipy
 google-generativeai
-ta
 tenacity
