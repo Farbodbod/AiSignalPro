@@ -1,4 +1,4 @@
-# core/exchange_fetcher.py (نسخه افسانه‌ای و بی‌نقص v1.2)
+# core/exchange_fetcher.py (نسخه نهایی ضدگلوله v1.5)
 
 import asyncio
 import os
@@ -20,18 +20,21 @@ SYMBOL_MAP = {'BTC': {'base': 'BTC', 'quote': 'USDT'}, 'ETH': {'base': 'ETH', 'q
 
 class ExchangeFetcher:
     def __init__(self, cache_ttl: int = 60):
-        headers = {'User-Agent': 'AiSignalPro/1.4.0', 'Accept': 'application/json'}
+        headers = {'User-Agent': 'AiSignalPro/1.5.0', 'Accept': 'application/json'}
         self.client = httpx.AsyncClient(headers=headers, timeout=20, follow_redirects=True)
         self.cache = {}
         self.cache_ttl = cache_ttl
-        logging.info("ExchangeFetcher (Legendary Edition v1.4) initialized.")
+        logging.info("ExchangeFetcher (Bulletproof Edition v1.5) initialized.")
 
     def _get_cache_key(self, exchange: str, symbol: str, timeframe: str) -> str: return f"{exchange}:{symbol}:{timeframe}"
+    
     def _format_symbol(self, s: str, e: str) -> Optional[str]:
         if s not in SYMBOL_MAP: return None
         c = EXCHANGE_CONFIG.get(e)
         if not c: return None
-        return c['symbol_template'].format(base=SYMBOL_MAP[s]['base'], quote=SYMBOL_MAP[s]['quote'])
+        # --- اصلاح شد: اطمینان از ارسال نماد با حروف بزرگ ---
+        return c['symbol_template'].format(base=SYMBOL_MAP[s]['base'], quote=SYMBOL_MAP[s]['quote']).upper()
+
     def _format_timeframe(self, t: str, e: str) -> Optional[str]:
         c = EXCHANGE_CONFIG.get(e)
         if not c or 'timeframe_map' not in c: return None
@@ -40,7 +43,13 @@ class ExchangeFetcher:
             return c['timeframe_map'].get('15m')
         return c['timeframe_map'].get(t)
 
-    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=6), retry=retry_if_exception_type((httpx.RequestError, httpx.HTTPStatusError)), reraise=True)
+    @retry(
+        stop=stop_after_attempt(3), 
+        wait=wait_exponential(multiplier=1, min=2, max=6), 
+        retry=retry_if_exception_type((httpx.RequestError, httpx.HTTPStatusError)),
+        # --- اصلاح شد: خطا دیگر به بیرون پرتاب نمی‌شود تا از کرش جلوگیری شود ---
+        reraise=False 
+    )
     async def _safe_async_request(self, method: str, url: str, **kwargs) -> Optional[Any]:
         exchange_name = kwargs.pop('exchange_name', 'mexc')
         await asyncio.sleep(EXCHANGE_CONFIG.get(exchange_name, {}).get('rate_limit_delay', 1.0))
@@ -68,44 +77,34 @@ class ExchangeFetcher:
         if not all([config, formatted_symbol, formatted_timeframe, 'kline_endpoint' in config]): return None
         
         url = config['base_url'] + config['kline_endpoint']
-        
-        # --- اصلاح شد: پارامتر limit به صورت عدد (int) ارسال می‌شود ---
         params = {'limit': limit}
-        if exchange == 'okx': 
-            params.update({'instId': formatted_symbol, 'bar': formatted_timeframe})
-        else: 
-            params.update({'symbol': formatted_symbol, 'interval': formatted_timeframe})
-            if exchange == 'kucoin': 
-                params['type'] = params.pop('interval')
+        if exchange == 'okx': params.update({'instId': formatted_symbol, 'bar': formatted_timeframe})
+        else: params.update({'symbol': formatted_symbol, 'interval': formatted_timeframe})
+        if exchange == 'kucoin': params['type'] = params.pop('interval')
         
-        try:
-            raw_data = await self._safe_async_request('GET', url, params=params, exchange_name=exchange)
-            if raw_data:
-                kline_list = raw_data.get('data') if isinstance(raw_data, dict) and 'data' in raw_data else raw_data
-                if isinstance(kline_list, list):
-                    normalized_data = self._normalize_kline_data(kline_list, exchange)
-                    if normalized_data:
-                        self.cache[cache_key] = {'timestamp': time.time(), 'data': normalized_data}
-                        return normalized_data
-        except Exception as e:
-            logging.warning(f"Final attempt failed for {exchange} on {symbol}@{timeframe}. Reason: {e}")
+        raw_data = await self._safe_async_request('GET', url, params=params, exchange_name=exchange)
+        
+        if raw_data:
+            kline_list = raw_data.get('data') if isinstance(raw_data, dict) and 'data' in raw_data else raw_data
+            if isinstance(kline_list, list):
+                normalized_data = self._normalize_kline_data(kline_list, exchange)
+                if normalized_data:
+                    self.cache[cache_key] = {'timestamp': time.time(), 'data': normalized_data}
+                    return normalized_data
+        
+        logging.warning(f"Final attempt failed for {exchange} on {symbol}@{timeframe} after retries.")
         return None
         
     async def get_first_successful_klines(self, symbol: str, timeframe:str) -> Optional[Tuple[pd.DataFrame, str]]:
         exchanges = ['mexc', 'kucoin', 'okx']
         tasks = [asyncio.create_task(self.get_klines_from_one_exchange(ex, symbol, timeframe), name=ex) for ex in exchanges]
-        
         for task in asyncio.as_completed(tasks):
             source_exchange = task.get_name()
-            try:
-                # --- اصلاح شد: مدیریت خطا برای جلوگیری از کرش ---
-                result = await task
-                if result:
-                    logging.info(f"Data acquired from '{source_exchange}' for {symbol}@{timeframe}.")
-                    return pd.DataFrame(result), source_exchange
-            except Exception as e:
-                logging.error(f"Task for {source_exchange} failed with unhandled exception: {e}")
-
+            result = await task
+            if result:
+                logging.info(f"Data acquired from '{source_exchange}' for {symbol}@{timeframe}.")
+                return pd.DataFrame(result), source_exchange
+        
         logging.error(f"Critical Failure: Could not fetch klines for {symbol}@{timeframe} from any available exchange.")
         return None, None
         
