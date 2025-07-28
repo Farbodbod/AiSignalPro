@@ -1,4 +1,4 @@
-# live_monitor_worker.py (با اصلاح SyntaxError)
+# live_monitor_worker.py (با مدیریت اتصال پایدار و بهینه)
 
 import asyncio
 import os
@@ -6,6 +6,9 @@ import django
 import logging
 import time
 from typing import Dict, Optional, List
+from datetime import datetime
+import pytz
+from jdatetime import datetime as jdatetime
 
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'trading_app.settings')
 django.setup()
@@ -14,12 +17,9 @@ from core.exchange_fetcher import ExchangeFetcher
 from engines.master_orchestrator import MasterOrchestrator
 from engines.signal_adapter import SignalAdapter
 from engines.telegram_handler import TelegramHandler
-from jdatetime import datetime as jdatetime
-import pytz
 
 # --- تنظیمات اصلی ربات ---
 SYMBOLS_TO_MONITOR = ['BTC', 'ETH', 'XRP', 'SOL', 'DOGE']
-# --- اصلاح شد: اشتباه تایپی در نام متغیر ---
 TIME_FRAMES_TO_ANALYZE = ['5m', '15m', '1h', '4h']
 POLL_INTERVAL_SECONDS = 600
 SIGNAL_CACHE_TTL_SECONDS = 3600
@@ -52,7 +52,7 @@ def format_legendary_message(signal_obj: dict) -> str:
     reasons = signal_obj.get("reasons", ["Analysis based on internal scoring."])
     issued_at_utc_str = signal_obj.get("issued_at", datetime.utcnow().isoformat())
     signal_header = "🟢 LONG" if signal_type == "BUY" else "🔴 SHORT"
-    entry_range_str = f"`{entry_zone[0]:,.4f} - {entry_zone[1]:,.4f}`" if len(entry_zone) > 1 else f"`{entry_zone[0]:,.4f}`"
+    entry_range_str = f"`{entry_zone[0]:,.4f} - {entry_zone[1]:,.4f}`" if len(entry_zone) > 1 else (f"`{entry_zone[0]:,.4f}`" if entry_zone else "N/A")
     targets_str = "\n".join([f"    🎯 TP{i+1}: `{t:,.4f}`" for i, t in enumerate(targets)])
     reasons_str = "\n".join([f"• _{reason}_" for reason in reasons])
     try:
@@ -102,40 +102,51 @@ async def analyze_symbol(fetcher: ExchangeFetcher, orchestrator: MasterOrchestra
     return adapter.combine()
 
 async def monitor_loop():
+    """حلقه اصلی ربات با مدیریت اتصال پایدار."""
     telegram = TelegramHandler()
     orchestrator = MasterOrchestrator()
     signal_cache = SignalCache(SIGNAL_CACHE_TTL_SECONDS)
-    logging.info("Live Monitoring Worker (Legendary Edition) started successfully.")
+    
+    # --- اصلاح شد: Fetcher یک بار در ابتدا ساخته می‌شود ---
+    fetcher = ExchangeFetcher()
+    
+    logging.info("Live Monitoring Worker (Stable Connection Edition) started successfully.")
     try:
-        await telegram.send_message_async("✅ *ربات مانیتورینگ AiSignalPro (نسخه اصلاح شده) فعال شد.*")
+        await telegram.send_message_async("✅ *ربات مانیتورینگ AiSignalPro (اتصال پایدار) فعال شد.*")
     except Exception as e:
         logging.error(f"Failed to send initial Telegram message: {e}")
-    while True:
-        logging.info("--- Starting New Monitoring Cycle ---")
-        fetcher = ExchangeFetcher()
-        try:
-            analysis_tasks = [analyze_symbol(fetcher, orchestrator, symbol) for symbol in SYMBOLS_TO_MONITOR]
-            results = await asyncio.gather(*analysis_tasks, return_exceptions=True)
-            for result in results:
-                if isinstance(result, Exception):
-                    logging.error(f"An exception occurred during symbol analysis: {result}", exc_info=True)
-                elif result and result.get("signal_type") != "HOLD":
-                    signal_obj = result
-                    symbol = signal_obj["symbol"]
-                    signal_type = signal_obj["signal_type"]
-                    if not signal_cache.is_duplicate(symbol, signal_type):
-                        signal_cache.store(symbol, signal_type)
-                        message = format_legendary_message(signal_obj)
-                        await telegram.send_message_async(message)
-                        logging.info(f"LEGENDARY ALERT SENT for {symbol}: {signal_type}")
-                    else:
-                        logging.info(f"Duplicate signal '{signal_type}' for {symbol}. Skipping.")
-        except Exception as e:
-            logging.error(f"A critical error occurred in the main monitoring loop: {e}", exc_info=True)
-        finally:
-            await fetcher.close()
-        logging.info(f"Cycle finished. Waiting for {POLL_INTERVAL_SECONDS} seconds.")
-        await asyncio.sleep(POLL_INTERVAL_SECONDS)
+    
+    try:
+        while True:
+            logging.info("--- Starting New Monitoring Cycle ---")
+            try:
+                analysis_tasks = [analyze_symbol(fetcher, orchestrator, symbol) for symbol in SYMBOLS_TO_MONITOR]
+                results = await asyncio.gather(*analysis_tasks, return_exceptions=True)
+
+                for result in results:
+                    if isinstance(result, Exception):
+                        logging.error(f"An exception occurred during symbol analysis: {result}", exc_info=True)
+                    elif result and result.get("signal_type") != "HOLD":
+                        signal_obj = result
+                        symbol = signal_obj["symbol"]
+                        signal_type = signal_obj["signal_type"]
+                        if not signal_cache.is_duplicate(symbol, signal_type):
+                            signal_cache.store(symbol, signal_type)
+                            message = format_legendary_message(signal_obj)
+                            await telegram.send_message_async(message)
+                            logging.info(f"LEGENDARY ALERT SENT for {symbol}: {signal_type}")
+                        else:
+                            logging.info(f"Duplicate signal '{signal_type}' for {symbol}. Skipping.")
+            except Exception as e:
+                logging.error(f"A critical error occurred in the main monitoring loop: {e}", exc_info=True)
+            
+            logging.info(f"Cycle finished. Waiting for {POLL_INTERVAL_SECONDS} seconds.")
+            await asyncio.sleep(POLL_INTERVAL_SECONDS)
+    finally:
+        # --- اصلاح شد: اتصال فقط در پایان کامل برنامه بسته می‌شود ---
+        await fetcher.close()
+        logging.info("Fetcher client closed. Monitoring worker shutting down.")
+
 
 if __name__ == "__main__":
     try:
