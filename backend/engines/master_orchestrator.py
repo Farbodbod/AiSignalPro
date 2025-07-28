@@ -1,5 +1,3 @@
-# engines/master_orchestrator.py
-
 import os
 import google.generativeai as genai
 import logging
@@ -67,7 +65,6 @@ class MasterOrchestrator:
         Analyze multi-timeframe market data. Rule-based scores are BUY: {scores['buy_score']:.2f}, SELL: {scores['sell_score']:.2f}.
         Provide a final signal (BUY, SELL, HOLD) and a confidence score (0-100).
         Respond ONLY with a valid JSON object: {{"signal": "...", "confidence": ...}}
-
         --- Data Summary ---
         """
         for tf, data in all_tf_analysis.items():
@@ -89,7 +86,8 @@ class MasterOrchestrator:
         for tf, data in all_tf_analysis.items():
             weight = TIMEFRAME_WEIGHTS.get(tf, 1)
             if "Uptrend" in data.get('trend', {}).get('signal', ''): buy_score += 1 * weight
-            elif "Downtrend" in data.get('trend', {}).get('signal', ''): sell_score += 1 * weight
+            if data.get('market_structure', {}).get('market_phase') == 'strong_trend': buy_score += 1 * weight
+            if "Downtrend" in data.get('trend', {}).get('signal', ''): sell_score += 1 * weight
         
         final_signal, gemini_confirmation = "HOLD", {}
         if buy_score > sell_score and buy_score > SCORE_THRESHOLD: final_signal = "BUY"
