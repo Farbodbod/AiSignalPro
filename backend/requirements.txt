@@ -19,3 +19,5 @@ google-generativeai
 tenacity
 jdatetime
 pytz
+gunicorn
+uvicorn
