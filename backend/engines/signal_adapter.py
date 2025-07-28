@@ -1,4 +1,6 @@
-from typing import Dict, Any
+# engines/signal_adapter.py (نسخه نهایی با منطق ترکیب سیگنال اصلاح شده)
+
+from typing import Dict, Any, Optional
 from datetime import datetime
 import uuid
 
@@ -8,30 +10,50 @@ class SignalAdapter:
         self.ai_confirmation = self.analytics.get("gemini_confirmation", {})
         self.details = self.analytics.get("details", {})
 
-    def _get_primary_data(self, key: str, default: Any = None):
+    def _get_primary_data(self, key: str, default: Any = None, timeframe_priority: list = None):
+        """از تایم فریم اصلی داده‌ها را استخراج می‌کند."""
         if not self.details: return default
-        for tf in ['1h', '4h', '1d', '15m', '5m']:
-            if tf in self.details and isinstance(self.details.get(tf), dict) and self.details[tf].get(key) is not None:
-                return self.details[tf].get(key)
+        if timeframe_priority is None:
+            timeframe_priority = ['1h', '4h', '1d', '15m', '5m']
+        
+        for tf in timeframe_priority:
+            if tf in self.details and isinstance(self.details.get(tf), dict):
+                # اگر کلید اصلی وجود داشت
+                if key in self.details[tf] and self.details[tf].get(key) is not None:
+                    return self.details[tf][key]
+                # اگر کلید در دیکشنری تو در تو (مثل strategy) بود
+                for sub_dict in self.details[tf].values():
+                    if isinstance(sub_dict, dict) and key in sub_dict:
+                        return sub_dict[key]
         return default
 
-    def combine(self) -> Dict[str, Any]:
+    def combine(self) -> Optional[Dict[str, Any]]:
         rule_based_signal = self.analytics.get("rule_based_signal", "HOLD")
-        ai_signal = self.ai_confirmation.get("signal", "HOLD")
-        if ai_signal in ["N/A", "Error"]: ai_signal = "HOLD"
-        final_signal = rule_based_signal if ai_signal == "HOLD" else ai_signal
+        ai_signal = self.ai_confirmation.get("signal", "HOLD").upper()
+        if ai_signal in ["N/A", "ERROR"]: ai_signal = "HOLD"
 
-        reasons = []
+        # ## --- اصلاح شد: منطق جدید و امن‌تر ترکیب سیگنال --- ##
+        final_signal = "HOLD"
         if rule_based_signal != "HOLD":
-            reasons.append(f"Score Signal ({self.analytics.get('buy_score', 0):.2f} vs {self.analytics.get('sell_score', 0):.2f})")
-        if self.ai_confirmation.get("signal") not in ["N/A", "Error", "HOLD"]:
-             reasons.append(f"AI Confirmed ({self.ai_confirmation.get('signal')})")
-        
-        strategy_data = self._get_primary_data("strategy", {}) or {}
-        
+            # اگر AI مخالف بود، سیگنال را وتو کن و HOLD کن
+            if (rule_based_signal == "BUY" and ai_signal == "SELL") or \
+               (rule_based_signal == "SELL" and ai_signal == "BUY"):
+                final_signal = "HOLD" 
+            else: # اگر AI موافق یا بی‌نظر بود، به سیگنال اصلی اعتماد کن
+                final_signal = rule_based_signal
+
+        # --- استخراج داده‌های استراتژی از تایم‌فریم اصلی (1h) ---
+        primary_tf = next(iter(self.details), '1h')
+        strategy_data = self.details.get(primary_tf, {}).get("strategy", {})
+        if not strategy_data:
+            return None # اگر استراتژی وجود نداشت، سیگنال معتبر نیست
+
+        symbol = self._get_primary_data("symbol", "N/A")
+        if symbol == "N/A": return None # اگر نماد مشخص نبود، سیگنال معتبر نیست
+
         return {
-            "symbol": self._get_primary_data("symbol", "N/A"),
-            "timeframe": next(iter(self.details), "multi-tf"),
+            "symbol": symbol,
+            "timeframe": primary_tf,
             "signal_type": final_signal,
             "current_price": strategy_data.get("entry_price"),
             "entry_zone": strategy_data.get("entry_zone", []),
@@ -42,6 +64,12 @@ class SignalAdapter:
             "resistance_levels": strategy_data.get("resistance_levels", []),
             "ai_confidence_percent": self.ai_confirmation.get("confidence", 0),
             "system_confidence_percent": round(abs(self.analytics.get("buy_score", 0) - self.analytics.get("sell_score", 0)) * 10, 2),
-            "reasons": reasons or ["-"],
+            "scores": {
+                "buy_score": self.analytics.get("buy_score", 0),
+                "sell_score": self.analytics.get("sell_score", 0),
+            },
+            "tags": self._get_primary_data("tags", []),
+            "reasons": [self.ai_confirmation.get("reason")] if self.ai_confirmation.get("reason") else ["Score Based"],
             "issued_at": datetime.utcnow().replace(microsecond=0).isoformat() + "Z",
+            "raw_analysis_details": self.analytics # داده خام برای ذخیره در دیتابیس
         }
