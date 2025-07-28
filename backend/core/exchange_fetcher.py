@@ -110,3 +110,20 @@ class ExchangeFetcher:
                 except Exception as e:
                     logging.error(f"Error fetching {source} for {coin}: {e}")
         return all_data
+# در انتهای کلاس ExchangeFetcher اضافه شود
+
+    def get_klines_robust(self, symbol, interval):
+        """یک تابع کمکی برای دریافت داده که برای استفاده موازی (concurrent) مناسب است."""
+        limit = 300 if interval in ['1h', '4h', '1d'] else 100
+        min_length = 200 if interval in ['1h', '4h', '1d'] else 50
+        
+        # تلاش برای دریافت داده از بهترین صرافی‌ها به ترتیب اولویت
+        for source in ['kucoin', 'mexc', 'okx']:
+            try:
+                kline_data = self.get_klines(source, symbol, interval, limit)
+                if kline_data and len(kline_data) >= min_length:
+                    return pd.DataFrame(kline_data), source
+            except Exception:
+                # اگر از یک صرافی ناموفق بود، به سراغ بعدی می‌رود
+                continue
+        return None
