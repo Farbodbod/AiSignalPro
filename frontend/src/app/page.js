@@ -1,25 +1,23 @@
 'use client';
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { TbBrain } from "react-icons/tb";
 
-// Helper Functions
+import React, { useState, useEffect, useCallback } from 'react';
+import { TbBrain, TbAlertTriangle, TbCircleCheck, TbMinus } from "react-icons/tb";
+
+// ------------------- Helper Functions -------------------
 const formatLargeNumber = (num) => {
   if (!num || num === 0) return 'N/A';
   if (num >= 1e12) return `$${(num / 1e12).toFixed(2)}T`;
   if (num >= 1e9) return `$${(num / 1e9).toFixed(2)}B`;
   return `$${(num / 1e6).toFixed(2)}M`;
 };
+
 const formatPrice = (price) => {
     if (price === null || price === undefined) return 'N/A';
     const options = { minimumFractionDigits: 2, maximumFractionDigits: price < 10 ? 4 : 2 };
     return price.toLocaleString('en-US', options);
 };
-const capitalize = (s) => {
-    if (typeof s !== 'string' || s.length === 0) return '';
-    return s.charAt(0).toUpperCase() + s.slice(1);
-};
 
-// Main Components
+// ------------------- Child Components -------------------
 function SystemStatus() {
     const [statuses, setStatuses] = useState([]);
     const fetchStatuses = useCallback(async () => {
@@ -29,8 +27,9 @@ function SystemStatus() {
         } catch (error) { console.error("Failed to fetch statuses:", error); }
     }, []);
     useEffect(() => { fetchStatuses(); const interval = setInterval(fetchStatuses, 60000); return () => clearInterval(interval); }, [fetchStatuses]);
+    
     return (
-        <section className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-7 gap-2 text-center">
+        <section className="grid grid-cols-2 md:grid-cols-4 gap-2 text-center">
             {statuses.map((ex) => (
                 <div key={ex.name} className="bg-gray-800/30 backdrop-blur-lg rounded-lg p-2 border border-yellow-500/10">
                     <p className="text-xs font-semibold text-gray-300">{ex.name}</p>
@@ -53,6 +52,7 @@ function MarketOverview() {
         } catch (error) { console.error("Failed to fetch market data:", error); }
     }, []);
     useEffect(() => { fetchMarketData(); const interval = setInterval(fetchMarketData, 60000); return () => clearInterval(interval); }, [fetchMarketData]);
+    
     return (
         <section className="bg-gray-800/30 backdrop-blur-lg rounded-xl p-4 border border-yellow-500/20">
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -66,13 +66,13 @@ function MarketOverview() {
 }
 
 const SignalCard = ({ signal }) => {
-    if (!signal || !signal.signal_type) return <p className="text-center text-gray-400 py-10">Waiting for a valid signal...</p>;
     const colors = {
         BUY: { border: 'border-green-500/50', text: 'text-green-400', bg: 'bg-green-500/10' },
-        SELL: { border: 'border-red-500/50', text: 'text-red-400', bg: 'bg-red-500/10' },
-        HOLD: { border: 'border-yellow-500/50', text: 'text-yellow-400', bg: 'bg-yellow-500/10' }
+        SELL: { border: 'border-red-500/50', text: 'text-red-400', bg: 'bg-red-500/10' }
     };
-    const color = colors[signal.signal_type] || colors.HOLD;
+    const color = colors[signal.signal_type];
+    if (!color) return null; // اگر سیگنال HOLD یا نوع دیگری بود، چیزی نمایش نده
+
     return (
         <div className={`rounded-xl p-4 border ${color.border} ${color.bg} space-y-3`}>
             <div className="flex justify-between items-center pb-3 border-b border-gray-700/50">
@@ -96,38 +96,76 @@ const SignalCard = ({ signal }) => {
     );
 };
 
+const InfoCard = ({ status, message }) => {
+    const info = {
+        ERROR: { Icon: TbAlertTriangle, color: 'text-red-400', border: 'border-red-500/50', bg: 'bg-red-500/10' },
+        NEUTRAL: { Icon: TbMinus, color: 'text-yellow-400', border: 'border-yellow-500/50', bg: 'bg-yellow-500/10' },
+        NO_DATA: { Icon: TbAlertTriangle, color: 'text-gray-400', border: 'border-gray-500/50', bg: 'bg-gray-500/10' }
+    };
+    const currentInfo = info[status] || info.ERROR;
+
+    return (
+        <div className={`h-64 flex flex-col items-center justify-center text-center p-4 rounded-xl border ${currentInfo.border} ${currentInfo.bg}`}>
+            <currentInfo.Icon className={`w-16 h-16 mb-4 ${currentInfo.color}`} />
+            <p className={`font-bold text-lg ${currentInfo.color}`}>{status.replace('_', ' ')}</p>
+            <p className="text-sm text-gray-300">{message}</p>
+        </div>
+    );
+};
+
 const Signals = () => {
-    const [signal, setSignal] = useState(null);
+    const [response, setResponse] = useState(null);
     const [loading, setLoading] = useState(true);
-    const [error, setError] = useState('');
+
     const fetchSignal = useCallback(async () => {
-        setLoading(true); setError('');
+        setLoading(true);
         try {
-            const response = await fetch('https://aisignalpro-production.up.railway.app/api/get-composite-signal/');
-            const data = await response.json();
-            if (response.ok) setSignal(data);
-            else throw new Error(data.error || "Failed to fetch signal");
-        } catch (error) { setError(error.message); } 
-        finally { setLoading(false); }
+            const res = await fetch('https://aisignalpro-production.up.railway.app/api/get-composite-signal/');
+            const data = await res.json();
+            setResponse(data);
+        } catch (e) {
+            setResponse({ status: 'ERROR', message: 'Failed to connect to the server. Please check your network connection.' });
+        } finally {
+            setLoading(false);
+        }
     }, []);
-    useEffect(() => { fetchSignal(); const interval = setInterval(fetchSignal, 300000); return () => clearInterval(interval); }, [fetchSignal]);
+
+    useEffect(() => {
+        fetchSignal();
+        const interval = setInterval(fetchSignal, 300000); 
+        return () => clearInterval(interval);
+    }, [fetchSignal]);
+
+    const renderContent = () => {
+        if (loading) {
+            return <div className="h-64 bg-gray-700/50 rounded-lg animate-pulse flex items-center justify-center"><p className="text-yellow-500">🧠 Analyzing Market...</p></div>;
+        }
+
+        if (!response || !response.status) {
+            return <InfoCard status="ERROR" message="An invalid response was received from the server." />;
+        }
+
+        if (response.status === 'SUCCESS') {
+            return <SignalCard signal={response.signal} />;
+        } else {
+            return <InfoCard status={response.status} message={response.message} />;
+        }
+    };
+
     return (
         <section className="bg-gray-800/30 backdrop-blur-lg rounded-xl p-4 border border-yellow-500/20">
             <div className="flex justify-between items-center mb-3">
                 <h3 className="text-yellow-500 font-bold text-lg">Live Signal</h3>
-                <button onClick={fetchSignal} disabled={loading} className="bg-gray-700/50 text-yellow-400 text-xs font-bold py-1 px-3 rounded hover:bg-gray-700 disabled:opacity-50">
+                <button onClick={fetchSignal} disabled={loading} className="bg-gray-700/50 text-yellow-400 text-xs font-bold py-1 px-3 rounded hover:bg-gray-700 disabled:opacity-50 transition-colors">
                     {loading ? 'Analyzing...' : 'Refresh Signal'}
                 </button>
             </div>
-            <div className="space-y-4">
-                {loading && <div className="h-64 bg-gray-700/50 rounded-lg animate-pulse flex items-center justify-center"><p>🧠 Analyzing Market...</p></div>}
-                {error && <p className="text-center text-red-500 py-10">{error}</p>}
-                {!loading && !error && signal && <SignalCard signal={signal} />}
-            </div>
+            {renderContent()}
         </section>
     );
 };
 
+// ------------------- Main Page Component -------------------
 export default function Home() {
     return (
         <div className="bg-black text-gray-200 min-h-screen">
@@ -148,3 +186,4 @@ export default function Home() {
         </div>
     )
 }
+
