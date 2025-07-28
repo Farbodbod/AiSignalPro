@@ -1,64 +1,64 @@
+# engines/trade_manager.py (نسخه نهایی و هماهنگ با معماری)
+
 import logging
-from typing import Dict, Any, List
-from core.models import Trade
+from typing import Dict, Any, List, Optional
+from core.models import Trade, Signal # فرض بر این است که مدل کاربر جنگو در Signal و Trade استفاده می‌شود
+from django.contrib.auth import get_user_model
 
 logger = logging.getLogger(__name__)
+User = get_user_model()
 
 class TradeManager:
-
-    def start_trade_from_signal(self, signal_obj: Dict[str, Any]) -> Trade:
-        """یک سیگنال دریافت کرده و یک معامله جدید در دیتابیس ایجاد می‌کند."""
+    ## --- اصلاح شد: تابع حالا کاربر را به عنوان ورودی می‌پذیرد --- ##
+    def start_trade_from_signal(self, signal_obj: Dict[str, Any], user: User) -> Optional[Trade]:
+        """یک سیگنال دریافت کرده و بر اساس آن یک معامله جدید در دیتابیس ایجاد می‌کند."""
         
         signal_type = signal_obj.get("signal_type")
-        if signal_type not in ["BUY", "SELL"]:
+        if not signal_type or signal_type.upper() == "HOLD":
             logger.info(f"Signal is '{signal_type}', no trade will be opened.")
             return None
 
-        direction = 'long' if signal_type == "BUY" else 'short'
+        # ## --- اصلاح شد: استراتژی از خود آبجکت سیگنال خوانده می‌شود، نه اینکه محاسبه شود --- ##
+        entry_price = signal_obj.get("current_price")
+        stop_loss = signal_obj.get("stop_loss")
+        targets = signal_obj.get("targets")
 
-        stop_loss = None
-        targets = []
+        if not all([entry_price, stop_loss, targets]):
+            logger.error("Cannot open trade due to missing strategy data (SL/TP) in the signal object.")
+            return None
+        
         try:
-            first_tf_details = next(iter(signal_obj.get("raw_analysis_details", {}).get("details", {}).values()))
-            indicators = first_tf_details.get("indicators", {})
-            price = signal_obj.get("current_price", 0)
-
-            if direction == 'long':
-                stop_loss = indicators.get("boll_lower", price * 0.98)
-                targets.append(indicators.get("boll_upper", price * 1.04))
-            else: # short
-                stop_loss = indicators.get("boll_upper", price * 1.02)
-                targets.append(indicators.get("boll_lower", price * 0.96))
-        except (StopIteration, AttributeError):
-             logger.warning("Could not determine SL/TP from indicators, using default percentages.")
-             price = signal_obj.get("current_price", 0)
-             if direction == 'long':
-                 stop_loss = price * 0.98
-                 targets = [price * 1.04]
-             else:
-                 stop_loss = price * 1.02
-                 targets = [price * 0.96]
-
-        try:
-            new_trade = Trade.objects.create(
+            # ابتدا یک آبجکت سیگنال برای ثبت در تاریخچه می‌سازیم
+            new_signal_instance = Signal.objects.create(
+                user=user,
                 symbol=signal_obj.get("symbol"),
+                timestamp=signal_obj.get("issued_at"),
                 timeframe=signal_obj.get("timeframe"),
-                direction=direction,
+                signal_type=signal_type,
+                price_at_signal=entry_price,
+                details=signal_obj.get("raw_analysis_details", {})
+            )
+
+            # سپس معامله را با ارجاع به آن سیگنال ایجاد می‌کنیم
+            new_trade = Trade.objects.create(
+                user=user,
+                signal=new_signal_instance,
+                symbol=signal_obj.get("symbol"),
                 status='OPEN',
-                entry_price=signal_obj.get("current_price"),
+                entry_price=entry_price,
                 stop_loss=stop_loss,
-                targets=targets,
-                raw_signal_data=signal_obj
+                take_profit=targets[0] if targets else None, # اولین تارگت به عنوان TP اصلی
+                notes=f"Trade opened based on signal ID: {new_signal_instance.id}"
             )
             logger.info(f"Successfully started new trade: {new_trade.id}")
             return new_trade
+            
         except Exception as e:
-            logger.error(f"Failed to create trade in database: {e}")
+            logger.error(f"Failed to create trade/signal in database: {e}", exc_info=True)
             return None
 
     def get_open_trades(self) -> List[Dict[str, Any]]:
         """تمام معاملات باز را از دیتابیس برمی‌گرداند."""
-        # --- اصلاحیه: entry_time به opened_at تغییر کرد ---
         open_trades = Trade.objects.filter(status='OPEN').order_by('-opened_at')
         
         results = []
@@ -66,11 +66,10 @@ class TradeManager:
             results.append({
                 "id": str(trade.id),
                 "symbol": trade.symbol,
-                "direction": trade.direction,
                 "entry_price": float(trade.entry_price),
-                "entry_time": trade.opened_at.isoformat(), # <<-- اصلاح شد
+                "opened_at": trade.opened_at.isoformat(),
                 "status": trade.status,
-                "targets": trade.targets,
+                "take_profit": float(trade.take_profit) if trade.take_profit else None,
                 "stop_loss": float(trade.stop_loss) if trade.stop_loss else None,
             })
         return results
