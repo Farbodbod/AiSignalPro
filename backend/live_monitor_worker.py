@@ -1,4 +1,4 @@
-# live_monitor_worker.py (با فرمت پیام تلگرام افسانه‌ای)
+# live_monitor_worker.py (با اصلاح SyntaxError)
 
 import asyncio
 import os
@@ -6,11 +6,7 @@ import django
 import logging
 import time
 from typing import Dict, Optional, List
-from datetime import datetime
-import pytz
-from jdatetime import datetime as jdatetime
 
-# --- راه‌اندازی اولیه و ضروری Django ---
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'trading_app.settings')
 django.setup()
 
@@ -18,17 +14,17 @@ from core.exchange_fetcher import ExchangeFetcher
 from engines.master_orchestrator import MasterOrchestrator
 from engines.signal_adapter import SignalAdapter
 from engines.telegram_handler import TelegramHandler
+from jdatetime import datetime as jdatetime
+import pytz
 
 # --- تنظیمات اصلی ربات ---
 SYMBOLS_TO_MONITOR = ['BTC', 'ETH', 'XRP', 'SOL', 'DOGE']
-TIME کروFRAMES_TO_ANALYZE = ['5m', '15m', '1h', '4h']
+# --- اصلاح شد: اشتباه تایپی در نام متغیر ---
+TIME_FRAMES_TO_ANALYZE = ['5m', '15m', '1h', '4h']
 POLL_INTERVAL_SECONDS = 600
 SIGNAL_CACHE_TTL_SECONDS = 3600
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - [%(funcName)s] - %(message)s')
-
-# نکته: برای تبدیل تاریخ به شمسی، کتابخانه jdatetime باید نصب باشد.
-# pip install jdatetime pytz
 
 class SignalCache:
     def __init__(self, ttl_seconds: int):
@@ -44,36 +40,21 @@ class SignalCache:
     def store(self, symbol: str, signal_type: str):
         self.cache[symbol] = (signal_type, time.time())
 
-# --- ✨ تابع فرمت پیام تلگرام (نسخه افسانه‌ای) ✨ ---
 def format_legendary_message(signal_obj: dict) -> str:
-    """یک آبجکت سیگنال کامل را به یک پیام تلگرام حرفه‌ای و جامع تبدیل می‌کند."""
-    
-    # ۱. استخراج تمام داده‌های لازم
     signal_type = signal_obj.get("signal_type", "N/A")
     symbol = signal_obj.get("symbol", "N/A")
     timeframe = signal_obj.get("timeframe", "N/A")
     entry_zone = signal_obj.get("entry_zone", [])
     stop_loss = signal_obj.get("stop_loss", 0.0)
     targets = signal_obj.get("targets", [])
-    rr_ratio = signal_obj.get("risk_reward_ratio", 0.0)
     sys_confidence = signal_obj.get("system_confidence_percent", 0)
     ai_confidence = signal_obj.get("ai_confidence_percent", 0)
     reasons = signal_obj.get("reasons", ["Analysis based on internal scoring."])
     issued_at_utc_str = signal_obj.get("issued_at", datetime.utcnow().isoformat())
-
-    # ۲. آماده‌سازی متغیرهای نمایشی
     signal_header = "🟢 LONG" if signal_type == "BUY" else "🔴 SHORT"
-    
-    # فرمت محدوده ورود
     entry_range_str = f"`{entry_zone[0]:,.4f} - {entry_zone[1]:,.4f}`" if len(entry_zone) > 1 else f"`{entry_zone[0]:,.4f}`"
-    
-    # فرمت تارگت‌ها
     targets_str = "\n".join([f"    🎯 TP{i+1}: `{t:,.4f}`" for i, t in enumerate(targets)])
-
-    # فرمت دلایل
     reasons_str = "\n".join([f"• _{reason}_" for reason in reasons])
-    
-    # ۳. تبدیل تاریخ و زمان به وقت تهران
     try:
         utc_dt = datetime.fromisoformat(issued_at_utc_str.replace('Z', '+00:00'))
         tehran_tz = pytz.timezone("Asia/Tehran")
@@ -82,8 +63,6 @@ def format_legendary_message(signal_obj: dict) -> str:
         timestamp_str = f"⏰ {jalali_dt.strftime('%Y/%m/%d, %H:%M:%S')}"
     except Exception:
         timestamp_str = ""
-
-    # ۴. ساخت پیام نهایی
     message = (
         f"🔥 **NEW AI SIGNAL** 🔥\n\n"
         f"🪙 **{symbol}/USDT**\n"
@@ -106,8 +85,7 @@ def format_legendary_message(signal_obj: dict) -> str:
 
 async def analyze_symbol(fetcher: ExchangeFetcher, orchestrator: MasterOrchestrator, symbol: str) -> Optional[dict]:
     all_tf_analysis = {}
-    timeframes_to_analyze = ['5m', '15m', '1h', '4h']
-    tasks = {asyncio.create_task(fetcher.get_first_successful_klines(symbol, tf)): tf for tf in timeframes_to_analyze}
+    tasks = {asyncio.create_task(fetcher.get_first_successful_klines(symbol, tf)): tf for tf in TIME_FRAMES_TO_ANALYZE}
     for task in asyncio.as_completed(tasks):
         tf = tasks[task]
         result = await task
@@ -116,11 +94,9 @@ async def analyze_symbol(fetcher: ExchangeFetcher, orchestrator: MasterOrchestra
             analysis = orchestrator.analyze_single_dataframe(df, tf, symbol)
             analysis['source'] = source
             all_tf_analysis[tf] = analysis
-    
     if not all_tf_analysis:
         logging.warning(f"Could not fetch any kline data for {symbol} to perform analysis.")
         return None
-    
     final_result = orchestrator.get_multi_timeframe_signal(all_tf_analysis)
     adapter = SignalAdapter(analytics_output=final_result)
     return adapter.combine()
@@ -131,17 +107,15 @@ async def monitor_loop():
     signal_cache = SignalCache(SIGNAL_CACHE_TTL_SECONDS)
     logging.info("Live Monitoring Worker (Legendary Edition) started successfully.")
     try:
-        await telegram.send_message_async("✅ *ربات مانیتورینگ AiSignalPro (نسخه افسانه‌ای) فعال شد.*")
+        await telegram.send_message_async("✅ *ربات مانیتورینگ AiSignalPro (نسخه اصلاح شده) فعال شد.*")
     except Exception as e:
         logging.error(f"Failed to send initial Telegram message: {e}")
-    
     while True:
         logging.info("--- Starting New Monitoring Cycle ---")
         fetcher = ExchangeFetcher()
         try:
             analysis_tasks = [analyze_symbol(fetcher, orchestrator, symbol) for symbol in SYMBOLS_TO_MONITOR]
             results = await asyncio.gather(*analysis_tasks, return_exceptions=True)
-
             for result in results:
                 if isinstance(result, Exception):
                     logging.error(f"An exception occurred during symbol analysis: {result}", exc_info=True)
@@ -151,18 +125,15 @@ async def monitor_loop():
                     signal_type = signal_obj["signal_type"]
                     if not signal_cache.is_duplicate(symbol, signal_type):
                         signal_cache.store(symbol, signal_type)
-                        # استفاده از تابع جدید برای فرمت پیام
                         message = format_legendary_message(signal_obj)
                         await telegram.send_message_async(message)
                         logging.info(f"LEGENDARY ALERT SENT for {symbol}: {signal_type}")
                     else:
                         logging.info(f"Duplicate signal '{signal_type}' for {symbol}. Skipping.")
-
         except Exception as e:
             logging.error(f"A critical error occurred in the main monitoring loop: {e}", exc_info=True)
         finally:
             await fetcher.close()
-            
         logging.info(f"Cycle finished. Waiting for {POLL_INTERVAL_SECONDS} seconds.")
         await asyncio.sleep(POLL_INTERVAL_SECONDS)
 
