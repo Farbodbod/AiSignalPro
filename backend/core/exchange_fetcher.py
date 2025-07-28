@@ -1,4 +1,4 @@
-# core/exchange_fetcher.py (نسخه نهایی ضدگلوله v1.5)
+# core/exchange_fetcher.py (نسخه نهایی ضد کرش v1.6)
 
 import asyncio
 import os
@@ -20,11 +20,11 @@ SYMBOL_MAP = {'BTC': {'base': 'BTC', 'quote': 'USDT'}, 'ETH': {'base': 'ETH', 'q
 
 class ExchangeFetcher:
     def __init__(self, cache_ttl: int = 60):
-        headers = {'User-Agent': 'AiSignalPro/1.5.0', 'Accept': 'application/json'}
+        headers = {'User-Agent': 'AiSignalPro/1.6.0', 'Accept': 'application/json'}
         self.client = httpx.AsyncClient(headers=headers, timeout=20, follow_redirects=True)
         self.cache = {}
         self.cache_ttl = cache_ttl
-        logging.info("ExchangeFetcher (Bulletproof Edition v1.5) initialized.")
+        logging.info("ExchangeFetcher (Crash-Proof Edition v1.6) initialized.")
 
     def _get_cache_key(self, exchange: str, symbol: str, timeframe: str) -> str: return f"{exchange}:{symbol}:{timeframe}"
     
@@ -42,12 +42,7 @@ class ExchangeFetcher:
             return c['timeframe_map'].get('15m')
         return c['timeframe_map'].get(t)
 
-    @retry(
-        stop=stop_after_attempt(3), 
-        wait=wait_exponential(multiplier=1, min=2, max=6), 
-        retry=retry_if_exception_type((httpx.RequestError, httpx.HTTPStatusError)),
-        reraise=False 
-    )
+    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=6), retry=retry_if_exception_type((httpx.RequestError, httpx.HTTPStatusError)), reraise=True)
     async def _safe_async_request(self, method: str, url: str, **kwargs) -> Optional[Any]:
         exchange_name = kwargs.pop('exchange_name', 'mexc')
         await asyncio.sleep(EXCHANGE_CONFIG.get(exchange_name, {}).get('rate_limit_delay', 1.0))
@@ -80,19 +75,17 @@ class ExchangeFetcher:
         else: params.update({'symbol': formatted_symbol, 'interval': formatted_timeframe})
         if exchange == 'kucoin': params['type'] = params.pop('interval')
         
-        # این تابع چون reraise=False است، در صورت خطا None برمی‌گرداند و کرش نمی‌کند
-        raw_data = await self._safe_async_request('GET', url, params=params, exchange_name=exchange)
-        
-        if raw_data:
-            kline_list = raw_data.get('data') if isinstance(raw_data, dict) and 'data' in raw_data else raw_data
-            if isinstance(kline_list, list):
-                normalized_data = self._normalize_kline_data(kline_list, exchange)
-                if normalized_data:
-                    self.cache[cache_key] = {'timestamp': time.time(), 'data': normalized_data}
-                    return normalized_data
-        
-        # لاگ هشدار در صورتی که پس از تمام تلاش‌ها باز هم ناموفق بودیم
-        logging.warning(f"Final attempt failed for {exchange} on {symbol}@{timeframe} after retries.")
+        try:
+            raw_data = await self._safe_async_request('GET', url, params=params, exchange_name=exchange)
+            if raw_data:
+                kline_list = raw_data.get('data') if isinstance(raw_data, dict) and 'data' in raw_data else raw_data
+                if isinstance(kline_list, list):
+                    normalized_data = self._normalize_kline_data(kline_list, exchange)
+                    if normalized_data:
+                        self.cache[cache_key] = {'timestamp': time.time(), 'data': normalized_data}
+                        return normalized_data
+        except Exception as e:
+            logging.warning(f"Final attempt failed for {exchange} on {symbol}@{timeframe} after retries. Reason: {type(e).__name__}")
         return None
         
     async def get_first_successful_klines(self, symbol: str, timeframe:str) -> Optional[Tuple[pd.DataFrame, str]]:
@@ -101,14 +94,19 @@ class ExchangeFetcher:
         
         for task in asyncio.as_completed(tasks):
             source_exchange = task.get_name()
-            # این بخش نیازی به try/except ندارد چون تابع بالایی خطا را مدیریت می‌کند
-            result = await task
-            if result:
-                logging.info(f"Data acquired from '{source_exchange}' for {symbol}@{timeframe}.")
-                return pd.DataFrame(result), source_exchange
-        
+            try:
+                # --- اصلاح شد: اضافه کردن تور ایمنی نهایی برای جلوگیری قطعی از کرش ---
+                result = await task
+                if result:
+                    logging.info(f"Data acquired from '{source_exchange}' for {symbol}@{timeframe}.")
+                    return pd.DataFrame(result), source_exchange
+            except Exception as e:
+                # اگر خطایی از تسک به بیرون درز کرد، آن را ثبت کرده و به تسک بعدی می‌رویم
+                logging.error(f"Task for {source_exchange} failed unexpectedly: {e}", exc_info=False)
+
         logging.error(f"Critical Failure: Could not fetch klines for {symbol}@{timeframe} from any available exchange.")
         return None, None
         
     async def close(self):
         await self.client.aclose()
+
