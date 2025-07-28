@@ -1,4 +1,4 @@
-# engines/signal_adapter.py (نسخه نهایی با منطق ترکیب سیگنال اصلاح شده)
+# engines/signal_adapter.py (نسخه نهایی با منطق هوشمند استخراج استراتژی)
 
 from typing import Dict, Any, Optional
 from datetime import datetime
@@ -10,50 +10,58 @@ class SignalAdapter:
         self.ai_confirmation = self.analytics.get("gemini_confirmation", {})
         self.details = self.analytics.get("details", {})
 
-    def _get_primary_data(self, key: str, default: Any = None, timeframe_priority: list = None):
-        """از تایم فریم اصلی داده‌ها را استخراج می‌کند."""
+    def _get_primary_data(self, key: str, default: Any = None):
+        """از اولین تایم فریم معتبر، یک مقدار خاص را استخراج می‌کند."""
         if not self.details: return default
-        if timeframe_priority is None:
-            timeframe_priority = ['1h', '4h', '1d', '15m', '5m']
         
-        for tf in timeframe_priority:
+        for tf in ['1h', '4h', '1d', '15m', '5m']:
             if tf in self.details and isinstance(self.details.get(tf), dict):
-                # اگر کلید اصلی وجود داشت
                 if key in self.details[tf] and self.details[tf].get(key) is not None:
                     return self.details[tf][key]
-                # اگر کلید در دیکشنری تو در تو (مثل strategy) بود
                 for sub_dict in self.details[tf].values():
                     if isinstance(sub_dict, dict) and key in sub_dict:
-                        return sub_dict[key]
+                        return sub_dict.get(key)
         return default
 
     def combine(self) -> Optional[Dict[str, Any]]:
         rule_based_signal = self.analytics.get("rule_based_signal", "HOLD")
         ai_signal = self.ai_confirmation.get("signal", "HOLD").upper()
-        if ai_signal in ["N/A", "ERROR"]: ai_signal = "HOLD"
+        if ai_signal in ["N/A", "ERROR"]:
+            ai_signal = "HOLD"
 
-        # ## --- اصلاح شد: منطق جدید و امن‌تر ترکیب سیگنال --- ##
         final_signal = "HOLD"
         if rule_based_signal != "HOLD":
-            # اگر AI مخالف بود، سیگنال را وتو کن و HOLD کن
-            if (rule_based_signal == "BUY" and ai_signal == "SELL") or \
-               (rule_based_signal == "SELL" and ai_signal == "BUY"):
-                final_signal = "HOLD" 
-            else: # اگر AI موافق یا بی‌نظر بود، به سیگنال اصلی اعتماد کن
+            is_contradictory = (rule_based_signal == "BUY" and ai_signal == "SELL") or \
+                              (rule_based_signal == "SELL" and ai_signal == "BUY")
+            if not is_contradictory:
                 final_signal = rule_based_signal
+        
+        # اگر در نهایت سیگنالی برای معامله وجود نداشت، خروجی نده
+        if final_signal == "HOLD":
+            return None
 
-        # --- استخراج داده‌های استراتژی از تایم‌فریم اصلی (1h) ---
-        primary_tf = next(iter(self.details), '1h')
-        strategy_data = self.details.get(primary_tf, {}).get("strategy", {})
+        # --- اصلاح شد: پیدا کردن اولین استراتژی معتبر در میان تایم‌فریم‌ها ---
+        strategy_data = {}
+        primary_tf_with_strategy = None
+        for tf in ['1h', '4h', '1d', '15m', '5m']:
+            # .get("strategy", {}) برای جلوگیری از خطا اگر کلید strategy نبود
+            current_strategy = self.details.get(tf, {}).get("strategy", {})
+            if current_strategy: # اگر دیکشنری استراتژی خالی نبود
+                strategy_data = current_strategy
+                primary_tf_with_strategy = tf
+                break # اولین مورد معتبر پیدا شد، از حلقه خارج شو
+
+        # اگر هیچ‌کدام از تایم‌فریم‌ها استراتژی معتبری نداشتند، سیگنال را رد کن
         if not strategy_data:
-            return None # اگر استراتژی وجود نداشت، سیگنال معتبر نیست
+            return None
 
         symbol = self._get_primary_data("symbol", "N/A")
-        if symbol == "N/A": return None # اگر نماد مشخص نبود، سیگنال معتبر نیست
+        if symbol == "N/A":
+            return None
 
         return {
             "symbol": symbol,
-            "timeframe": primary_tf,
+            "timeframe": primary_tf_with_strategy, # تایم‌فریمی که استراتژی از آن آمده
             "signal_type": final_signal,
             "current_price": strategy_data.get("entry_price"),
             "entry_zone": strategy_data.get("entry_zone", []),
@@ -71,5 +79,5 @@ class SignalAdapter:
             "tags": self._get_primary_data("tags", []),
             "reasons": [self.ai_confirmation.get("reason")] if self.ai_confirmation.get("reason") else ["Score Based"],
             "issued_at": datetime.utcnow().replace(microsecond=0).isoformat() + "Z",
-            "raw_analysis_details": self.analytics # داده خام برای ذخیره در دیتابیس
+            "raw_analysis_details": self.analytics
         }
