@@ -13,11 +13,9 @@ from engines.signal_adapter import SignalAdapter
 from engines.telegram_handler import TelegramHandler
 from core.views import convert_numpy_types
 
-# ================================== تنظیمات ==================================
 SYMBOLS_TO_MONITOR = ['BTC-USDT', 'ETH-USDT', 'SOL-USDT']
-POLL_INTERVAL_SECONDS = 600  # <<-- افزایش به ۱۰ دقیقه
-SIGNAL_CACHE_TTL_SECONDS = 3600 # <<-- سیگنال مشابه تا ۱ ساعت ارسال نشود
-# ===========================================================================
+POLL_INTERVAL_SECONDS = 600
+SIGNAL_CACHE_TTL_SECONDS = 3600
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -40,11 +38,11 @@ def format_professional_message(signal_obj: dict) -> str:
     symbol = signal_obj.get("symbol", "N/A")
     price = signal_obj.get("current_price", 0.0)
     confidence = signal_obj.get("confidence", 0)
-    risk = signal_obj.get("risk_level", "N/A")
+    risk = signal_obj.get("risk_level", "unknown")
     scores = signal_obj.get("scores", {})
     buy_score = scores.get("buy_score", 0)
     sell_score = scores.get("sell_score", 0)
-    tags = ", ".join(signal_obj.get("tags", ["No specific factors"]))
+    tags = ", ".join(signal_obj.get("tags", [])) or "N/A"
     message = (
         f"SIGNAL ALERT: *{signal_type} {symbol}*\n"
         f"----------------------------------------\n"
@@ -106,11 +104,6 @@ def monitor_loop():
 
                 raw_orchestrator_result = orchestrator.get_multi_timeframe_signal(all_tf_analysis)
                 
-                # اگر سیگنال اولیه معتبر نبود، ادامه نده
-                if not raw_orchestrator_result.get("rule_based_signal") or raw_orchestrator_result.get("rule_based_signal") == "HOLD":
-                    logging.info(f"No strong rule-based signal for {symbol}. Skipping alert.")
-                    continue
-
                 adapter = SignalAdapter(analytics_output=raw_orchestrator_result, strategy='balanced')
                 signal_obj = adapter.combine()
                 
@@ -124,7 +117,6 @@ def monitor_loop():
                         time.sleep(5)
                     else:
                         logging.info(f"Duplicate signal '{signal_type}' for {symbol}. Skipping alert.")
-
             except Exception as e:
                 logging.error(f"Error processing symbol {symbol}: {e}", exc_info=True)
             
