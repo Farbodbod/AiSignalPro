@@ -1,4 +1,4 @@
-# core/views.py (نسخه کامل و نهایی)
+# core/views.py (نسخه نهایی و مقاوم)
 
 import time
 import requests
@@ -15,7 +15,6 @@ from engines.trade_manager import TradeManager
 
 # --- تنظیمات اولیه ---
 logger = logging.getLogger(__name__)
-EXCHANGE_FALLBACK_LIST = ['kucoin', 'mexc', 'okx', 'gateio']
 
 # --- توابع کمکی ---
 def convert_numpy_types(obj):
@@ -31,17 +30,6 @@ def convert_numpy_types(obj):
     if isinstance(obj, list):
         return [convert_numpy_types(i) for i in obj]
     return obj
-
-def _get_data_with_fallback(fetcher, symbol, interval, limit, min_length):
-    """برای دریافت داده از چندین صرافی تلاش می‌کند تا در صورت آفلاین بودن یکی، از دیگری استفاده کند."""
-    for source in EXCHANGE_FALLBACK_LIST:
-        try:
-            kline_data = fetcher.get_klines(source=source, symbol=symbol, interval=interval, limit=limit)
-            if kline_data and len(kline_data) >= min_length:
-                return pd.DataFrame(kline_data), source
-        except Exception as e:
-            logger.warning(f"Could not fetch from {source} for {symbol}: {e}")
-    return None, None
 
 # --- API Endpoints ---
 def system_status_view(request):
@@ -110,36 +98,51 @@ def all_data_view(request):
 def get_composite_signal_view(request):
     """API اصلی که تمام تحلیل‌ها را اجرا کرده و یک سیگنال نهایی و کامل تولید می‌کند."""
     symbol = request.GET.get('symbol', 'BTC-USDT').upper()
-    requested_tf = request.GET.get('timeframe')
     try:
         fetcher = ExchangeFetcher()
         orchestrator = MasterOrchestrator()
         all_tf_analysis = {}
-        timeframes = [requested_tf] if requested_tf else ['5m', '15m', '1h', '4h']
+        timeframes = ['5m', '15m', '1h', '4h']
         
-        for tf in timeframes:
-            limit = 300 if tf in ['1h', '4h'] else 100
-            min_length = 200 if tf in ['1h', '4h'] else 50
-            df, source = _get_data_with_fallback(fetcher, symbol, tf, limit=limit, min_length=min_length)
-            if df is not None:
-                analysis = orchestrator.analyze_single_dataframe(df, tf, symbol=symbol)
-                analysis['source'] = source
-                all_tf_analysis[tf] = analysis
-                
+        with ThreadPoolExecutor() as executor:
+            future_to_tf = {executor.submit(fetcher.get_klines_robust, symbol, tf): tf for tf in timeframes}
+            for future in as_completed(future_to_tf):
+                tf = future_to_tf[future]
+                result = future.result()
+                if result:
+                    df, source = result
+                    analysis = orchestrator.analyze_single_dataframe(df, tf, symbol=symbol)
+                    analysis['source'] = source
+                    all_tf_analysis[tf] = analysis
+        
         if not all_tf_analysis:
-            return JsonResponse({'error': f'Could not fetch enough data for {symbol} on any supported exchange.'}, status=404)
+            return JsonResponse({
+                "status": "NO_DATA",
+                "message": f"Could not fetch enough market data for {symbol} to perform analysis."
+            })
         
         final_result = orchestrator.get_multi_timeframe_signal(all_tf_analysis)
         adapter = SignalAdapter(analytics_output=final_result)
         final_signal_object = adapter.combine()
 
-        if final_signal_object is None:
-            return JsonResponse({'error': 'Analysis complete, but no valid trading strategy was formed.'}, status=200)
+        if final_signal_object is None or final_signal_object.get("signal_type") == "HOLD":
+             return JsonResponse({
+                "status": "NEUTRAL",
+                "message": "Market conditions are neutral. No strong buy/sell signal found.",
+                "details": convert_numpy_types(final_result)
+            })
+        
+        return JsonResponse({
+            "status": "SUCCESS",
+            "signal": convert_numpy_types(final_signal_object)
+        })
 
-        return JsonResponse(convert_numpy_types(final_signal_object), safe=False)
     except Exception as e:
-        logger.error(f"Error in get_composite_signal_view for {symbol}: {e}", exc_info=True)
-        return JsonResponse({'error': 'An internal server error occurred during analysis.'}, status=500)
+        logger.error(f"CRITICAL ERROR in get_composite_signal_view for {symbol}: {e}", exc_info=True)
+        return JsonResponse({
+            "status": "ERROR",
+            "message": "An internal server error occurred during analysis. The team has been notified."
+        })
 
 def list_open_trades_view(request):
     """لیستی از تمام معاملات باز را از دیتابیس برمی‌گرداند."""
@@ -150,3 +153,4 @@ def list_open_trades_view(request):
     except Exception as e:
         logger.error(f"Error in list_open_trades_view: {e}", exc_info=True)
         return JsonResponse({'error': 'Failed to retrieve open trades.'}, status=500)
+
