@@ -20,3 +20,4 @@ openai
 google-generativeai
 ta
 django-cors-headers
+tenacity
