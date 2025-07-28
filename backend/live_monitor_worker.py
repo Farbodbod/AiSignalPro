@@ -1,4 +1,4 @@
-# Live_monitor_worker.py (نسخه نهایی و پایدار)
+# live_monitor_worker.py (نسخه نهایی و اصلاح شده)
 
 import time
 import logging
@@ -50,7 +50,7 @@ def format_professional_message(signal_obj: dict) -> str:
     signal_type = signal_obj.get("signal_type", "N/A")
     symbol = signal_obj.get("symbol", "N/A")
     price = signal_obj.get("current_price", 0.0)
-    confidence = signal_obj.get("ai_confidence_percent", 0) # اصلاح شد تا از فیلد صحیح خوانده شود
+    confidence = signal_obj.get("ai_confidence_percent", 0)
     risk = signal_obj.get("risk_level", "unknown")
     scores = signal_obj.get("scores", {})
     buy_score = scores.get("buy_score", 0)
@@ -73,7 +73,6 @@ def format_professional_message(signal_obj: dict) -> str:
     
 def _get_data_with_fallback_worker(fetcher, symbol, interval, limit, min_length):
     """داده‌ها را از منابع مختلف دریافت می‌کند تا پایداری ربات افزایش یابد."""
-    # اولویت با صرافی‌های معتبرتر
     for source in ['kucoin', 'mexc', 'okx', 'gateio']:
         try:
             kline_data = fetcher.get_klines(source=source, symbol=symbol, interval=interval, limit=limit)
@@ -93,7 +92,7 @@ def monitor_loop():
         orchestrator = MasterOrchestrator()
         fetcher = ExchangeFetcher()
         logging.info("Live Monitoring Worker started successfully.")
-        telegram.send_message("✅ *ربات مانیتورینگ AiSignalPro فعال شد.*\nربات در حال رصد بازار است...")
+        telegram.send_message("✅ *ربات مانیتورینگ AiSignalPro (نسخه پایدار) فعال شد.*\nربات در حال رصد بازار است...")
     except Exception as e:
         logging.error(f"FATAL: Failed to initialize worker components: {e}", exc_info=True)
         return
@@ -110,10 +109,9 @@ def monitor_loop():
                     min_length = 200 if tf in ['1h', '4h', '1d'] else 50
                     df, source = _get_data_with_fallback_worker(fetcher, symbol, tf, limit=limit, min_length=min_length)
                     if df is not None:
-                        analysis = orchestrator.analyze_single_dataframe(df, tf)
+                        ## --- اصلاح شد: پارامتر symbol به اینجا اضافه شد --- ##
+                        analysis = orchestrator.analyze_single_dataframe(df, tf, symbol=symbol)
                         analysis['source'] = source
-                        analysis['symbol'] = symbol
-                        analysis['interval'] = tf
                         all_tf_analysis[tf] = analysis
                 
                 if not all_tf_analysis:
@@ -125,11 +123,9 @@ def monitor_loop():
                 adapter = SignalAdapter(analytics_output=raw_orchestrator_result, strategy='balanced')
                 signal_obj = adapter.combine()
                 
-                # +++ راه حل اصلی و حیاتی برای جلوگیری از کرش +++
                 if not signal_obj or not isinstance(signal_obj, dict):
                     logging.warning(f"Adapter did not produce a valid signal object for {symbol}. Skipping.")
                     continue
-                # +++++++++++++++++++++++++++++++++++++++++++++++++
 
                 signal_type = signal_obj.get("signal_type")
                 if signal_type and signal_type.upper() != "HOLD":
@@ -138,7 +134,7 @@ def monitor_loop():
                         professional_message = format_professional_message(signal_obj)
                         telegram.send_message(professional_message)
                         logging.info(f"ALERT SENT for {symbol}: {signal_type}")
-                        time.sleep(5) # فاصله کوتاه برای جلوگیری از اسپم
+                        time.sleep(5)
                     else:
                         logging.info(f"Duplicate signal '{signal_type}' for {symbol}. Skipping alert.")
                 else:
@@ -146,10 +142,11 @@ def monitor_loop():
 
             except Exception as e:
                 logging.error(f"Error processing symbol {symbol}: {e}")
-                logging.error(traceback.format_exc()) # لاگ کامل خطا برای دیباگ
+                logging.error(traceback.format_exc())
             
         logging.info(f"Cycle finished. Waiting for {POLL_INTERVAL_SECONDS} seconds.")
         time.sleep(POLL_INTERVAL_SECONDS)
 
 if __name__ == "__main__":
     monitor_loop()
+
