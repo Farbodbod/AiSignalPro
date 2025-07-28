@@ -32,7 +32,6 @@ class ExchangeFetcher:
         if s not in SYMBOL_MAP: return None
         c = EXCHANGE_CONFIG.get(e)
         if not c: return None
-        # --- اصلاح شد: اطمینان از ارسال نماد با حروف بزرگ ---
         return c['symbol_template'].format(base=SYMBOL_MAP[s]['base'], quote=SYMBOL_MAP[s]['quote']).upper()
 
     def _format_timeframe(self, t: str, e: str) -> Optional[str]:
@@ -47,7 +46,6 @@ class ExchangeFetcher:
         stop=stop_after_attempt(3), 
         wait=wait_exponential(multiplier=1, min=2, max=6), 
         retry=retry_if_exception_type((httpx.RequestError, httpx.HTTPStatusError)),
-        # --- اصلاح شد: خطا دیگر به بیرون پرتاب نمی‌شود تا از کرش جلوگیری شود ---
         reraise=False 
     )
     async def _safe_async_request(self, method: str, url: str, **kwargs) -> Optional[Any]:
@@ -82,6 +80,7 @@ class ExchangeFetcher:
         else: params.update({'symbol': formatted_symbol, 'interval': formatted_timeframe})
         if exchange == 'kucoin': params['type'] = params.pop('interval')
         
+        # این تابع چون reraise=False است، در صورت خطا None برمی‌گرداند و کرش نمی‌کند
         raw_data = await self._safe_async_request('GET', url, params=params, exchange_name=exchange)
         
         if raw_data:
@@ -92,14 +91,17 @@ class ExchangeFetcher:
                     self.cache[cache_key] = {'timestamp': time.time(), 'data': normalized_data}
                     return normalized_data
         
+        # لاگ هشدار در صورتی که پس از تمام تلاش‌ها باز هم ناموفق بودیم
         logging.warning(f"Final attempt failed for {exchange} on {symbol}@{timeframe} after retries.")
         return None
         
     async def get_first_successful_klines(self, symbol: str, timeframe:str) -> Optional[Tuple[pd.DataFrame, str]]:
         exchanges = ['mexc', 'kucoin', 'okx']
         tasks = [asyncio.create_task(self.get_klines_from_one_exchange(ex, symbol, timeframe), name=ex) for ex in exchanges]
+        
         for task in asyncio.as_completed(tasks):
             source_exchange = task.get_name()
+            # این بخش نیازی به try/except ندارد چون تابع بالایی خطا را مدیریت می‌کند
             result = await task
             if result:
                 logging.info(f"Data acquired from '{source_exchange}' for {symbol}@{timeframe}.")
