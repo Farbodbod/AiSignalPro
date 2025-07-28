@@ -13,9 +13,11 @@ from engines.signal_adapter import SignalAdapter
 from engines.telegram_handler import TelegramHandler
 from core.views import convert_numpy_types
 
+# ================================== تنظیمات ==================================
 SYMBOLS_TO_MONITOR = ['BTC-USDT', 'ETH-USDT', 'SOL-USDT']
-POLL_INTERVAL_SECONDS = 300
-SIGNAL_CACHE_TTL_SECONDS = 1800
+POLL_INTERVAL_SECONDS = 600  # <<-- افزایش به ۱۰ دقیقه
+SIGNAL_CACHE_TTL_SECONDS = 3600 # <<-- سیگنال مشابه تا ۱ ساعت ارسال نشود
+# ===========================================================================
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -74,7 +76,7 @@ def monitor_loop():
         orchestrator = MasterOrchestrator()
         fetcher = ExchangeFetcher()
         logging.info("Live Monitoring Worker started successfully.")
-        telegram.send_message("*✅ ربات مانیتورینگ حرفه‌ای فعال شد.*")
+        telegram.send_message("*✅ ربات مانیتورینگ حرفه‌ای (نسخه نهایی) فعال شد.*")
     except Exception as e:
         logging.error(f"Failed to start worker: {e}", exc_info=True)
         return
@@ -104,6 +106,11 @@ def monitor_loop():
 
                 raw_orchestrator_result = orchestrator.get_multi_timeframe_signal(all_tf_analysis)
                 
+                # اگر سیگنال اولیه معتبر نبود، ادامه نده
+                if not raw_orchestrator_result.get("rule_based_signal") or raw_orchestrator_result.get("rule_based_signal") == "HOLD":
+                    logging.info(f"No strong rule-based signal for {symbol}. Skipping alert.")
+                    continue
+
                 adapter = SignalAdapter(analytics_output=raw_orchestrator_result, strategy='balanced')
                 signal_obj = adapter.combine()
                 
@@ -117,6 +124,7 @@ def monitor_loop():
                         time.sleep(5)
                     else:
                         logging.info(f"Duplicate signal '{signal_type}' for {symbol}. Skipping alert.")
+
             except Exception as e:
                 logging.error(f"Error processing symbol {symbol}: {e}", exc_info=True)
             
