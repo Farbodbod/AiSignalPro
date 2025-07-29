@@ -1,4 +1,4 @@
-# core/views.py (نسخه نهایی مستقل)
+# core/views.py (نسخه نهایی با مدیریت اتصال صحیح در هر درخواست)
 
 import asyncio
 import logging
@@ -14,10 +14,8 @@ from engines.trade_manager import TradeManager
 
 logger = logging.getLogger(__name__)
 
-# یک نمونه واحد و دائمی از Fetcher فقط برای این فایل
-exchange_fetcher = ExchangeFetcher()
-
 async def system_status_view(request):
+    # (این تابع مستقل است و بدون تغییر باقی می‌ماند)
     exchanges_to_check = [{'name': 'Kucoin', 'status_url': 'https://api.kucoin.com/api/v1/timestamp'}, {'name': 'MEXC', 'status_url': 'https://api.mexc.com/api/v3/time'}, {'name': 'OKX', 'status_url': 'https://www.okx.com/api/v5/system/time'}]
     async with httpx.AsyncClient(timeout=10) as client:
         tasks = {asyncio.create_task(client.get(ex['status_url'])): ex['name'] for ex in exchanges_to_check}
@@ -31,6 +29,7 @@ async def system_status_view(request):
     return JsonResponse(results, safe=False)
 
 async def market_overview_view(request):
+    # (این تابع مستقل است و بدون تغییر باقی می‌ماند)
     response_data = {};
     try:
         async with httpx.AsyncClient(timeout=10) as client:
@@ -47,11 +46,13 @@ async def market_overview_view(request):
 
 async def get_composite_signal_view(request):
     symbol = request.GET.get('symbol', 'BTC').upper()
+    # --- اصلاح شد: Fetcher در داخل تابع ساخته و در انتها بسته می‌شود ---
+    fetcher = ExchangeFetcher()
     try:
         orchestrator = MasterOrchestrator()
         all_tf_analysis = {}
         timeframes = ['5m', '15m', '1h', '4h']
-        tasks = [exchange_fetcher.get_first_successful_klines(symbol, tf) for tf in timeframes]
+        tasks = [fetcher.get_first_successful_klines(symbol, tf) for tf in timeframes]
         results = await asyncio.gather(*tasks)
         for i, result in enumerate(results):
             if result and result[0] is not None:
@@ -71,6 +72,8 @@ async def get_composite_signal_view(request):
     except Exception as e:
         logger.error(f"CRITICAL ERROR in get_composite_signal_view for {symbol}: {e}", exc_info=True)
         return JsonResponse({"status": "ERROR", "message": "An internal server error occurred."})
+    finally:
+        await fetcher.close()
 
 @sync_to_async
 def _get_open_trades_sync():
