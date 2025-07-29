@@ -1,4 +1,4 @@
-# core/exchange_fetcher.py (نسخه 2.3 - نتیجه تحقیقات مشترک)
+# core/exchange_fetcher.py (نسخه 2.4 - اصلاح نهایی با توجه به بازخورد کاربر)
 
 import asyncio
 import os
@@ -20,11 +20,11 @@ SYMBOL_MAP = {'BTC': {'base': 'BTC', 'quote': 'USDT'}, 'ETH': {'base': 'ETH', 'q
 
 class ExchangeFetcher:
     def __init__(self, cache_ttl: int = 60):
-        headers = {'User-Agent': 'AiSignalPro/2.3.0', 'Accept': 'application/json'}
+        headers = {'User-Agent': 'AiSignalPro/2.4.0', 'Accept': 'application/json'}
         self.client = httpx.AsyncClient(headers=headers, timeout=20, follow_redirects=True)
         self.cache = {}
         self.cache_ttl = cache_ttl
-        logging.info("ExchangeFetcher (Legendary Edition v2.3) initialized.")
+        logging.info("ExchangeFetcher (Legendary Edition v2.4) initialized.")
 
     def _get_cache_key(self, prefix: str, exchange: str, symbol: str, timeframe: Optional[str] = None) -> str:
         key = f"{prefix}:{exchange}:{symbol}"
@@ -106,26 +106,29 @@ class ExchangeFetcher:
         if raw_data:
             price, change = 0.0, 0.0
             try:
-                # --- اصلاح شد بر اساس تحقیق شما ---
                 if exchange == 'mexc':
                     data = raw_data[0] if isinstance(raw_data, list) and raw_data else raw_data
                     price = float(data.get('lastPrice', 0))
-                    change = float(data.get('priceChangePercent', 0)) # بدون ضرب
+                    change = float(data.get('priceChangePercent', 0))
                 elif exchange == 'kucoin' and raw_data.get('data'):
                     data = raw_data['data']
                     price = float(data.get('last', 0))
-                    change = float(data.get('changeRate', 0)) * 100 # نیاز به ضرب
+                    change = float(data.get('changeRate', 0)) * 100
                 elif exchange == 'okx' and raw_data.get('data'):
                     data = raw_data['data'][0]
                     price = float(data.get('last', 0))
-                    change = float(data.get('chg24h', 0)) * 100 # نیاز به ضرب
+                    change = float(data.get('chg24h', 0)) * 100
 
+                # --- اصلاح شد: اگر قیمت صفر بود، None برمی‌گردانیم تا به سراغ صرافی بعدی برویم ---
                 if price > 0:
                     result = {'price': price, 'change_24h': change, 'source': exchange, 'symbol': symbol}
+                    # اضافه کردن لاگ پیشنهادی شما برای دیباگ بهتر
+                    logging.info(f"✅ Final Ticker Data: {result}")
                     self.cache[cache_key] = {'timestamp': time.time(), 'data': result}
                     return result
                 else:
-                    logging.warning(f"Price returned as 0 for {exchange} on {symbol}.")
+                    logging.warning(f"Price returned as 0 for {exchange} on {symbol}. Trying next exchange.")
+                    return None # صراحتا None برمی‌گردانیم
 
             except (ValueError, TypeError, IndexError, KeyError) as e:
                  logging.warning(f"Ticker data normalization failed for {exchange} on {symbol}: {e}")
