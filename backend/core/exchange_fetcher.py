@@ -1,4 +1,4 @@
-# core/exchange_fetcher.py (نسخه نهایی ضد کرش v1.6)
+# core/exchange_fetcher.py (نسخه نهایی با معماری موازی بازنویسی شده v1.7)
 
 import asyncio
 import os
@@ -20,11 +20,11 @@ SYMBOL_MAP = {'BTC': {'base': 'BTC', 'quote': 'USDT'}, 'ETH': {'base': 'ETH', 'q
 
 class ExchangeFetcher:
     def __init__(self, cache_ttl: int = 60):
-        headers = {'User-Agent': 'AiSignalPro/1.6.0', 'Accept': 'application/json'}
+        headers = {'User-Agent': 'AiSignalPro/1.7.0', 'Accept': 'application/json'}
         self.client = httpx.AsyncClient(headers=headers, timeout=20, follow_redirects=True)
         self.cache = {}
         self.cache_ttl = cache_ttl
-        logging.info("ExchangeFetcher (Crash-Proof Edition v1.6) initialized.")
+        logging.info("ExchangeFetcher (Final Stable Edition v1.7) initialized.")
 
     def _get_cache_key(self, exchange: str, symbol: str, timeframe: str) -> str: return f"{exchange}:{symbol}:{timeframe}"
     
@@ -85,28 +85,42 @@ class ExchangeFetcher:
                         self.cache[cache_key] = {'timestamp': time.time(), 'data': normalized_data}
                         return normalized_data
         except Exception as e:
-            logging.warning(f"Final attempt failed for {exchange} on {symbol}@{timeframe} after retries. Reason: {type(e).__name__}")
+            logging.warning(f"Final attempt failed for {exchange} on {symbol}@{timeframe}. Reason: {type(e).__name__}")
         return None
         
     async def get_first_successful_klines(self, symbol: str, timeframe:str) -> Optional[Tuple[pd.DataFrame, str]]:
         exchanges = ['mexc', 'kucoin', 'okx']
-        tasks = [asyncio.create_task(self.get_klines_from_one_exchange(ex, symbol, timeframe), name=ex) for ex in exchanges]
         
-        for task in asyncio.as_completed(tasks):
-            source_exchange = task.get_name()
-            try:
-                # --- اصلاح شد: اضافه کردن تور ایمنی نهایی برای جلوگیری قطعی از کرش ---
-                result = await task
-                if result:
-                    logging.info(f"Data acquired from '{source_exchange}' for {symbol}@{timeframe}.")
-                    return pd.DataFrame(result), source_exchange
-            except Exception as e:
-                # اگر خطایی از تسک به بیرون درز کرد، آن را ثبت کرده و به تسک بعدی می‌رویم
-                logging.error(f"Task for {source_exchange} failed unexpectedly: {e}", exc_info=False)
+        # --- اصلاح شد: معماری جدید و مقاوم‌تر برای اجرای موازی ---
+        async def fetch_and_tag(exchange: str):
+            """یک wrapper که نام صرافی را همراه با نتیجه برمی‌گرداند."""
+            result = await self.get_klines_from_one_exchange(exchange, symbol, timeframe)
+            # فقط در صورت موفقیت، نتیجه را برمی‌گردانیم تا بقیه تسک‌ها لغو شوند
+            if result:
+                return exchange, pd.DataFrame(result)
+            return None
 
-        logging.error(f"Critical Failure: Could not fetch klines for {symbol}@{timeframe} from any available exchange.")
+        tasks = [asyncio.create_task(fetch_and_tag(ex)) for ex in exchanges]
+        
+        try:
+            for future in asyncio.as_completed(tasks):
+                result_tuple = await future
+                if result_tuple:
+                    # به محض رسیدن اولین نتیجه موفق، بقیه تسک‌های در حال اجرا را لغو می‌کنیم
+                    for task in tasks:
+                        if not task.done():
+                            task.cancel()
+                    
+                    source_exchange, df = result_tuple
+                    logging.info(f"Data acquired from '{source_exchange}' for {symbol}@{timeframe}.")
+                    return df, source_exchange
+        except asyncio.CancelledError:
+             logging.info("Remaining fetch tasks cancelled as a successful one was completed.")
+        except Exception as e:
+            logging.error(f"An unexpected error occurred in as_completed loop: {e}")
+
+        logging.error(f"Critical Failure: Could not fetch klines for {symbol}@{timeframe} from any exchange.")
         return None, None
         
     async def close(self):
         await self.client.aclose()
-
