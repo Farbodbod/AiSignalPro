@@ -9,6 +9,4 @@ urlpatterns = [
     path('api/get-composite-signal/', views.get_composite_signal_view, name='composite-signal'),
     path('api/trades/open/', views.list_open_trades_view, name='list-open-trades'),
     
-    # --- آدرس جدید برای تست باید در این لیست باشد ---
-    path('api/test/trend/', views.test_trend_view, name='test-trend'),
 ]
