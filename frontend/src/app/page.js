@@ -1,12 +1,11 @@
 'use client';
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { 
     TbLayoutDashboard, TbTarget, TbArrowsRandom, TbMessageCircle, TbChartInfographic, TbHeartRateMonitor, 
     TbSun, TbMoon, TbDeviceDesktopAnalytics, TbBrain, TbStatusChange 
 } from "react-icons/tb";
 
 // ------------------- Components -------------------
-// هر بخش از داشبورد به یک کامپوننت جداگانه تبدیل شده است
 
 const Header = () => (
     <header className="flex justify-between items-center p-4 border-b border-yellow-500/30 sticky top-0 bg-gray-900/70 backdrop-blur-xl z-10">
@@ -137,21 +136,43 @@ const Signals = () => {
 };
 
 const ActiveTradeCard = ({ trade }) => {
-    // A simplified version for now
     const isLong = trade.direction === 'long';
-    return(
-        <div className="bg-black/20 rounded-lg p-3 border border-yellow-500/30 space-y-3">
+    const isProfit = (isLong && trade.current_price > trade.entry_price) || (!isLong && trade.current_price < trade.entry_price);
+    const totalRange = Math.abs(trade.tp1 - trade.sl);
+    const entryPositionPercent = totalRange > 0 ? (Math.abs(trade.entry_price - trade.sl) / totalRange) * 100 : 50;
+    const currentPositionPercent = totalRange > 0 ? (Math.abs(trade.current_price - trade.sl) / totalRange) * 100 : 50;
+    const progressWidth = Math.abs(currentPositionPercent - entryPositionPercent);
+    const progressLeft = Math.min(entryPositionPercent, currentPositionPercent);
+    const barGradient = isProfit ? 'bg-gradient-to-r from-green-500/50 to-green-500' : 'bg-gradient-to-r from-red-500/50 to-red-500';
+    const slText = `SL: ${trade.sl}`;
+    const tpText = `TP: ${trade.tp1}`;
+
+    return (
+        <div className="bg-black/30 rounded-lg p-4 border border-yellow-500/30 space-y-4 shadow-lg shadow-black/20">
             <div className="flex justify-between items-center">
                 <div>
                     <span className="font-bold text-lg text-white">{trade.symbol}</span>
-                    <span className={`text-xs ml-2 font-bold ${isLong ? 'text-green-400' : 'text-red-400'}`}>{isLong ? "LONG" : "SHORT"}</span>
+                    <span className={`text-xs ml-2 font-bold px-2 py-0.5 rounded-full ${isLong ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400'}`}>
+                        {isLong ? "LONG" : "SHORT"}
+                    </span>
                 </div>
                 <div className="text-right">
-                    <span className={`font-mono text-lg ${trade.pnl.startsWith('+') ? 'text-green-400' : 'text-red-400'}`}>{trade.pnl}</span>
-                    <p className="text-xs text-gray-400">Entry: {trade.entry_price}</p>
+                    <span className={`font-mono text-lg ${isProfit ? 'text-green-400' : 'text-red-400'}`}>{trade.pnl}</span>
+                    <p className="text-xs text-gray-400">Current: {trade.current_price}</p>
                 </div>
             </div>
-            <div className="text-xs text-gray-300 bg-black/30 p-2 rounded-md">
+            <div className="relative h-6 w-full bg-black/40 rounded-full overflow-hidden border-2 border-gray-700">
+                <div className={`absolute top-0 h-full ${barGradient}`} style={{ left: `${progressLeft}%`, width: `${progressWidth}%` }}></div>
+                <div className="absolute top-0 h-full flex items-center justify-between w-full px-3 text-xs font-mono">
+                    <span className="text-red-400 font-semibold">{isLong ? slText : tpText}</span>
+                    <span className="text-green-400 font-semibold">{isLong ? tpText : slText}</span>
+                </div>
+                <div className="absolute top-1/2 h-5 w-0.5 bg-yellow-400" style={{ left: `${entryPositionPercent}%`, transform: 'translateY(-50%)' }}></div>
+                <div className="absolute top-1/2 -translate-y-1/2 text-xs font-bold text-black bg-yellow-400 px-1.5 py-0.5 rounded-md shadow-md" style={{ left: `${entryPositionPercent}%`, transform: `translateX(-50%) translateY(-50%)` }}>
+                    {trade.entry_price}
+                </div>
+            </div>
+            <div className="text-xs text-gray-300 bg-black/20 p-2 rounded-md">
                 <p><span className="font-bold text-yellow-500">Live AI Score: {trade.ai_score}%</span> | {trade.status_text}</p>
             </div>
         </div>
@@ -160,8 +181,8 @@ const ActiveTradeCard = ({ trade }) => {
 
 const ActiveTrades = () => {
     const sampleTrades = [
-        { direction: 'long', symbol: 'BTC/USDT', entry_price: 68100, ai_score: 91, pnl: "+$250.00", status_text: "Trend is strong, hold position." },
-        { direction: 'short', symbol: 'ETH/USDT', entry_price: 3555, ai_score: 85, pnl: "+$75.00", status_text: "Approaching first target." },
+        { direction: 'long', symbol: 'BTC/USDT', entry_price: 68100, current_price: 68550, sl: 67500, tp1: 69000, ai_score: 91, pnl: "+$450.00", status_text: "Trend is strong, hold position." },
+        { direction: 'short', symbol: 'ETH/USDT', entry_price: 3555, current_price: 3515, sl: 3600, tp1: 3500, ai_score: 85, pnl: "+$40.00", status_text: "Approaching first target." },
     ];
     return (
         <section className="bg-gray-800/30 backdrop-blur-lg rounded-xl p-4 border border-yellow-500/20">
@@ -191,15 +212,11 @@ export default function Home() {
             <div className="absolute top-0 left-0 w-full h-full bg-gradient-to-br from-gray-900 via-black to-gray-800 -z-10"/>
             <Header />
             <main className="p-4 grid grid-cols-1 lg:grid-cols-2 gap-6 pb-20">
-                {/* Column 1 */}
                 <div className="space-y-6">
                     <SystemStatus />
                     <MarketOverview />
                     <PriceTicker />
-                    {/* Add other components like AI Chat, etc. here */}
                 </div>
-
-                {/* Column 2 */}
                 <div className="space-y-6">
                     <Signals />
                     <ActiveTrades />
