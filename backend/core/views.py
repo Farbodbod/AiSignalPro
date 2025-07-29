@@ -1,4 +1,4 @@
-# core/views.py (نسخه نهایی با اتصال پایدار)
+# core/views.py (نسخه نهایی مستقل)
 
 import asyncio
 import logging
@@ -6,8 +6,7 @@ from django.http import JsonResponse
 import httpx
 from asgiref.sync import sync_to_async
 
-# --- اصلاح شد: وارد کردن نمونه دائمی Fetcher ---
-from .clients import exchange_fetcher
+from .exchange_fetcher import ExchangeFetcher
 from engines.master_orchestrator import MasterOrchestrator
 from engines.signal_adapter import SignalAdapter
 from .utils import convert_numpy_types
@@ -15,8 +14,10 @@ from engines.trade_manager import TradeManager
 
 logger = logging.getLogger(__name__)
 
+# یک نمونه واحد و دائمی از Fetcher فقط برای این فایل
+exchange_fetcher = ExchangeFetcher()
+
 async def system_status_view(request):
-    # (بدون تغییر)
     exchanges_to_check = [{'name': 'Kucoin', 'status_url': 'https://api.kucoin.com/api/v1/timestamp'}, {'name': 'MEXC', 'status_url': 'https://api.mexc.com/api/v3/time'}, {'name': 'OKX', 'status_url': 'https://www.okx.com/api/v5/system/time'}]
     async with httpx.AsyncClient(timeout=10) as client:
         tasks = {asyncio.create_task(client.get(ex['status_url'])): ex['name'] for ex in exchanges_to_check}
@@ -30,7 +31,6 @@ async def system_status_view(request):
     return JsonResponse(results, safe=False)
 
 async def market_overview_view(request):
-    # (بدون تغییر)
     response_data = {};
     try:
         async with httpx.AsyncClient(timeout=10) as client:
@@ -51,11 +51,8 @@ async def get_composite_signal_view(request):
         orchestrator = MasterOrchestrator()
         all_tf_analysis = {}
         timeframes = ['5m', '15m', '1h', '4h']
-        
-        # --- اصلاح شد: استفاده از نمونه دائمی exchange_fetcher ---
         tasks = [exchange_fetcher.get_first_successful_klines(symbol, tf) for tf in timeframes]
         results = await asyncio.gather(*tasks)
-
         for i, result in enumerate(results):
             if result and result[0] is not None:
                 df, source = result
@@ -63,23 +60,17 @@ async def get_composite_signal_view(request):
                 analysis = orchestrator.analyze_single_dataframe(df, tf, symbol)
                 analysis['source'] = source
                 all_tf_analysis[tf] = analysis
-
         if not all_tf_analysis:
             return JsonResponse({"status": "NO_DATA", "message": f"Could not fetch market data for {symbol}."})
-        
         final_result = await orchestrator.get_multi_timeframe_signal(all_tf_analysis)
         adapter = SignalAdapter(analytics_output=final_result)
         final_signal_object = adapter.combine()
-
         if not final_signal_object or final_signal_object.get("signal_type") == "HOLD":
             return JsonResponse({"status": "NEUTRAL", "message": "Market is neutral.", "details": convert_numpy_types(final_result)})
-        
         return JsonResponse({"status": "SUCCESS", "signal": convert_numpy_types(final_signal_object)})
-
     except Exception as e:
         logger.error(f"CRITICAL ERROR in get_composite_signal_view for {symbol}: {e}", exc_info=True)
         return JsonResponse({"status": "ERROR", "message": "An internal server error occurred."})
-    # --- اصلاح شد: بلوک finally حذف شد چون دیگر اتصالات را در هر درخواست نمی‌بندیم ---
 
 @sync_to_async
 def _get_open_trades_sync():
@@ -87,10 +78,10 @@ def _get_open_trades_sync():
     return trade_manager.get_open_trades()
 
 async def list_open_trades_view(request):
-    # (بدون تغییر)
     try:
         open_trades = await _get_open_trades_sync()
         return JsonResponse(open_trades, safe=False)
     except Exception as e:
         logger.error(f"Error in list_open_trades_view: {e}")
         return JsonResponse({'error': str(e)}, status=500)
+
