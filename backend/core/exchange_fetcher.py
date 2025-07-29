@@ -1,4 +1,4 @@
-# core/exchange_fetcher.py (نسخه 1.9 با اصلاح باگ Ticker)
+# core/exchange_fetcher.py (نسخه 2.0 با اصلاح نهایی Ticker)
 
 import asyncio
 import os
@@ -20,11 +20,11 @@ SYMBOL_MAP = {'BTC': {'base': 'BTC', 'quote': 'USDT'}, 'ETH': {'base': 'ETH', 'q
 
 class ExchangeFetcher:
     def __init__(self, cache_ttl: int = 60):
-        headers = {'User-Agent': 'AiSignalPro/1.9.0', 'Accept': 'application/json'}
+        headers = {'User-Agent': 'AiSignalPro/2.0.0', 'Accept': 'application/json'}
         self.client = httpx.AsyncClient(headers=headers, timeout=20, follow_redirects=True)
         self.cache = {}
         self.cache_ttl = cache_ttl
-        logging.info("ExchangeFetcher (Legendary Edition v1.9) initialized.")
+        logging.info("ExchangeFetcher (Legendary Edition v2.0) initialized.")
 
     def _get_cache_key(self, prefix: str, exchange: str, symbol: str, timeframe: Optional[str] = None) -> str:
         key = f"{prefix}:{exchange}:{symbol}"
@@ -99,9 +99,8 @@ class ExchangeFetcher:
             price, change = 0, 0
             try:
                 if exchange == 'kucoin' and raw_data.get('data'): data = raw_data['data']; price = float(data.get('last', 0)); change = float(data.get('changeRate', 0)) * 100
-                # --- اصلاح شد: منطق MEXC برای مدیریت آبجکت (نه لیست) ---
-                elif exchange == 'mexc' and isinstance(raw_data, dict): data = raw_data; price = float(data.get('lastPrice', 0)); change = float(data.get('priceChangePercent', 0)) * 100
-                # --- اصلاح شد: ضرب کردن درصد تغییر OKX در 100 ---
+                # --- اصلاح شد: منطق MEXC برای مدیریت لیست حاوی یک آبجکت ---
+                elif exchange == 'mexc' and isinstance(raw_data, list) and raw_data: data = raw_data[0]; price = float(data.get('lastPrice', 0)); change = float(data.get('priceChangePercent', 0)) * 100
                 elif exchange == 'okx' and raw_data.get('data'): data = raw_data['data'][0]; price = float(data.get('last', 0)); change = float(data.get('chg24h', 0)) * 100
                 
                 if price > 0: result = {'price': price, 'change_24h': change, 'source': exchange, 'symbol': symbol}; self.cache[cache_key] = {'timestamp': time.time(), 'data': result}; return result
