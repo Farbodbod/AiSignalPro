@@ -20,7 +20,7 @@ from engines.telegram_handler import TelegramHandler
 
 SYMBOLS_TO_MONITOR = ['BTC', 'ETH', 'XRP', 'SOL', 'DOGE']
 TIME_FRAMES_TO_ANALYZE = ['5m', '15m', '1h', '4h']
-POLL_INTERVAL_SECONDS = 600
+POLL_INTERVAL_SECONDS = 900
 SIGNAL_CACHE_TTL_SECONDS = 3600
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - [%(funcName)s] - %(message)s')
