@@ -1,21 +1,24 @@
-# core/views.py (نسخه نهایی با مدیریت اتصال صحیح در هر درخواست)
+# core/views.py (با اصلاح تست)
 
 import asyncio
 import logging
 from django.http import JsonResponse
 import httpx
 from asgiref.sync import sync_to_async
+import pandas as pd
+import numpy as np
 
 from .exchange_fetcher import ExchangeFetcher
 from engines.master_orchestrator import MasterOrchestrator
 from engines.signal_adapter import SignalAdapter
 from .utils import convert_numpy_types
 from engines.trade_manager import TradeManager
+from engines.trend_analyzer import analyze_trend
+
 
 logger = logging.getLogger(__name__)
 
 async def system_status_view(request):
-    # (این تابع مستقل است و بدون تغییر باقی می‌ماند)
     exchanges_to_check = [{'name': 'Kucoin', 'status_url': 'https://api.kucoin.com/api/v1/timestamp'}, {'name': 'MEXC', 'status_url': 'https://api.mexc.com/api/v3/time'}, {'name': 'OKX', 'status_url': 'https://www.okx.com/api/v5/system/time'}]
     async with httpx.AsyncClient(timeout=10) as client:
         tasks = {asyncio.create_task(client.get(ex['status_url'])): ex['name'] for ex in exchanges_to_check}
@@ -29,7 +32,6 @@ async def system_status_view(request):
     return JsonResponse(results, safe=False)
 
 async def market_overview_view(request):
-    # (این تابع مستقل است و بدون تغییر باقی می‌ماند)
     response_data = {};
     try:
         async with httpx.AsyncClient(timeout=10) as client:
@@ -46,7 +48,6 @@ async def market_overview_view(request):
 
 async def get_composite_signal_view(request):
     symbol = request.GET.get('symbol', 'BTC').upper()
-    # --- اصلاح شد: Fetcher در داخل تابع ساخته و در انتها بسته می‌شود ---
     fetcher = ExchangeFetcher()
     try:
         orchestrator = MasterOrchestrator()
@@ -88,13 +89,7 @@ async def list_open_trades_view(request):
         logger.error(f"Error in list_open_trades_view: {e}")
         return JsonResponse({'error': str(e)}, status=500)
 
-# این کدها را به انتهای فایل core/views.py اضافه کنید
-
-import pandas as pd
-import numpy as np
-from engines.trend_analyzer import analyze_trend
-
-def create_market_data_for_test(trend_type: str, num_candles: int = 100) -> pd.DataFrame:
+def create_market_data_for_test(trend_type: str, num_candles: int = 300) -> pd.DataFrame:
     """یک دیتافریم شبیه‌سازی شده برای تست ایجاد می‌کند."""
     base_price = 1000; data = []
     for i in range(num_candles):
@@ -108,7 +103,7 @@ def create_market_data_for_test(trend_type: str, num_candles: int = 100) -> pd.D
         high_price = max(open_price, close_price) + np.random.uniform(0, 5)
         low_price = min(open_price, close_price) - np.random.uniform(0, 5)
         volume = np.random.uniform(100, 1000)
-        data.append([0, open_price, high_price, low_price, close_price, volume]) # timestamp مهم نیست
+        data.append([0, open_price, high_price, low_price, close_price, volume])
     return pd.DataFrame(data, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
 
 async def test_trend_view(request):
@@ -131,4 +126,3 @@ async def test_trend_view(request):
     results['neutral_test'] = {'result': neutral_result, 'status': '✅ PASSED' if 'Neutral' in neutral_result.get('signal', '') else '❌ FAILED'}
 
     return JsonResponse(results)
-
