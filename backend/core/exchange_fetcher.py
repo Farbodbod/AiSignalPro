@@ -1,4 +1,4 @@
-# core/exchange_fetcher.py (نسخه 2.2 نهایی بر اساس تحقیقات کاربر)
+# core/exchange_fetcher.py (نسخه 2.3 - نتیجه تحقیقات مشترک)
 
 import asyncio
 import os
@@ -12,40 +12,19 @@ from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_excep
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - [%(funcName)s] - %(message)s')
 
 EXCHANGE_CONFIG = {
-    'mexc': {
-        'base_url': 'https://api.mexc.com',
-        'kline_endpoint': '/api/v3/klines',
-        'ticker_endpoint': '/api/v3/ticker/24hr',
-        'symbol_template': '{base}{quote}',
-        'timeframe_map': {'5m': '5m', '10m': '10m', '15m': '15m', '1h': '1h', '4h': '4h', '1d': '1d'},
-        'rate_limit_delay': 1.0,
-    },
-    'kucoin': {
-        'base_url': 'https://api.kucoin.com',
-        'kline_endpoint': '/api/v1/market/candles',
-        'ticker_endpoint': '/api/v1/market/stats',
-        'symbol_template': '{base}-{quote}',
-        'timeframe_map': {'5m': '5min', '10m': '15min', '15m': '15min', '1h': '1hour', '4h': '4hour', '1d': '1day'},
-        'rate_limit_delay': 1.0,
-    },
-    'okx': {
-        'base_url': 'https://www.okx.com',
-        'kline_endpoint': '/api/v5/market/candles',
-        'ticker_endpoint': '/api/v5/market/ticker',
-        'symbol_template': '{base}-{quote}',
-        'timeframe_map': {'5m': '5m', '10m': '15m', '15m': '15m', '1h': '1H', '4h': '4H', '1d': '1D'},
-        'rate_limit_delay': 1.0,
-    },
+    'mexc': {'base_url': 'https://api.mexc.com', 'kline_endpoint': '/api/v3/klines', 'ticker_endpoint': '/api/v3/ticker/24hr', 'symbol_template': '{base}{quote}', 'timeframe_map': {'5m': '5m', '10m': '10m', '15m': '15m', '1h': '1h', '4h': '4h', '1d': '1d'}, 'rate_limit_delay': 1.0},
+    'kucoin': {'base_url': 'https://api.kucoin.com', 'kline_endpoint': '/api/v1/market/candles', 'ticker_endpoint': '/api/v1/market/stats', 'symbol_template': '{base}-{quote}', 'timeframe_map': {'5m': '5min', '10m': '15min', '15m': '15min', '1h': '1hour', '4h': '4hour', '1d': '1day'}, 'rate_limit_delay': 1.0},
+    'okx': {'base_url': 'https://www.okx.com', 'kline_endpoint': '/api/v5/market/candles', 'ticker_endpoint': '/api/v5/market/ticker', 'symbol_template': '{base}-{quote}', 'timeframe_map': {'5m': '5m', '10m': '15min', '15m': '15min', '1h': '1H', '4h': '4H', '1d': '1D'}, 'rate_limit_delay': 1.0},
 }
 SYMBOL_MAP = {'BTC': {'base': 'BTC', 'quote': 'USDT'}, 'ETH': {'base': 'ETH', 'quote': 'USDT'}, 'XRP': {'base': 'XRP', 'quote': 'USDT'}, 'SOL': {'base': 'SOL', 'quote': 'USDT'}, 'DOGE': {'base': 'DOGE', 'quote': 'USDT'}}
 
 class ExchangeFetcher:
     def __init__(self, cache_ttl: int = 60):
-        headers = {'User-Agent': 'AiSignalPro/2.2.0', 'Accept': 'application/json'}
+        headers = {'User-Agent': 'AiSignalPro/2.3.0', 'Accept': 'application/json'}
         self.client = httpx.AsyncClient(headers=headers, timeout=20, follow_redirects=True)
         self.cache = {}
         self.cache_ttl = cache_ttl
-        logging.info("ExchangeFetcher (Legendary Edition v2.2) initialized.")
+        logging.info("ExchangeFetcher (Legendary Edition v2.3) initialized.")
 
     def _get_cache_key(self, prefix: str, exchange: str, symbol: str, timeframe: Optional[str] = None) -> str:
         key = f"{prefix}:{exchange}:{symbol}"
@@ -127,23 +106,27 @@ class ExchangeFetcher:
         if raw_data:
             price, change = 0.0, 0.0
             try:
+                # --- اصلاح شد بر اساس تحقیق شما ---
                 if exchange == 'mexc':
                     data = raw_data[0] if isinstance(raw_data, list) and raw_data else raw_data
                     price = float(data.get('lastPrice', 0))
-                    change = float(data.get('priceChangePercent', 0)) * 100
+                    change = float(data.get('priceChangePercent', 0)) # بدون ضرب
                 elif exchange == 'kucoin' and raw_data.get('data'):
                     data = raw_data['data']
                     price = float(data.get('last', 0))
-                    change = float(data.get('changeRate', 0)) * 100
+                    change = float(data.get('changeRate', 0)) * 100 # نیاز به ضرب
                 elif exchange == 'okx' and raw_data.get('data'):
                     data = raw_data['data'][0]
                     price = float(data.get('last', 0))
-                    change = float(data.get('chg24h', 0)) * 100
+                    change = float(data.get('chg24h', 0)) * 100 # نیاز به ضرب
 
                 if price > 0:
                     result = {'price': price, 'change_24h': change, 'source': exchange, 'symbol': symbol}
                     self.cache[cache_key] = {'timestamp': time.time(), 'data': result}
                     return result
+                else:
+                    logging.warning(f"Price returned as 0 for {exchange} on {symbol}.")
+
             except (ValueError, TypeError, IndexError, KeyError) as e:
                  logging.warning(f"Ticker data normalization failed for {exchange} on {symbol}: {e}")
 
