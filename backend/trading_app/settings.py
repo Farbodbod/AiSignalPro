@@ -6,8 +6,8 @@ import dj_database_url
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', 'django-insecure-dev-key-placeholder')
-DEBUG = os.getenv('DJANGO_DEBUG', 'True') != 'True' # در حالت پروداکشن باید False باشد
-ALLOWED_HOSTS = ['*'] # Railway هاست‌ها را مدیریت می‌کند
+DEBUG = os.getenv('DJANGO_DEBUG', 'True') != 'True'
+ALLOWED_HOSTS = ['*']
 
 INSTALLED_APPS = [
     'django.contrib.admin',
@@ -23,7 +23,7 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'whitenoise.middleware.WhiteNoiseMiddleware',
-    # --- Middleware مربوط به CORS باید تا حد ممکن بالا باشد ---
+    # --- Middleware مربوط به CORS باید همیشه در بالای لیست باشد ---
     'corsheaders.middleware.CorsMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -36,7 +36,6 @@ MIDDLEWARE = [
 ROOT_URLCONF = 'trading_app.urls'
 WSGI_APPLICATION = 'trading_app.wsgi.application'
 ASGI_APPLICATION = 'trading_app.asgi.application'
-
 
 TEMPLATES = [
     {
@@ -77,7 +76,7 @@ STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 
-# --- ✨ تنظیمات نهایی و صحیح CORS ✨ ---
+# --- ✨ تنظیمات نهایی و صحیح CORS برای اتصال Vercel به Railway ✨ ---
 CORS_ALLOWED_ORIGINS = [
     # آدرس اصلی داشبورد شما
     "https://ai-signal-pro.vercel.app",
@@ -89,9 +88,6 @@ CORS_ALLOWED_ORIGINS = [
 CORS_ALLOWED_ORIGIN_REGEXES = [
     r"^https://ai-signal-pro-.*\.vercel\.app$",
 ]
-
-# برای اطمینان، می‌توان به همه اجازه داد (در محیط توسعه امن است)
-# CORS_ALLOW_ALL_ORIGINS = True
 
 CSRF_TRUSTED_ORIGINS = [
     "https://*.railway.app",
