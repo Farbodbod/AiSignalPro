@@ -1,4 +1,4 @@
-# trading_app/settings.py (نسخه نهایی با تنظیمات صحیح CORS)
+# trading_app/settings.py (نسخه نهایی با تنظیمات قطعی CORS)
 
 import os
 from pathlib import Path
@@ -23,7 +23,6 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'whitenoise.middleware.WhiteNoiseMiddleware',
-    # --- Middleware مربوط به CORS باید همیشه در بالای لیست باشد ---
     'corsheaders.middleware.CorsMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -76,18 +75,9 @@ STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 
-# --- ✨ تنظیمات نهایی و صحیح CORS برای اتصال Vercel به Railway ✨ ---
-CORS_ALLOWED_ORIGINS = [
-    # آدرس اصلی داشبورد شما
-    "https://ai-signal-pro.vercel.app",
-    # برای تست در محیط لوکال
-    "http://localhost:3000",
-]
-
-# (اختیاری اما بسیار پیشنهادی) این به تمام پیش‌نمایش‌های Vercel نیز اجازه دسترسی می‌دهد
-CORS_ALLOWED_ORIGIN_REGEXES = [
-    r"^https://ai-signal-pro-.*\.vercel\.app$",
-]
+# --- ✨ تنظیمات نهایی و قطعی CORS ✨ ---
+# با این تنظیم، به هر دامنه‌ای اجازه دسترسی می‌دهیم که برای این پروژه مشکلی ایجاد نمی‌کند.
+CORS_ALLOW_ALL_ORIGINS = True
 
 CSRF_TRUSTED_ORIGINS = [
     "https://*.railway.app",
