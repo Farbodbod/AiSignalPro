@@ -1,4 +1,4 @@
-# core/views.py
+# core/views.py (نسخه نهایی با اصلاح باگ price_ticker_view)
 
 import asyncio
 import logging
@@ -86,13 +86,15 @@ async def list_open_trades_view(request):
         return JsonResponse({'error': str(e)}, status=500)
 
 async def price_ticker_view(request):
-    """(جدید) قیمت لحظه‌ای ارزها را برای داشبورد فراهم می‌کند."""
     fetcher = ExchangeFetcher()
     symbols_to_fetch = ['BTC', 'ETH', 'XRP', 'SOL', 'DOGE']
     try:
         tasks = [fetcher.get_first_successful_ticker(sym) for sym in symbols_to_fetch]
         results = await asyncio.gather(*tasks)
+        
+        # --- اصلاح شد: حذف حلقه معیوب و فیلتر کردن نتایج ناموفق ---
         successful_results = [res for res in results if res is not None]
+        
         return JsonResponse(successful_results, safe=False)
     except Exception as e:
         logger.error(f"Error in price_ticker_view: {e}", exc_info=True)
