@@ -1,4 +1,4 @@
-# live_monitor_worker.py (با هماهنگی نهایی async)
+# live_monitor_worker.py (با معماری async پایدار)
 
 import asyncio
 import os
@@ -29,9 +29,9 @@ class SignalCache:
     # ... (بدون تغییر) ...
     def __init__(self, ttl_seconds: int): self.cache = {}; self.ttl = ttl_seconds
     def is_duplicate(self, symbol: str, signal_type: str) -> bool:
-        now = time.time()
+        now = time.time();
         if symbol in self.cache:
-            last_signal, last_time = self.cache[symbol]
+            last_signal, last_time = self.cache[symbol];
             if signal_type == last_signal and (now - last_time) < self.ttl: return True
         return False
     def store(self, symbol: str, signal_type: str): self.cache[symbol] = (signal_type, time.time())
@@ -45,43 +45,41 @@ def format_legendary_message(signal_obj: dict) -> str:
 
 async def analyze_symbol(fetcher: ExchangeFetcher, orchestrator: MasterOrchestrator, symbol: str) -> Optional[dict]:
     all_tf_analysis = {}
-    tasks = {asyncio.create_task(fetcher.get_first_successful_klines(symbol, tf)): tf for tf in TIME_FRAMES_TO_ANALYZE}
-    for task in asyncio.as_completed(tasks):
-        tf = tasks[task]
-        result = await task
+    # --- اصلاح شد: استفاده از asyncio.gather ---
+    tasks = [fetcher.get_first_successful_klines(symbol, tf) for tf in TIME_FRAMES_TO_ANALYZE]
+    results = await asyncio.gather(*tasks)
+
+    for i, result in enumerate(results):
         if result and result[0] is not None:
             df, source = result
+            tf = TIME_FRAMES_TO_ANALYZE[i]
             analysis = orchestrator.analyze_single_dataframe(df, tf, symbol)
             analysis['source'] = source
             all_tf_analysis[tf] = analysis
+
     if not all_tf_analysis:
         logging.warning(f"Could not fetch any kline data for {symbol} to perform analysis.")
         return None
     
-    # --- اصلاح شد: استفاده از await برای فراخوانی تابع async ---
     final_result = await orchestrator.get_multi_timeframe_signal(all_tf_analysis)
-    
     adapter = SignalAdapter(analytics_output=final_result)
     return adapter.combine()
 
 async def monitor_loop():
-    # ... (بدون تغییر) ...
     telegram = TelegramHandler(); orchestrator = MasterOrchestrator(); signal_cache = SignalCache(SIGNAL_CACHE_TTL_SECONDS); fetcher = ExchangeFetcher(); logging.info("Live Monitoring Worker (Stable Connection Edition) started successfully.");
     try: await telegram.send_message_async("✅ *ربات مانیتورینگ AiSignalPro (اتصال پایدار) فعال شد.*")
     except Exception as e: logging.error(f"Failed to send initial Telegram message: {e}")
     try:
         while True:
             logging.info("--- Starting New Monitoring Cycle ---");
-            try:
-                analysis_tasks = [analyze_symbol(fetcher, orchestrator, symbol) for symbol in SYMBOLS_TO_MONITOR]; results = await asyncio.gather(*analysis_tasks, return_exceptions=True)
-                for result in results:
-                    if isinstance(result, Exception): logging.error(f"An exception occurred during symbol analysis: {result}", exc_info=True)
-                    elif result and result.get("signal_type") != "HOLD":
-                        signal_obj = result; symbol = signal_obj["symbol"]; signal_type = signal_obj["signal_type"]
-                        if not signal_cache.is_duplicate(symbol, signal_type):
-                            signal_cache.store(symbol, signal_type); message = format_legendary_message(signal_obj); await telegram.send_message_async(message); logging.info(f"LEGENDARY ALERT SENT for {symbol}: {signal_type}")
-                        else: logging.info(f"Duplicate signal '{signal_type}' for {symbol}. Skipping.")
-            except Exception as e: logging.error(f"A critical error occurred in the main monitoring loop: {e}", exc_info=True)
+            analysis_tasks = [analyze_symbol(fetcher, orchestrator, symbol) for symbol in SYMBOLS_TO_MONITOR]; results = await asyncio.gather(*analysis_tasks, return_exceptions=True)
+            for result in results:
+                if isinstance(result, Exception): logging.error(f"An exception occurred during symbol analysis: {result}", exc_info=True)
+                elif result and result.get("signal_type") != "HOLD":
+                    signal_obj = result; symbol = signal_obj["symbol"]; signal_type = signal_obj["signal_type"]
+                    if not signal_cache.is_duplicate(symbol, signal_type):
+                        signal_cache.store(symbol, signal_type); message = format_legendary_message(signal_obj); await telegram.send_message_async(message); logging.info(f"LEGENDARY ALERT SENT for {symbol}: {signal_type}")
+                    else: logging.info(f"Duplicate signal '{signal_type}' for {symbol}. Skipping.")
             logging.info(f"Cycle finished. Waiting for {POLL_INTERVAL_SECONDS} seconds."); await asyncio.sleep(POLL_INTERVAL_SECONDS)
     finally: await fetcher.close(); logging.info("Fetcher client closed. Monitoring worker shutting down.")
 
