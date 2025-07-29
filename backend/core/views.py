@@ -1,20 +1,16 @@
-# core/views.py (با اصلاح تست)
+# core/views.py (نسخه نهایی و پایدار)
 
 import asyncio
 import logging
 from django.http import JsonResponse
 import httpx
 from asgiref.sync import sync_to_async
-import pandas as pd
-import numpy as np
 
 from .exchange_fetcher import ExchangeFetcher
 from engines.master_orchestrator import MasterOrchestrator
 from engines.signal_adapter import SignalAdapter
 from .utils import convert_numpy_types
 from engines.trade_manager import TradeManager
-from engines.trend_analyzer import analyze_trend
-
 
 logger = logging.getLogger(__name__)
 
@@ -88,41 +84,3 @@ async def list_open_trades_view(request):
     except Exception as e:
         logger.error(f"Error in list_open_trades_view: {e}")
         return JsonResponse({'error': str(e)}, status=500)
-
-def create_market_data_for_test(trend_type: str, num_candles: int = 300) -> pd.DataFrame:
-    """یک دیتافریم شبیه‌سازی شده برای تست ایجاد می‌کند."""
-    base_price = 1000; data = []
-    for i in range(num_candles):
-        noise = np.random.uniform(-5, 5)
-        if trend_type == 'uptrend':
-            open_price = base_price + i * 2 + noise; close_price = open_price + np.random.uniform(1, 10)
-        elif trend_type == 'downtrend':
-            open_price = base_price - i * 2 + noise; close_price = open_price - np.random.uniform(1, 10)
-        else:
-            open_price = base_price + np.random.uniform(-20, 20); close_price = open_price + noise
-        high_price = max(open_price, close_price) + np.random.uniform(0, 5)
-        low_price = min(open_price, close_price) - np.random.uniform(0, 5)
-        volume = np.random.uniform(100, 1000)
-        data.append([0, open_price, high_price, low_price, close_price, volume])
-    return pd.DataFrame(data, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
-
-async def test_trend_view(request):
-    """یک API برای تست موتور تحلیل روند."""
-    results = {}
-    
-    # تست روند صعودی
-    uptrend_df = create_market_data_for_test('uptrend')
-    uptrend_result = analyze_trend(uptrend_df, timeframe='1h')
-    results['uptrend_test'] = {'result': uptrend_result, 'status': '✅ PASSED' if 'Uptrend' in uptrend_result.get('signal', '') else '❌ FAILED'}
-    
-    # تست روند نزولی
-    downtrend_df = create_market_data_for_test('downtrend')
-    downtrend_result = analyze_trend(downtrend_df, timeframe='1h')
-    results['downtrend_test'] = {'result': downtrend_result, 'status': '✅ PASSED' if 'Downtrend' in downtrend_result.get('signal', '') else '❌ FAILED'}
-
-    # تست روند خنثی
-    neutral_df = create_market_data_for_test('neutral')
-    neutral_result = analyze_trend(neutral_df, timeframe='1h')
-    results['neutral_test'] = {'result': neutral_result, 'status': '✅ PASSED' if 'Neutral' in neutral_result.get('signal', '') else '❌ FAILED'}
-
-    return JsonResponse(results)
