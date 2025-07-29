@@ -1,4 +1,4 @@
-# live_monitor_worker.py (نسخه نهایی با تحلیل ترتیبی و پایدار)
+# live_monitor_worker.py (نسخه نهایی مستقل)
 
 import asyncio
 import os
@@ -6,6 +6,9 @@ import django
 import logging
 import time
 from typing import Dict, Optional
+from datetime import datetime
+import pytz
+from jdatetime import datetime as jdatetime
 
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'trading_app.settings')
 django.setup()
@@ -14,17 +17,14 @@ from core.exchange_fetcher import ExchangeFetcher
 from engines.master_orchestrator import MasterOrchestrator
 from engines.signal_adapter import SignalAdapter
 from engines.telegram_handler import TelegramHandler
-from jdatetime import datetime as jdatetime
-import pytz
 
 SYMBOLS_TO_MONITOR = ['BTC', 'ETH', 'XRP', 'SOL', 'DOGE']
 TIME_FRAMES_TO_ANALYZE = ['5m', '15m', '1h', '4h']
-POLL_INTERVAL_SECONDS = 900 # ۱۵ دقیقه
+POLL_INTERVAL_SECONDS = 900
 SIGNAL_CACHE_TTL_SECONDS = 3600
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - [%(funcName)s] - %(message)s')
 
-# (کلاس SignalCache و تابع format_legendary_message بدون تغییر اینجا قرار دارند)
 class SignalCache:
     def __init__(self, ttl_seconds: int): self.cache = {}; self.ttl = ttl_seconds
     def is_duplicate(self, symbol: str, signal_type: str) -> bool:
@@ -61,43 +61,28 @@ async def analyze_symbol(fetcher: ExchangeFetcher, orchestrator: MasterOrchestra
 
 async def monitor_loop():
     telegram = TelegramHandler(); orchestrator = MasterOrchestrator(); signal_cache = SignalCache(SIGNAL_CACHE_TTL_SECONDS);
-    logging.info("Live Monitoring Worker (Stable Sequential Edition) started successfully.");
-    try: await telegram.send_message_async("✅ *ربات مانیتورینگ AiSignalPro (نسخه پایدار نهایی) فعال شد.*")
+    # یک نمونه دائمی از Fetcher فقط برای این ربات
+    fetcher = ExchangeFetcher()
+    logging.info("Live Monitoring Worker (Final Stable Edition) started successfully.");
+    try: await telegram.send_message_async("✅ *ربات مانیتورینگ AiSignalPro (نسخه نهایی پایدار) فعال شد.*")
     except Exception as e: logging.error(f"Failed to send initial Telegram message: {e}")
     
-    while True:
-        logging.info("--- Starting New Monitoring Cycle ---")
-        fetcher = ExchangeFetcher()
-        try:
-            # --- اصلاح شد: تحلیل ارزها به صورت ترتیبی برای مدیریت حافظه ---
+    try:
+        while True:
+            logging.info("--- Starting New Monitoring Cycle ---");
             for symbol in SYMBOLS_TO_MONITOR:
                 try:
                     logging.info(f"Analyzing {symbol}...")
                     signal_obj = await analyze_symbol(fetcher, orchestrator, symbol)
-                    
                     if signal_obj and signal_obj.get("signal_type") != "HOLD":
                         signal_type = signal_obj["signal_type"]
                         if not signal_cache.is_duplicate(symbol, signal_type):
-                            signal_cache.store(symbol, signal_type)
-                            message = format_legendary_message(signal_obj)
-                            await telegram.send_message_async(message)
-                            logging.info(f"LEGENDARY ALERT SENT for {symbol}: {signal_type}")
+                            signal_cache.store(symbol, signal_type); message = format_legendary_message(signal_obj); await telegram.send_message_async(message); logging.info(f"LEGENDARY ALERT SENT for {symbol}: {signal_type}")
                         else:
                             logging.info(f"Duplicate signal '{signal_type}' for {symbol}. Skipping.")
-                    
-                    await asyncio.sleep(5) # یک وقفه کوتاه بین تحلیل هر ارز
-
+                    await asyncio.sleep(5)
                 except Exception as e:
                     logging.error(f"An exception occurred during analysis for {symbol}: {e}", exc_info=True)
-        
-        except Exception as e:
-            logging.error(f"A critical error occurred in the main monitoring loop: {e}", exc_info=True)
-        finally:
-            await fetcher.close()
-            
-        logging.info(f"Cycle finished. Waiting for {POLL_INTERVAL_SECONDS} seconds.")
-        await asyncio.sleep(POLL_INTERVAL_SECONDS)
-
-if __name__ == "__main__":
-    try: asyncio.run(monitor_loop())
-    except KeyboardInterrupt: logging.info("Monitoring worker stopped by user.")
+            logging.info(f"Cycle finished. Waiting for {POLL_INTERVAL_SECONDS} seconds."); await asyncio.sleep(POLL_INTERVAL_SECONDS)
+    finally:
+        await fetcher.close()
