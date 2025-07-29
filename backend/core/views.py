@@ -1,20 +1,20 @@
-# core/views.py (نسخه کامل و نهایی async)
+# core/views.py (نسخه نهایی کاملاً async)
 
 import asyncio
 import logging
 from django.http import JsonResponse
 import httpx
+from asgiref.sync import sync_to_async
 
 from .exchange_fetcher import ExchangeFetcher
 from engines.master_orchestrator import MasterOrchestrator
 from engines.signal_adapter import SignalAdapter
 from .utils import convert_numpy_types
-from engines.trade_manager import TradeManager # برای list_open_trades_view
+from engines.trade_manager import TradeManager
 
 logger = logging.getLogger(__name__)
 
 async def system_status_view(request):
-    """(نسخه پیشرفته) وضعیت آنلاین بودن صرافی‌ها را به صورت موازی چک می‌کند."""
     exchanges_to_check = [
         {'name': 'Kucoin', 'status_url': 'https://api.kucoin.com/api/v1/timestamp'},
         {'name': 'MEXC', 'status_url': 'https://api.mexc.com/api/v3/time'},
@@ -35,29 +35,29 @@ async def system_status_view(request):
     return JsonResponse(results, safe=False)
 
 async def market_overview_view(request):
-    """(نسخه پیشرفته) نمای کلی بازار را به صورت موازی از منابع خارجی دریافت می‌کند."""
     response_data = {}
-    async with httpx.AsyncClient(timeout=10) as client:
-        cg_task = asyncio.create_task(client.get("https://api.coingecko.com/api/v3/global"))
-        fng_task = asyncio.create_task(client.get("https://api.alternative.me/fng/?limit=1"))
-        
-        cg_res = await cg_task
-        if cg_res.status_code == 200:
-            data = cg_res.json().get('data', {})
-            response_data.update({
-                'market_cap': data.get('total_market_cap', {}).get('usd', 0),
-                'volume_24h': data.get('total_volume', {}).get('usd', 0),
-                'btc_dominance': data.get('market_cap_percentage', {}).get('btc', 0)
-            })
-        
-        fng_res = await fng_task
-        if fng_res.status_code == 200:
-            data = fng_res.json().get('data', [])
-            if data:
-                response_data['fear_and_greed'] = f"{data[0].get('value', 'N/A')} ({data[0].get('value_classification', 'Unknown')})"
-
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            cg_task = asyncio.create_task(client.get("https://api.coingecko.com/api/v3/global"))
+            fng_task = asyncio.create_task(client.get("https://api.alternative.me/fng/?limit=1"))
+            
+            cg_res = await cg_task
+            if cg_res.status_code == 200:
+                data = cg_res.json().get('data', {})
+                response_data.update({
+                    'market_cap': data.get('total_market_cap', {}).get('usd', 0),
+                    'volume_24h': data.get('total_volume', {}).get('usd', 0),
+                    'btc_dominance': data.get('market_cap_percentage', {}).get('btc', 0)
+                })
+            
+            fng_res = await fng_task
+            if fng_res.status_code == 200:
+                data = fng_res.json().get('data', [])
+                if data:
+                    response_data['fear_and_greed'] = f"{data[0].get('value', 'N/A')} ({data[0].get('value_classification', 'Unknown')})"
+    except Exception as e:
+        logger.error(f"Error in market_overview_view: {e}")
     return JsonResponse(response_data)
-
 
 async def get_composite_signal_view(request):
     symbol = request.GET.get('symbol', 'BTC').upper()
@@ -77,7 +77,7 @@ async def get_composite_signal_view(request):
                 all_tf_analysis[tf] = analysis
         if not all_tf_analysis:
             return JsonResponse({"status": "NO_DATA", "message": f"Could not fetch market data for {symbol}."})
-        final_result = orchestrator.get_multi_timeframe_signal(all_tf_analysis)
+        final_result = await orchestrator.get_multi_timeframe_signal(all_tf_analysis)
         adapter = SignalAdapter(analytics_output=final_result)
         final_signal_object = adapter.combine()
         if not final_signal_object or final_signal_object.get("signal_type") == "HOLD":
@@ -89,11 +89,18 @@ async def get_composite_signal_view(request):
     finally:
         await fetcher.close()
         
-# این توابع چون با دیتابیس کار می‌کنند و عملیات شبکه سنگین ندارند، می‌توانند sync باقی بمانند
-def list_open_trades_view(request):
+# --- اصلاح شد: این تابع اکنون async است ---
+@sync_to_async
+def _get_open_trades_sync():
+    """یک wrapper برای اجرای کد sync دیتابیس در محیط async."""
+    trade_manager = TradeManager()
+    return trade_manager.get_open_trades()
+
+async def list_open_trades_view(request):
+    """(نسخه پیشرفته) معاملات باز را به صورت non-blocking از دیتابیس می‌خواند."""
     try:
-        trade_manager = TradeManager()
-        open_trades = trade_manager.get_open_trades()
+        open_trades = await _get_open_trades_sync()
         return JsonResponse(open_trades, safe=False)
     except Exception as e:
+        logger.error(f"Error in list_open_trades_view: {e}")
         return JsonResponse({'error': str(e)}, status=500)
