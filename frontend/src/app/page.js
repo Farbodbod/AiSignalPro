@@ -15,11 +15,7 @@ const Header = () => (
                 Ai Signal Pro
             </h1>
         </div>
-        <div>
-            <button className="p-2 rounded-full bg-white/10 border border-yellow-500/30 text-yellow-500 text-xl">
-                <TbSun />
-            </button>
-        </div>
+        <div><button className="p-2 rounded-full bg-white/10 border border-yellow-500/30 text-yellow-500 text-xl"><TbSun /></button></div>
     </header>
 );
 
@@ -138,6 +134,8 @@ const Signals = () => {
 const ActiveTradeCard = ({ trade }) => {
     const isLong = trade.direction === 'long';
     const isProfit = (isLong && trade.current_price > trade.entry_price) || (!isLong && trade.current_price < trade.entry_price);
+    const percentChange = ((trade.current_price - trade.entry_price) / trade.entry_price) * 100;
+    const pnlText = `${isLong ? (isProfit ? '+' : '') : (isProfit ? '' : '+')}${percentChange.toFixed(2)}%`;
     const totalRange = Math.abs(trade.tp1 - trade.sl);
     const entryPositionPercent = totalRange > 0 ? (Math.abs(trade.entry_price - trade.sl) / totalRange) * 100 : 50;
     const currentPositionPercent = totalRange > 0 ? (Math.abs(trade.current_price - trade.sl) / totalRange) * 100 : 50;
@@ -149,7 +147,7 @@ const ActiveTradeCard = ({ trade }) => {
 
     return (
         <div className="bg-black/30 rounded-lg p-4 border border-yellow-500/30 space-y-4 shadow-lg shadow-black/20">
-            <div className="flex justify-between items-center">
+            <div className="flex justify-between items-start">
                 <div>
                     <span className="font-bold text-lg text-white">{trade.symbol}</span>
                     <span className={`text-xs ml-2 font-bold px-2 py-0.5 rounded-full ${isLong ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400'}`}>
@@ -157,23 +155,29 @@ const ActiveTradeCard = ({ trade }) => {
                     </span>
                 </div>
                 <div className="text-right">
-                    <span className={`font-mono text-lg ${isProfit ? 'text-green-400' : 'text-red-400'}`}>{trade.pnl}</span>
+                    <span className={`font-mono text-xl font-bold ${isProfit ? 'text-green-400' : 'text-red-400'}`}>{pnlText}</span>
                     <p className="text-xs text-gray-400">Current: {trade.current_price}</p>
                 </div>
             </div>
-            <div className="relative h-6 w-full bg-black/40 rounded-full overflow-hidden border-2 border-gray-700">
+            <div className="relative h-6 w-full bg-black/40 rounded-full overflow-hidden border-2 border-gray-700 flex items-center">
                 <div className={`absolute top-0 h-full ${barGradient}`} style={{ left: `${progressLeft}%`, width: `${progressWidth}%` }}></div>
-                <div className="absolute top-0 h-full flex items-center justify-between w-full px-3 text-xs font-mono">
-                    <span className="text-red-400 font-semibold">{isLong ? slText : tpText}</span>
-                    <span className="text-green-400 font-semibold">{isLong ? tpText : slText}</span>
+                <div className="absolute top-0 h-full flex justify-center items-center" style={{ left: `${entryPositionPercent}%`, transform: 'translateX(-50%)' }}>
+                    <div className="h-full w-0.5 bg-yellow-400"></div>
+                    <div className="absolute top-1/2 -translate-y-1/2 text-xs font-bold text-black bg-yellow-400 px-1.5 py-0.5 rounded-md shadow-md">
+                        {trade.entry_price}
+                    </div>
                 </div>
-                <div className="absolute top-1/2 h-5 w-0.5 bg-yellow-400" style={{ left: `${entryPositionPercent}%`, transform: 'translateY(-50%)' }}></div>
-                <div className="absolute top-1/2 -translate-y-1/2 text-xs font-bold text-black bg-yellow-400 px-1.5 py-0.5 rounded-md shadow-md" style={{ left: `${entryPositionPercent}%`, transform: `translateX(-50%) translateY(-50%)` }}>
-                    {trade.entry_price}
+                <div className="absolute top-0 h-full flex items-center justify-between w-full px-3 text-xs font-mono">
+                    <span className="font-semibold text-red-400">{isLong ? slText : tpText}</span>
+                    <span className="font-semibold text-green-400">{isLong ? tpText : slText}</span>
                 </div>
             </div>
             <div className="text-xs text-gray-300 bg-black/20 p-2 rounded-md">
-                <p><span className="font-bold text-yellow-500">Live AI Score: {trade.ai_score}%</span> | {trade.status_text}</p>
+                <p>
+                    <span className="font-bold text-blue-400">System: {trade.system_confidence}%</span> | 
+                    <span className="font-bold text-yellow-500 ml-2">Live AI: {trade.ai_score}%</span> | 
+                    <span className="ml-2">{trade.status_text}</span>
+                </p>
             </div>
         </div>
     );
@@ -181,8 +185,8 @@ const ActiveTradeCard = ({ trade }) => {
 
 const ActiveTrades = () => {
     const sampleTrades = [
-        { direction: 'long', symbol: 'BTC/USDT', entry_price: 68100, current_price: 68550, sl: 67500, tp1: 69000, ai_score: 91, pnl: "+$450.00", status_text: "Trend is strong, hold position." },
-        { direction: 'short', symbol: 'ETH/USDT', entry_price: 3555, current_price: 3515, sl: 3600, tp1: 3500, ai_score: 85, pnl: "+$40.00", status_text: "Approaching first target." },
+        { direction: 'long', symbol: 'BTC/USDT', entry_price: 68100, current_price: 68550, sl: 67500, tp1: 69000, system_confidence: 88, ai_score: 91, status_text: "Trend is strong, hold position." },
+        { direction: 'short', symbol: 'ETH/USDT', entry_price: 3555, current_price: 3580, sl: 3600, tp1: 3500, system_confidence: 92, ai_score: 85, status_text: "Price is moving against the trade." },
     ];
     return (
         <section className="bg-gray-800/30 backdrop-blur-lg rounded-xl p-4 border border-yellow-500/20">
