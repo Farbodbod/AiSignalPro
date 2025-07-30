@@ -1,4 +1,4 @@
-# core/views.py (نسخه نهایی، ایمن و کامل)
+# core/views.py (نسخه نهایی با جزئیات کامل در حالت NEUTRAL)
 import asyncio
 import logging
 import traceback
@@ -14,6 +14,69 @@ from engines.trade_manager import TradeManager
 
 logger = logging.getLogger(__name__)
 
+async def get_composite_signal_view(request):
+    """
+    API اصلی که تمام تحلیل‌ها را اجرا کرده و یک سیگنال نهایی و کامل تولید می‌کند.
+    """
+    symbol = request.GET.get('symbol', 'BTC').upper()
+    fetcher = ExchangeFetcher()
+    try:
+        orchestrator = MasterOrchestrator()
+        all_tf_analysis = {}
+        timeframes = ['5m', '15m', '1h', '4h']
+        tasks = [fetcher.get_first_successful_klines(symbol, tf) for tf in timeframes]
+        results = await asyncio.gather(*tasks)
+
+        for i, result in enumerate(results):
+            if result and result[0] is not None:
+                df, source = result
+                tf = timeframes[i]
+                analysis = orchestrator.analyze_single_dataframe(df, tf, symbol)
+                analysis['source'] = source
+                all_tf_analysis[tf] = analysis
+
+        if not all_tf_analysis:
+            return JsonResponse({"status": "NO_DATA", "message": f"Could not fetch market data for {symbol}."})
+
+        final_result = await orchestrator.get_multi_timeframe_signal(all_tf_analysis)
+        
+        adapter = SignalAdapter(analytics_output=final_result)
+        final_signal_object = adapter.generate_final_signal()
+
+        if not final_signal_object:
+            # --- ✨ جادوی نهایی: نمایش تمام جزئیات در حالت NEUTRAL ---
+            # یک کپی از جزئیات خام ایجاد کرده و دیتافریم ها را برای نمایش حذف می کنیم
+            detailed_overview = final_result.get("details", {})
+            for tf_analysis in detailed_overview.values():
+                if isinstance(tf_analysis, dict):
+                    tf_analysis.pop('dataframe', None) # حذف کلید دیتافریم
+            
+            # حالا تمام جزئیات تمیز شده را به خروجی اضافه می کنیم
+            return JsonResponse({
+                "status": "NEUTRAL",
+                "message": "Market is neutral. No high-quality signal found.",
+                "scores": {
+                    "rule_based_signal": final_result.get("rule_based_signal", "HOLD"),
+                    "buy_score": final_result.get("buy_score", 0),
+                    "sell_score": final_result.get("sell_score", 0),
+                    "ai_signal": final_result.get("gemini_confirmation", {}).get("signal", "N/A"),
+                },
+                "full_analysis_details": convert_numpy_types(detailed_overview) # <-- کلید جدید
+            })
+
+        return JsonResponse({
+            "status": "SUCCESS",
+            "signal": convert_numpy_types(final_signal_object)
+        })
+
+    except Exception as e:
+        logger.error(f"CRITICAL ERROR in get_composite_signal_view for {symbol}: {e}", exc_info=True)
+        return JsonResponse({"status": "ERROR", "message": "An internal server error occurred."})
+    finally:
+        await fetcher.close()
+
+# --- سایر view های شما بدون تغییر باقی می مانند ---
+# ... system_status_view, market_overview_view, etc.
 async def system_status_view(request):
     exchanges_to_check = [
         {'name': 'Kucoin', 'status_url': 'https://api.kucoin.com/api/v1/timestamp'},
@@ -59,56 +122,6 @@ async def market_overview_view(request):
         logger.error(f"Error in market_overview_view: {e}")
     return JsonResponse(response_data)
 
-async def get_composite_signal_view(request):
-    symbol = request.GET.get('symbol', 'BTC').upper()
-    fetcher = ExchangeFetcher()
-    try:
-        orchestrator = MasterOrchestrator()
-        all_tf_analysis = {}
-        timeframes = ['5m', '15m', '1h', '4h']
-        tasks = [fetcher.get_first_successful_klines(symbol, tf) for tf in timeframes]
-        results = await asyncio.gather(*tasks)
-
-        for i, result in enumerate(results):
-            if result and result[0] is not None:
-                df, source = result
-                tf = timeframes[i]
-                analysis = orchestrator.analyze_single_dataframe(df, tf, symbol)
-                analysis['source'] = source
-                all_tf_analysis[tf] = analysis
-
-        if not all_tf_analysis:
-            return JsonResponse({"status": "NO_DATA", "message": f"Could not fetch market data for {symbol}."})
-
-        final_result = await orchestrator.get_multi_timeframe_signal(all_tf_analysis)
-        
-        adapter = SignalAdapter(analytics_output=final_result)
-        final_signal_object = adapter.generate_final_signal()
-
-        if not final_signal_object:
-            safe_neutral_response = {
-                "rule_based_signal": final_result.get("rule_based_signal", "HOLD"),
-                "buy_score": final_result.get("buy_score", 0),
-                "sell_score": final_result.get("sell_score", 0),
-                "ai_signal": final_result.get("gemini_confirmation", {}).get("signal", "N/A"),
-            }
-            return JsonResponse({
-                "status": "NEUTRAL",
-                "message": "Market is neutral. No high-quality signal found.",
-                "overview": safe_neutral_response
-            })
-
-        return JsonResponse({
-            "status": "SUCCESS",
-            "signal": convert_numpy_types(final_signal_object)
-        })
-
-    except Exception as e:
-        logger.error(f"CRITICAL ERROR in get_composite_signal_view for {symbol}: {e}", exc_info=True)
-        return JsonResponse({"status": "ERROR", "message": "An internal server error occurred."})
-    finally:
-        await fetcher.close()
-
 @sync_to_async
 def _get_open_trades_sync():
     trade_manager = TradeManager()
@@ -135,3 +148,4 @@ async def price_ticker_view(request):
         return JsonResponse({"error": "Failed to fetch ticker data"}, status=500)
     finally:
         await fetcher.close()
+
