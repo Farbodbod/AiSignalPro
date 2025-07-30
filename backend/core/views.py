@@ -1,7 +1,7 @@
-# core/views.py (نسخه نهایی و کامل)
-
+# core/views.py (نسخه نهایی، صحیح و کامل)
 import asyncio
 import logging
+import traceback
 from django.http import JsonResponse
 import httpx
 from asgiref.sync import sync_to_async
@@ -15,7 +15,6 @@ from engines.trade_manager import TradeManager
 logger = logging.getLogger(__name__)
 
 async def system_status_view(request):
-    """وضعیت آنلاین بودن و پینگ صرافی‌ها را به صورت موازی چک می‌کند."""
     exchanges_to_check = [
         {'name': 'Kucoin', 'status_url': 'https://api.kucoin.com/api/v1/timestamp'},
         {'name': 'MEXC', 'status_url': 'https://api.mexc.com/api/v3/time'},
@@ -36,13 +35,12 @@ async def system_status_view(request):
     return JsonResponse(results, safe=False)
 
 async def market_overview_view(request):
-    """نمای کلی بازار را به صورت موازی از منابع خارجی دریافت می‌کند."""
     response_data = {}
     try:
         async with httpx.AsyncClient(timeout=10) as client:
             cg_task = asyncio.create_task(client.get("https://api.coingecko.com/api/v3/global"))
             fng_task = asyncio.create_task(client.get("https://api.alternative.me/fng/?limit=1"))
-            
+
             cg_res = await cg_task
             if cg_res.status_code == 200:
                 data = cg_res.json().get('data', {})
@@ -51,7 +49,7 @@ async def market_overview_view(request):
                     'volume_24h': data.get('total_volume', {}).get('usd', 0),
                     'btc_dominance': data.get('market_cap_percentage', {}).get('btc', 0)
                 })
-            
+
             fng_res = await fng_task
             if fng_res.status_code == 200:
                 data = fng_res.json().get('data', [])
@@ -62,7 +60,6 @@ async def market_overview_view(request):
     return JsonResponse(response_data)
 
 async def get_composite_signal_view(request):
-    """API اصلی که تمام تحلیل‌ها را اجرا کرده و یک سیگنال نهایی و کامل تولید می‌کند."""
     symbol = request.GET.get('symbol', 'BTC').upper()
     fetcher = ExchangeFetcher()
     try:
@@ -71,24 +68,44 @@ async def get_composite_signal_view(request):
         timeframes = ['5m', '15m', '1h', '4h']
         tasks = [fetcher.get_first_successful_klines(symbol, tf) for tf in timeframes]
         results = await asyncio.gather(*tasks)
+
         for i, result in enumerate(results):
             if result and result[0] is not None:
                 df, source = result
                 tf = timeframes[i]
+                # در اینجا DataFrame حذف نمی شود تا ارکستراتور بتواند از آن استفاده کند
                 analysis = orchestrator.analyze_single_dataframe(df, tf, symbol)
                 analysis['source'] = source
                 all_tf_analysis[tf] = analysis
+
         if not all_tf_analysis:
             return JsonResponse({"status": "NO_DATA", "message": f"Could not fetch market data for {symbol}."})
-        
+
+        # ارکستراتور تمام تحلیل ها را با داده های کامل انجام می دهد
         final_result = await orchestrator.get_multi_timeframe_signal(all_tf_analysis)
+        
         adapter = SignalAdapter(analytics_output=final_result)
         final_signal_object = adapter.generate_final_signal()
 
         if not final_signal_object:
-            return JsonResponse({"status": "NEUTRAL", "message": "Market is neutral.", "details": convert_numpy_types(final_result)})
-        
-        return JsonResponse({"status": "SUCCESS", "signal": convert_numpy_types(final_signal_object)})
+            # ✨ راه حل صحیح: حذف DataFrame ها از خروجی نهایی حالت NEUTRAL
+            if 'details' in final_result and isinstance(final_result.get('details'), dict):
+                for analysis in final_result['details'].values():
+                    if 'dataframe' in analysis:
+                        del analysis['dataframe']
+                        
+            return JsonResponse({
+                "status": "NEUTRAL",
+                "message": "Market is neutral.",
+                "details_overview": convert_numpy_types(final_result)
+            })
+
+        # آبجکت خروجی آداپتور به لطف کد جدید، از قبل تمیز است.
+        return JsonResponse({
+            "status": "SUCCESS",
+            "signal": convert_numpy_types(final_signal_object)
+        })
+
     except Exception as e:
         logger.error(f"CRITICAL ERROR in get_composite_signal_view for {symbol}: {e}", exc_info=True)
         return JsonResponse({"status": "ERROR", "message": "An internal server error occurred."})
@@ -97,12 +114,10 @@ async def get_composite_signal_view(request):
 
 @sync_to_async
 def _get_open_trades_sync():
-    """یک wrapper برای اجرای کد sync دیتابیس در محیط async."""
     trade_manager = TradeManager()
     return trade_manager.get_open_trades()
 
 async def list_open_trades_view(request):
-    """معاملات باز را به صورت non-blocking از دیتابیس می‌خواند."""
     try:
         open_trades = await _get_open_trades_sync()
         return JsonResponse(open_trades, safe=False)
@@ -111,7 +126,6 @@ async def list_open_trades_view(request):
         return JsonResponse({'error': str(e)}, status=500)
 
 async def price_ticker_view(request):
-    """قیمت لحظه‌ای ارزها را برای داشبورد فراهم می‌کند."""
     fetcher = ExchangeFetcher()
     symbols_to_fetch = ['BTC', 'ETH', 'XRP', 'SOL', 'DOGE']
     try:
