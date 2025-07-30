@@ -1,4 +1,4 @@
-# core/views.py (نسخه نهایی، صحیح و کامل)
+# core/views.py (نسخه نهایی، ایمن و کامل)
 import asyncio
 import logging
 import traceback
@@ -73,7 +73,6 @@ async def get_composite_signal_view(request):
             if result and result[0] is not None:
                 df, source = result
                 tf = timeframes[i]
-                # در اینجا DataFrame حذف نمی شود تا ارکستراتور بتواند از آن استفاده کند
                 analysis = orchestrator.analyze_single_dataframe(df, tf, symbol)
                 analysis['source'] = source
                 all_tf_analysis[tf] = analysis
@@ -81,26 +80,24 @@ async def get_composite_signal_view(request):
         if not all_tf_analysis:
             return JsonResponse({"status": "NO_DATA", "message": f"Could not fetch market data for {symbol}."})
 
-        # ارکستراتور تمام تحلیل ها را با داده های کامل انجام می دهد
         final_result = await orchestrator.get_multi_timeframe_signal(all_tf_analysis)
         
         adapter = SignalAdapter(analytics_output=final_result)
         final_signal_object = adapter.generate_final_signal()
 
         if not final_signal_object:
-            # ✨ راه حل صحیح: حذف DataFrame ها از خروجی نهایی حالت NEUTRAL
-            if 'details' in final_result and isinstance(final_result.get('details'), dict):
-                for analysis in final_result['details'].values():
-                    if 'dataframe' in analysis:
-                        del analysis['dataframe']
-                        
+            safe_neutral_response = {
+                "rule_based_signal": final_result.get("rule_based_signal", "HOLD"),
+                "buy_score": final_result.get("buy_score", 0),
+                "sell_score": final_result.get("sell_score", 0),
+                "ai_signal": final_result.get("gemini_confirmation", {}).get("signal", "N/A"),
+            }
             return JsonResponse({
                 "status": "NEUTRAL",
-                "message": "Market is neutral.",
-                "details_overview": convert_numpy_types(final_result)
+                "message": "Market is neutral. No high-quality signal found.",
+                "overview": safe_neutral_response
             })
 
-        # آبجکت خروجی آداپتور به لطف کد جدید، از قبل تمیز است.
         return JsonResponse({
             "status": "SUCCESS",
             "signal": convert_numpy_types(final_signal_object)
@@ -138,4 +135,3 @@ async def price_ticker_view(request):
         return JsonResponse({"error": "Failed to fetch ticker data"}, status=500)
     finally:
         await fetcher.close()
-
