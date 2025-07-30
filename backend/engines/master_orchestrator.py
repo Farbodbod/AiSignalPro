@@ -1,5 +1,3 @@
-# engines/master_orchestrator.py (نسخه نهایی با تمام اصلاحات منطقی)
-
 import os
 import google.generativeai as genai
 import logging
@@ -19,7 +17,7 @@ from .whale_analyzer import WhaleAnalyzer
 
 logger = logging.getLogger(__name__)
 
-ENGINE_VERSION = "5.3.0"  # افزایش نسخه به دلیل تغییرات منطقی
+ENGINE_VERSION = "5.3.1"  # افزایش نسخه به دلیل اصلاحات نهایی
 TIMEFRAME_WEIGHTS = {'1d': 3, '4h': 2.5, '1h': 2, '15m': 1, '5m': 0.5}
 SCORE_THRESHOLD = 5.0
 GEMINI_CALL_COOLDOWN_SECONDS = 900
@@ -63,20 +61,19 @@ class MasterOrchestrator:
             raw_analysis["divergence"] = detect_divergences(df_with_indicators.copy())
 
             strategy_engine = StrategyEngine(raw_analysis)
-            initial_signal = raw_analysis.get("trend", {}).get('signal', 'HOLD')
+            initial_signal = "HOLD"
+            trend_signal_text = raw_analysis.get("trend", {}).get('signal', '')
+            if "Uptrend" in trend_signal_text:
+                initial_signal = "BUY"
+            elif "Downtrend" in trend_signal_text:
+                initial_signal = "SELL"
             
-            if "Uptrend" in initial_signal:
-                strategy = strategy_engine.generate_strategy("BUY")
-                if not strategy_engine.is_strategy_valid(strategy):
-                    raw_analysis["strategy"] = {} # استراتژی نامعتبر
-                else:
+            if initial_signal != "HOLD":
+                strategy = strategy_engine.generate_strategy(initial_signal)
+                if strategy_engine.is_strategy_valid(strategy):
                     raw_analysis["strategy"] = strategy
-            elif "Downtrend" in initial_signal:
-                strategy = strategy_engine.generate_strategy("SELL")
-                if not strategy_engine.is_strategy_valid(strategy):
-                    raw_analysis["strategy"] = {}
                 else:
-                    raw_analysis["strategy"] = strategy
+                    raw_analysis["strategy"] = {} 
             else:
                 raw_analysis["strategy"] = {}
 
@@ -121,7 +118,7 @@ class MasterOrchestrator:
 
         final_signal = "BUY" if buy_score > sell_score and buy_score >= SCORE_THRESHOLD else ("SELL" if sell_score > buy_score and sell_score >= SCORE_THRESHOLD else "HOLD")
 
-        gemini_confirmation = {"signal": "N/A", "confidence": 0, "explanation_fa": "AI analysis not triggered (weak initial signal)."}
+        gemini_confirmation = {"signal": "N/A", "confidence": 0, "explanation_fa": "AI analysis not triggered."}
         if final_signal != "HOLD" and self.gemini_model:
             now = time.time()
             if (now - self.last_gemini_call_time) < GEMINI_CALL_COOLDOWN_SECONDS:
@@ -132,12 +129,13 @@ class MasterOrchestrator:
                 prompt = f'Analyze this JSON data for {symbol} and provide a response ONLY in JSON format with keys "signal" (BUY/SELL/HOLD) and "explanation_fa" (concise, professional explanation in Persian).\nTechnical Data: {json.dumps(prompt_details, indent=2, default=str)}'
                 try:
                     self.last_gemini_call_time = time.time()
+                    logger.info("Querying Gemini AI for signal confirmation...")
                     response = await asyncio.to_thread(self.gemini_model.generate_content, prompt)
                     json_response = json.loads(response.text.replace("`", "").replace("json", "").strip())
                     gemini_confirmation = {
                         "signal": json_response.get("signal", "HOLD").upper(),
                         "explanation_fa": json_response.get("explanation_fa", "No explanation from AI."),
-                        "confidence": 85 if json_response.get("signal") != "HOLD" else 50
+                        "confidence": 85 if json_response.get("signal", "HOLD").upper() != "HOLD" else 50
                     }
                 except Exception as e:
                     logger.error(f"Gemini API call or JSON parsing failed: {e}")
