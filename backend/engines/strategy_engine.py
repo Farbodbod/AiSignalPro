@@ -30,7 +30,7 @@ class StrategyEngine:
                 if not relevant_pivots: return None
                 
                 last_low_pivot = max(relevant_pivots)
-                return round(last_low_pivot - (atr * 0.5), 4) # کمی پایین‌تر از کف با ضریب ATR
+                return round(last_low_pivot - (atr * 0.5), 4)
             
             elif direction == 'SELL':
                 # برای فروش، بالای آخرین سقف (high pivot) که بالاتر از قیمت فعلی است قرار می‌دهیم
@@ -38,7 +38,7 @@ class StrategyEngine:
                 if not relevant_pivots: return None
 
                 last_high_pivot = min(relevant_pivots)
-                return round(last_high_pivot + (atr * 0.5), 4) # کمی بالاتر از سقف با ضریب ATR
+                return round(last_high_pivot + (atr * 0.5), 4)
             
             return None
         except Exception as e:
@@ -47,7 +47,7 @@ class StrategyEngine:
 
     def calculate_targets(self, direction: str, entry_price: float, stop_loss: float) -> List[float]:
         """
-        تارگت‌های سود را بر اساس پیوت‌های بعدی و نسبت ریسک به ریوارد محاسبه می‌کند.
+        (نسخه ضد خطا) تارگت‌های سود را بر اساس جهت سیگنال محاسبه می‌کند.
         """
         if stop_loss is None or entry_price == stop_loss:
             return []
@@ -56,35 +56,35 @@ class StrategyEngine:
         if risk_amount == 0: return []
         
         targets = []
+        pivots = self.market_structure.get("pivots", [])
 
         try:
-            pivots = self.market_structure.get("pivots", [])
-            if not pivots:
-                return []
-
             if direction == 'BUY':
-                # تارگت‌ها، پیوت‌های سقف (high pivots) بعدی هستند
-                potential_targets = sorted([p[1] for p in pivots if p[1] > entry_price])
-                # تارگت اول: حداقل ۱.۵ برابر ریسک
+                # برای خرید، اهداف باید بالاتر از قیمت ورود باشند
+                # تارگت اول: ۱.۵ برابر ریسک
                 target_1 = entry_price + (risk_amount * 1.5)
                 targets.append(round(target_1, 4))
-                # تارگت دوم: نزدیک‌ترین پیوت به تارگت اول
+                
+                # تارگت دوم: نزدیک‌ترین پیوت مقاومت بعدی
+                potential_targets = sorted([p[1] for p in pivots if p[1] > target_1])
                 if potential_targets:
-                    targets.append(round(min(potential_targets, key=lambda x:abs(x-target_1)), 4))
+                    targets.append(round(potential_targets[0], 4))
 
             elif direction == 'SELL':
-                # تارگت‌ها، پیوت‌های کف (low pivots) بعدی هستند
-                potential_targets = sorted([p[1] for p in pivots if p[1] < entry_price], reverse=True)
+                # برای فروش، اهداف باید پایین‌تر از قیمت ورود باشند
+                # تارگت اول: ۱.۵ برابر ریسک
                 target_1 = entry_price - (risk_amount * 1.5)
                 targets.append(round(target_1, 4))
+                
+                # تارگت دوم: نزدیک‌ترین پیوت حمایت بعدی
+                potential_targets = sorted([p[1] for p in pivots if p[1] < target_1], reverse=True)
                 if potential_targets:
-                    targets.append(round(min(potential_targets, key=lambda x:abs(x-target_1)), 4))
+                    targets.append(round(potential_targets[0], 4))
 
-            return sorted(list(set(targets))) # حذف موارد تکراری و مرتب‌سازی
+            return sorted(list(set(targets)))
         except Exception as e:
             logger.error(f"Error calculating Targets: {e}")
             return []
-
 
     def generate_strategy(self, signal_type: str) -> Dict[str, Any]:
         """
@@ -97,7 +97,6 @@ class StrategyEngine:
         stop_loss = self.calculate_stop_loss(signal_type)
         targets = self.calculate_targets(signal_type, entry_price, stop_loss)
         
-        # محاسبه ریسک به ریوارد برای اولین تارگت
         risk_reward_ratio = 0
         if targets and stop_loss and (entry_price - stop_loss) != 0:
             reward = abs(targets[0] - entry_price)
