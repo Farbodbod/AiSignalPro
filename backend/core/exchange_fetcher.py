@@ -1,4 +1,4 @@
-# core/exchange_fetcher.py (نسخه 2.9 - اصلاح نهایی OKX با محاسبه دستی)
+# core/exchange_fetcher.py (نسخه 3.0 - نرمال‌سازی مقاوم)
 
 import asyncio
 import os
@@ -20,11 +20,11 @@ SYMBOL_MAP = {'BTC': {'base': 'BTC', 'quote': 'USDT'}, 'ETH': {'base': 'ETH', 'q
 
 class ExchangeFetcher:
     def __init__(self, cache_ttl: int = 60):
-        headers = {'User-Agent': 'AiSignalPro/2.9.0', 'Accept': 'application/json'}
+        headers = {'User-Agent': 'AiSignalPro/3.0.0', 'Accept': 'application/json'}
         self.client = httpx.AsyncClient(headers=headers, timeout=20, follow_redirects=True)
         self.cache = {}
         self.cache_ttl = cache_ttl
-        logging.info("ExchangeFetcher (Legendary Edition v2.9) initialized.")
+        logging.info("ExchangeFetcher (Resilient Edition v3.0) initialized.")
 
     def _get_cache_key(self, prefix: str, exchange: str, symbol: str, timeframe: Optional[str] = None) -> str:
         key = f"{prefix}:{exchange}:{symbol}";
@@ -53,12 +53,31 @@ class ExchangeFetcher:
         response.raise_for_status();
         return response.json()
 
+    # --- اصلاح شد: تابع نرمال‌سازی اکنون بسیار مقاوم‌تر است ---
     def _normalize_kline_data(self, data: List[list], source: str) -> List[Dict[str, Any]]:
         if not data: return []
-        try:
-            if source == 'okx': data.reverse()
-            return [{"timestamp": int(k[0]), "open": float(k[1]), "high": float(k[2]), "low": float(k[3]), "close": float(k[4]), "volume": float(k[5])} for k in data]
-        except (ValueError, IndexError): return []
+        
+        normalized_data = []
+        if source == 'okx': data.reverse()
+            
+        for k in data:
+            try:
+                # هر کندل را به صورت جداگانه بررسی می‌کنیم
+                candle = {
+                    "timestamp": int(k[0]),
+                    "open": float(k[1]),
+                    "high": float(k[2]),
+                    "low": float(k[3]),
+                    "close": float(k[4]),
+                    "volume": float(k[5])
+                }
+                normalized_data.append(candle)
+            except (ValueError, TypeError, IndexError) as e:
+                # اگر یک کندل مشکل داشت، آن را نادیده گرفته و به بعدی می‌رویم
+                logging.warning(f"Skipping malformed candle from {source}: {k}. Reason: {e}")
+                continue
+                
+        return normalized_data
 
     async def get_klines_from_one_exchange(self, exchange: str, symbol: str, timeframe: str, limit: int = 200) -> Optional[List[Dict]]:
         cache_key = self._get_cache_key("kline", exchange, symbol, timeframe)
@@ -80,13 +99,15 @@ class ExchangeFetcher:
         return None
         
     async def get_first_successful_klines(self, symbol: str, timeframe:str) -> Optional[Tuple[pd.DataFrame, str]]:
-        tasks = [asyncio.create_task(self.get_klines_from_one_exchange(ex, symbol, timeframe), name=ex) for ex in ['mexc', 'kucoin', 'okx']]
+        exchanges = ['mexc', 'kucoin', 'okx']
+        tasks = [asyncio.create_task(self.get_klines_from_one_exchange(ex, symbol, timeframe), name=ex) for ex in exchanges]
         for task in asyncio.as_completed(tasks):
             try:
                 result = await task;
                 if result: source_exchange = task.get_name(); logging.info(f"Klines acquired from '{source_exchange}' for {symbol}@{timeframe}."); return pd.DataFrame(result), source_exchange
-            except Exception: continue
-        logging.error(f"Critical Failure: Could not fetch klines for {symbol}@{timeframe} from any exchange.");
+            except Exception as e:
+                logging.error(f"Task for {task.get_name()} failed unexpectedly: {e}", exc_info=False)
+        logging.error(f"Critical Failure: Could not fetch klines for {symbol}@{timeframe} from any available exchange.");
         return None, None
         
     async def get_ticker_from_one_exchange(self, exchange: str, symbol: str) -> Optional[Dict]:
@@ -117,7 +138,6 @@ class ExchangeFetcher:
                 elif exchange == 'okx' and raw_data.get('data'):
                     data = raw_data['data'][0]
                     price = float(data.get('last', 0))
-                    # --- اصلاح نهایی و قطعی OKX بر اساس تحقیقات شما ---
                     open_price_24h = float(data.get('open24h', 0))
                     if open_price_24h > 0:
                         change = ((price - open_price_24h) / open_price_24h) * 100
