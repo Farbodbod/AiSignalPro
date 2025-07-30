@@ -9,13 +9,11 @@ import time
 import asyncio
 import json
 
-# --- وارد کردن تمام موتورهای تحلیلی شما ---
 from .indicator_analyzer import calculate_indicators
 from .trend_analyzer import analyze_trend
 from .market_structure_analyzer import LegPivotAnalyzer
 from .strategy_engine import StrategyEngine
 from .candlestick_reader import CandlestickPatternDetector
-# --- اصلاح شد: وارد کردن تابع به جای کلاس ---
 from .divergence_detector import detect_divergences 
 from .whale_analyzer import WhaleAnalyzer
 
@@ -49,8 +47,10 @@ class MasterOrchestrator:
             
             raw_analysis["trend"] = analyze_trend(df_with_indicators.copy(), timeframe=timeframe)
             raw_analysis["market_structure"] = LegPivotAnalyzer(df_with_indicators.copy()).analyze()
-            raw_analysis["candlestick_patterns"] = CandlestickPatternDetector(df.copy()).analyze()
-            # --- اصلاح شد: فراخوانی به صورت تابع ---
+            
+            # --- اصلاح شد: استفاده از متد و کلید صحیح ---
+            raw_analysis["patterns"] = CandlestickPatternDetector(df.copy()).detect_patterns()
+            
             raw_analysis["divergence"] = detect_divergences(df_with_indicators.copy())
             raw_analysis["whale_activity"] = WhaleAnalyzer(df.copy()).analyze()
             
@@ -66,7 +66,7 @@ class MasterOrchestrator:
     async def _query_gemini_with_rate_limit(self, prompt: str) -> Dict[str, Any]:
         default_response = {"signal": "N/A", "confidence": 0, "explanation_fa": "تحلیل AI به دلیل محدودیت فراخوانی انجام نشد."}
         now = time.time()
-        if (now - self.last_gemini_call_time) < 600: # 10 minutes cooldown
+        if (now - self.last_gemini_call_time) < 600:
             logger.info("Gemini call skipped due to rate limiting cooldown.")
             return default_response
         try:
@@ -88,14 +88,15 @@ class MasterOrchestrator:
     async def get_multi_timeframe_signal(self, all_tf_analysis: Dict[str, Any]) -> Dict[str, Any]:
         buy_score, sell_score = 0.0, 0.0
         for tf, data in all_tf_analysis.items():
-            if not isinstance(data, dict): continue
+            if not isinstance(data, dict) or "error" in data: continue # از تحلیل تایم‌فریم‌های ناموفق صرف نظر کن
             weight = TIMEFRAME_WEIGHTS.get(tf, 1)
             if "Uptrend" in data.get('trend', {}).get('signal', ''): buy_score += 1.5 * weight
             if "Downtrend" in data.get('trend', {}).get('signal', ''): sell_score += 1.5 * weight
             if data.get('divergence', {}).get('rsi_bullish'): buy_score += 1.0 * weight
             if data.get('divergence', {}).get('rsi_bearish'): sell_score += 1.0 * weight
-            if any('Bullish' in p for p in data.get('candlestick_patterns', [])): buy_score += 0.5 * weight
-            if any('Bearish' in p for p in data.get('candlestick_patterns', [])): sell_score += 0.5 * weight
+            # --- اصلاح شد: خواندن از کلید صحیح patterns ---
+            if any('Bullish' in p for p in data.get('patterns', [])): buy_score += 0.5 * weight
+            if any('Bearish' in p for p in data.get('patterns', [])): sell_score += 0.5 * weight
             if data.get('whale_activity', {}).get('activity') == 'Accumulation': buy_score += 0.75 * weight
             if data.get('whale_activity', {}).get('activity') == 'Distribution': sell_score += 0.75 * weight
 
@@ -123,4 +124,3 @@ class MasterOrchestrator:
             gemini_confirmation = await self._query_gemini_with_rate_limit(prompt)
         
         return {"rule_based_signal": final_signal, "buy_score": round(buy_score, 2), "sell_score": round(sell_score, 2), "gemini_confirmation": gemini_confirmation, "details": all_tf_analysis}
-
