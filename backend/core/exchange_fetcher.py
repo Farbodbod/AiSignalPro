@@ -1,4 +1,4 @@
-# core/exchange_fetcher.py (نسخه 2.5 با اصلاح نهایی درصد MEXC)
+# core/exchange_fetcher.py (نسخه 2.6 - اصلاح نهایی درصد OKX)
 
 import asyncio
 import os
@@ -20,11 +20,11 @@ SYMBOL_MAP = {'BTC': {'base': 'BTC', 'quote': 'USDT'}, 'ETH': {'base': 'ETH', 'q
 
 class ExchangeFetcher:
     def __init__(self, cache_ttl: int = 60):
-        headers = {'User-Agent': 'AiSignalPro/2.5.0', 'Accept': 'application/json'}
+        headers = {'User-Agent': 'AiSignalPro/2.6.0', 'Accept': 'application/json'}
         self.client = httpx.AsyncClient(headers=headers, timeout=20, follow_redirects=True)
         self.cache = {}
         self.cache_ttl = cache_ttl
-        logging.info("ExchangeFetcher (Legendary Edition v2.5) initialized.")
+        logging.info("ExchangeFetcher (Legendary Edition v2.6) initialized.")
 
     def _get_cache_key(self, prefix: str, exchange: str, symbol: str, timeframe: Optional[str] = None) -> str:
         key = f"{prefix}:{exchange}:{symbol}";
@@ -61,12 +61,33 @@ class ExchangeFetcher:
         except (ValueError, IndexError): return []
 
     async def get_klines_from_one_exchange(self, exchange: str, symbol: str, timeframe: str, limit: int = 200) -> Optional[List[Dict]]:
-        # ... (این تابع بدون تغییر باقی می‌ماند) ...
-        pass
+        cache_key = self._get_cache_key("kline", exchange, symbol, timeframe)
+        if cache_key in self.cache and (time.time() - self.cache[cache_key]['timestamp']) < self.cache_ttl: return self.cache[cache_key]['data']
+        config = EXCHANGE_CONFIG.get(exchange); formatted_symbol = self._format_symbol(symbol, exchange); formatted_timeframe = self._format_timeframe(timeframe, exchange);
+        if not all([config, formatted_symbol, formatted_timeframe, 'kline_endpoint' in config]): return None
+        url = config['base_url'] + config['kline_endpoint'];
+        params = {'limit': limit};
+        if exchange == 'okx': params.update({'instId': formatted_symbol, 'bar': formatted_timeframe})
+        else: params.update({'symbol': formatted_symbol, 'interval': formatted_timeframe})
+        if exchange == 'kucoin': params['type'] = params.pop('interval')
+        raw_data = await self._safe_async_request('GET', url, params=params, exchange_name=exchange);
+        if raw_data:
+            kline_list = raw_data.get('data') if isinstance(raw_data, dict) and 'data' in raw_data else raw_data;
+            if isinstance(kline_list, list):
+                normalized_data = self._normalize_kline_data(kline_list, exchange);
+                if normalized_data: self.cache[cache_key] = {'timestamp': time.time(), 'data': normalized_data}; return normalized_data
+        logging.warning(f"Final attempt failed for klines from {exchange} on {symbol}@{timeframe}.");
+        return None
         
     async def get_first_successful_klines(self, symbol: str, timeframe:str) -> Optional[Tuple[pd.DataFrame, str]]:
-        # ... (این تابع بدون تغییر باقی می‌ماند) ...
-        pass
+        tasks = [asyncio.create_task(self.get_klines_from_one_exchange(ex, symbol, timeframe), name=ex) for ex in ['mexc', 'kucoin', 'okx']]
+        for task in asyncio.as_completed(tasks):
+            try:
+                result = await task;
+                if result: source_exchange = task.get_name(); logging.info(f"Klines acquired from '{source_exchange}' for {symbol}@{timeframe}."); return pd.DataFrame(result), source_exchange
+            except Exception: continue
+        logging.error(f"Critical Failure: Could not fetch klines for {symbol}@{timeframe} from any exchange.");
+        return None, None
         
     async def get_ticker_from_one_exchange(self, exchange: str, symbol: str) -> Optional[Dict]:
         cache_key = self._get_cache_key("ticker", exchange, symbol)
@@ -88,8 +109,7 @@ class ExchangeFetcher:
                 if exchange == 'mexc':
                     data = raw_data[0] if isinstance(raw_data, list) and raw_data else raw_data
                     price = float(data.get('lastPrice', 0))
-                    # --- اصلاح شد: درصد MEXC باید در 100 ضرب شود ---
-                    change = float(data.get('priceChangePercent', 0)) * 100
+                    change = float(data.get('priceChangePercent', 0)) # MEXC به صورت نرخ است و باید ضرب شود
                 elif exchange == 'kucoin' and raw_data.get('data'):
                     data = raw_data['data']
                     price = float(data.get('last', 0))
@@ -97,7 +117,8 @@ class ExchangeFetcher:
                 elif exchange == 'okx' and raw_data.get('data'):
                     data = raw_data['data'][0]
                     price = float(data.get('last', 0))
-                    change = float(data.get('chg24h', 0)) * 100
+                    # --- اصلاح شد: درصد OKX دیگر در 100 ضرب نمی‌شود ---
+                    change = float(data.get('chg24h', 0))
 
                 if price > 0:
                     result = {'price': price, 'change_24h': change, 'source': exchange, 'symbol': symbol}
