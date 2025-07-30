@@ -1,10 +1,14 @@
-# core/views.py (نسخه نهایی با جزئیات کامل در حالت NEUTRAL)
 import asyncio
 import logging
 import traceback
 from django.http import JsonResponse
 import httpx
 from asgiref.sync import sync_to_async
+
+# --- ایمپورت های جدید برای تست ---
+import pandas as pd
+import numpy as np
+# ---------------------------------
 
 from .exchange_fetcher import ExchangeFetcher
 from engines.master_orchestrator import MasterOrchestrator
@@ -14,10 +18,53 @@ from engines.trade_manager import TradeManager
 
 logger = logging.getLogger(__name__)
 
+
+# =================================================================
+#  VIEW جدید برای تست مستقیم ارکستراتور
+# =================================================================
+def create_sample_dataframe_for_test(rows=200):
+    """یک دیتافریم نمونه برای تست ایجاد می‌کند."""
+    data = {
+        'timestamp': pd.to_datetime(pd.date_range(start='2025-01-01', periods=rows, freq='H')),
+        'open': np.cumsum(np.random.uniform(-100, 100, size=rows)) + 40000,
+        'high': 0, 'low': 0, 'close': 0,
+        'volume': np.random.uniform(10, 100, size=rows)
+    }
+    df = pd.DataFrame(data)
+    df['high'] = df['open'] + np.random.uniform(0, 500, size=rows)
+    df['low'] = df['open'] - np.random.uniform(0, 500, size=rows)
+    df['close'] = df['open'] + np.random.uniform(-200, 200, size=rows)
+    return df
+
+async def run_orchestrator_test_view(request):
+    """
+    این view یک تست مستقیم روی MasterOrchestrator اجرا کرده و نتیجه فیلتر الگوها را نشان می‌دهد.
+    """
+    logger.info("Starting direct orchestrator test via API...")
+    try:
+        sample_df = create_sample_dataframe_for_test()
+        orchestrator = MasterOrchestrator()
+        analysis_result = orchestrator.analyze_single_dataframe(sample_df, '1h', 'BTC-TEST')
+        patterns = analysis_result.get('patterns', [])
+        
+        is_fixed = len(patterns) < 5 
+        
+        return JsonResponse({
+            "test_status": "SUCCESS",
+            "is_code_updated": is_fixed,
+            "message": "Filter is working correctly!" if is_fixed else "FILTER IS NOT WORKING! Old code is running.",
+            "detected_patterns_count": len(patterns),
+            "detected_patterns": patterns
+        })
+    except Exception as e:
+        logger.error(f"Error during orchestrator test view: {e}", exc_info=True)
+        return JsonResponse({"test_status": "FAILED", "error": str(e)}, status=500)
+
+# =================================================================
+#  تمام VIEW های اصلی شما
+# =================================================================
+
 async def get_composite_signal_view(request):
-    """
-    API اصلی که تمام تحلیل‌ها را اجرا کرده و یک سیگنال نهایی و کامل تولید می‌کند.
-    """
     symbol = request.GET.get('symbol', 'BTC').upper()
     fetcher = ExchangeFetcher()
     try:
@@ -29,29 +76,23 @@ async def get_composite_signal_view(request):
 
         for i, result in enumerate(results):
             if result and result[0] is not None:
-                df, source = result
-                tf = timeframes[i]
+                df, source = result; tf = timeframes[i]
                 analysis = orchestrator.analyze_single_dataframe(df, tf, symbol)
-                analysis['source'] = source
-                all_tf_analysis[tf] = analysis
+                analysis['source'] = source; all_tf_analysis[tf] = analysis
 
         if not all_tf_analysis:
             return JsonResponse({"status": "NO_DATA", "message": f"Could not fetch market data for {symbol}."})
 
         final_result = await orchestrator.get_multi_timeframe_signal(all_tf_analysis)
-        
         adapter = SignalAdapter(analytics_output=final_result)
         final_signal_object = adapter.generate_final_signal()
 
         if not final_signal_object:
-            # --- ✨ جادوی نهایی: نمایش تمام جزئیات در حالت NEUTRAL ---
-            # یک کپی از جزئیات خام ایجاد کرده و دیتافریم ها را برای نمایش حذف می کنیم
             detailed_overview = final_result.get("details", {})
             for tf_analysis in detailed_overview.values():
                 if isinstance(tf_analysis, dict):
-                    tf_analysis.pop('dataframe', None) # حذف کلید دیتافریم
+                    tf_analysis.pop('dataframe', None)
             
-            # حالا تمام جزئیات تمیز شده را به خروجی اضافه می کنیم
             return JsonResponse({
                 "status": "NEUTRAL",
                 "message": "Market is neutral. No high-quality signal found.",
@@ -61,13 +102,10 @@ async def get_composite_signal_view(request):
                     "sell_score": final_result.get("sell_score", 0),
                     "ai_signal": final_result.get("gemini_confirmation", {}).get("signal", "N/A"),
                 },
-                "full_analysis_details": convert_numpy_types(detailed_overview) # <-- کلید جدید
+                "full_analysis_details": convert_numpy_types(detailed_overview)
             })
 
-        return JsonResponse({
-            "status": "SUCCESS",
-            "signal": convert_numpy_types(final_signal_object)
-        })
+        return JsonResponse({"status": "SUCCESS", "signal": convert_numpy_types(final_signal_object)})
 
     except Exception as e:
         logger.error(f"CRITICAL ERROR in get_composite_signal_view for {symbol}: {e}", exc_info=True)
@@ -75,8 +113,6 @@ async def get_composite_signal_view(request):
     finally:
         await fetcher.close()
 
-# --- سایر view های شما بدون تغییر باقی می مانند ---
-# ... system_status_view, market_overview_view, etc.
 async def system_status_view(request):
     exchanges_to_check = [
         {'name': 'Kucoin', 'status_url': 'https://api.kucoin.com/api/v1/timestamp'},
@@ -148,4 +184,3 @@ async def price_ticker_view(request):
         return JsonResponse({"error": "Failed to fetch ticker data"}, status=500)
     finally:
         await fetcher.close()
-
