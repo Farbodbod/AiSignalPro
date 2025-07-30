@@ -1,5 +1,3 @@
-# engines/strategy_engine.py
-
 import logging
 from typing import Dict, Any, List, Optional
 
@@ -21,19 +19,27 @@ class StrategyEngine:
         try:
             atr = self.indicators.get("atr")
             pivots = self.market_structure.get("pivots", [])
-            if not atr or not pivots:
+            current_price = self.indicators.get('close', 0)
+
+            if not atr or not pivots or current_price == 0:
                 return None
 
             if direction == 'BUY':
-                # برای خرید، زیر آخرین کف (low pivot) قرار می‌دهیم
-                last_low_pivot = max([p[1] for p in pivots if p[2] == 'minor' and p[1] < self.indicators.get('close', 0)], default=None)
-                if last_low_pivot:
-                    return round(last_low_pivot - (atr * 0.5), 4) # کمی پایین‌تر از کف با ضریب ATR
+                # برای خرید، زیر آخرین کف (low pivot) که پایین تر از قیمت فعلی است قرار می‌دهیم
+                relevant_pivots = [p[1] for p in pivots if p[1] < current_price]
+                if not relevant_pivots: return None
+                
+                last_low_pivot = max(relevant_pivots)
+                return round(last_low_pivot - (atr * 0.5), 4) # کمی پایین‌تر از کف با ضریب ATR
+            
             elif direction == 'SELL':
-                # برای فروش، بالای آخرین سقف (high pivot) قرار می‌دهیم
-                last_high_pivot = min([p[1] for p in pivots if p[2] == 'minor' and p[1] > self.indicators.get('close', 0)], default=None)
-                if last_high_pivot:
-                    return round(last_high_pivot + (atr * 0.5), 4) # کمی بالاتر از سقف با ضریب ATR
+                # برای فروش، بالای آخرین سقف (high pivot) که بالاتر از قیمت فعلی است قرار می‌دهیم
+                relevant_pivots = [p[1] for p in pivots if p[1] > current_price]
+                if not relevant_pivots: return None
+
+                last_high_pivot = min(relevant_pivots)
+                return round(last_high_pivot + (atr * 0.5), 4) # کمی بالاتر از سقف با ضریب ATR
+            
             return None
         except Exception as e:
             logger.error(f"Error calculating Stop Loss: {e}")
@@ -43,10 +49,12 @@ class StrategyEngine:
         """
         تارگت‌های سود را بر اساس پیوت‌های بعدی و نسبت ریسک به ریوارد محاسبه می‌کند.
         """
-        if stop_loss is None:
+        if stop_loss is None or entry_price == stop_loss:
             return []
             
         risk_amount = abs(entry_price - stop_loss)
+        if risk_amount == 0: return []
+        
         targets = []
 
         try:
@@ -94,7 +102,8 @@ class StrategyEngine:
         if targets and stop_loss and (entry_price - stop_loss) != 0:
             reward = abs(targets[0] - entry_price)
             risk = abs(entry_price - stop_loss)
-            risk_reward_ratio = round(reward / risk, 2)
+            if risk > 0:
+                risk_reward_ratio = round(reward / risk, 2)
 
         return {
             "entry_price": entry_price,
@@ -104,3 +113,16 @@ class StrategyEngine:
             "support_levels": sorted([p[1] for p in self.market_structure.get("pivots", []) if p[1] < entry_price], reverse=True)[:3],
             "resistance_levels": sorted([p[1] for p in self.market_structure.get("pivots", []) if p[1] > entry_price])[:3],
         }
+
+    def is_strategy_valid(self, strategy: Dict[str, Any]) -> bool:
+        """
+        بررسی می کند که آیا استراتژی تولید شده معتبر و کامل است یا خیر.
+        """
+        if not strategy:
+            return False
+        
+        has_stop_loss = strategy.get("stop_loss") is not None
+        has_targets = strategy.get("targets") is not None and len(strategy["targets"]) > 0
+        
+        # یک استراتژی فقط زمانی معتبر است که هم حد ضرر و هم حداقل یک تارگت داشته باشد
+        return has_stop_loss and has_targets
