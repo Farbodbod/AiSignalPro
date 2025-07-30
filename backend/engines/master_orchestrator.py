@@ -1,4 +1,4 @@
-# engines/master_orchestrator.py (نسخه نهایی کاملاً async)
+# engines/master_orchestrator.py (نسخه نهایی با پرامپت هوشمند)
 
 import os
 import google.generativeai as genai
@@ -6,7 +6,8 @@ import logging
 import pandas as pd
 from typing import Dict, Any
 import time
-import asyncio # ایمپورت جدید
+import asyncio
+import json
 
 from engines.indicator_analyzer import calculate_indicators
 from engines.trend_analyzer import analyze_trend
@@ -33,13 +34,15 @@ class MasterOrchestrator:
                 logger.error(f"Failed to configure Gemini: {e}")
         else:
             self.gemini_model = None
+            logger.warning("GEMINI_API_KEY not found. Gemini confirmation will be disabled.")
 
     def analyze_single_dataframe(self, df: pd.DataFrame, timeframe: str, symbol: str) -> Dict[str, Any]:
         raw_analysis = {"symbol": symbol, "timeframe": timeframe}
         try:
             df_with_indicators = calculate_indicators(df.copy())
             latest_indicator_values = {col: df_with_indicators[col].dropna().iloc[-1] for col in df_with_indicators.columns if col not in df.columns and not df_with_indicators[col].dropna().empty}
-            if not df.empty and 'close' in df.columns: latest_indicator_values['close'] = df['close'].iloc[-1]
+            if not df.empty and 'close' in df.columns:
+                latest_indicator_values['close'] = df['close'].iloc[-1]
             raw_analysis["indicators"] = latest_indicator_values
             raw_analysis["trend"] = analyze_trend(df.copy(), timeframe=timeframe)
             raw_analysis["market_structure"] = LegPivotAnalyzer(df.copy()).analyze()
@@ -52,22 +55,32 @@ class MasterOrchestrator:
         return raw_analysis
 
     async def _query_gemini_with_rate_limit(self, prompt: str) -> Dict[str, Any]:
+        default_response = {"signal": "N/A", "confidence": 0, "explanation_fa": "تحلیل AI به دلیل محدودیت فراخوانی انجام نشد."}
         now = time.time()
         if (now - self.last_gemini_call_time) < GEMINI_CALL_COOLDOWN_SECONDS:
-            return {"signal": "N/A", "reason": "Rate limit cooldown", "confidence": 0}
+            logger.info("Gemini call skipped due to rate limiting cooldown.")
+            return default_response
         
         try:
-            # --- اصلاح شد: اجرای non-blocking کد sync ---
+            logger.info("Querying Gemini AI for signal confirmation and explanation...")
             response = await asyncio.to_thread(self.gemini_model.generate_content, prompt)
             self.last_gemini_call_time = time.time()
-            text_response = response.text.lower()
-            signal = "BUY" if "buy" in text_response else "SELL" if "sell" in text_response else "HOLD"
-            return {"signal": signal, "reason": response.text, "confidence": 75 if signal != "HOLD" else 50}
-        except Exception as e:
-            logger.error(f"Gemini API call failed: {e}")
-            return {"signal": "Error", "reason": str(e), "confidence": 0}
+            
+            cleaned_response = response.text.replace("`", "").replace("json", "").strip()
+            json_response = json.loads(cleaned_response)
+            
+            signal = json_response.get("signal", "HOLD").upper()
+            explanation = json_response.get("explanation_fa", "توضیحات توسط AI ارائه نشد.")
+            confidence = 85 if signal != "HOLD" else 50
+            
+            return {"signal": signal, "confidence": confidence, "explanation_fa": explanation}
 
-    # --- اصلاح شد: این تابع اکنون async است ---
+        except Exception as e:
+            logger.error(f"Gemini API call or JSON parsing failed: {e}")
+            default_response["explanation_fa"] = "خطا در پردازش پاسخ AI."
+            default_response["signal"] = "Error"
+            return default_response
+
     async def get_multi_timeframe_signal(self, all_tf_analysis: Dict[str, Any]) -> Dict[str, Any]:
         buy_score, sell_score = 0, 0
         for tf, data in all_tf_analysis.items():
@@ -78,14 +91,30 @@ class MasterOrchestrator:
             if "Downtrend" in trend_signal: sell_score += 1 * weight
         
         final_signal = "HOLD"
-        gemini_confirmation = {"signal": "N/A", "confidence": 0}
         if buy_score > sell_score and buy_score >= SCORE_THRESHOLD: final_signal = "BUY"
         elif sell_score > buy_score and sell_score >= SCORE_THRESHOLD: final_signal = "SELL"
 
+        gemini_confirmation = {"signal": "N/A", "confidence": 0, "explanation_fa": "تحلیل AI انجام نشد (سیگنال اولیه ضعیف بود)."}
         if final_signal != "HOLD" and self.gemini_model:
             symbol = next((data['symbol'] for data in all_tf_analysis.values() if 'symbol' in data), "N/A")
-            prompt = f"Analyze market for {symbol}. Rule-based signal is {final_signal}. Should I proceed? Short answer: 'BUY', 'SELL', or 'HOLD' & brief justification."
-            # --- اصلاح شد: استفاده از await برای فراخوانی تابع async ---
+            
+            prompt = f"""
+            You are an expert, senior crypto technical analyst providing analysis for a trader.
+            Analyze the following JSON data for the cryptocurrency {symbol}.
+            Based SOLELY on the provided data, provide your final signal recommendation and a concise, easy-to-understand explanation in Persian.
+            Your analysis MUST highlight the most important technical factors and mention any conflicts between timeframes if they exist.
+
+            Technical Data:
+            {json.dumps(all_tf_analysis, indent=2)}
+
+            Provide your response ONLY in the following JSON format. Do not add any other text or formatting.
+            {{
+              "signal": "BUY",
+              "explanation_fa": "یک توضیح خلاصه و حرفه‌ای به زبان فارسی در اینجا بنویس."
+            }}
+            
+            Replace "BUY" with "SELL" or "HOLD" based on your final conclusion from the data.
+            """
             gemini_confirmation = await self._query_gemini_with_rate_limit(prompt)
         
         return {"rule_based_signal": final_signal, "buy_score": round(buy_score, 2), "sell_score": round(sell_score, 2), "gemini_confirmation": gemini_confirmation, "details": all_tf_analysis}
