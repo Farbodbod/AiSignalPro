@@ -1,3 +1,5 @@
+# engines/master_orchestrator.py (نسخه کامل و نهایی با اتصال هوشمند)
+
 import os
 import google.generativeai as genai
 import logging
@@ -17,7 +19,7 @@ from .whale_analyzer import WhaleAnalyzer
 
 logger = logging.getLogger(__name__)
 
-ENGINE_VERSION = "5.3.1"  # افزایش نسخه به دلیل اصلاحات نهایی
+ENGINE_VERSION = "6.0.0"  # افزایش نسخه به دلیل هوشمندسازی الگویاب
 TIMEFRAME_WEIGHTS = {'1d': 3, '4h': 2.5, '1h': 2, '15m': 1, '5m': 0.5}
 SCORE_THRESHOLD = 5.0
 GEMINI_CALL_COOLDOWN_SECONDS = 900
@@ -53,12 +55,11 @@ class MasterOrchestrator:
 
             raw_analysis["trend"] = analyze_trend(df_with_indicators.copy(), timeframe=timeframe)
             raw_analysis["market_structure"] = LegPivotAnalyzer(df_with_indicators.copy()).analyze()
-
-            pattern_detector = CandlestickPatternDetector(df.copy())
-            filtered_patterns = pattern_detector.apply_filters(min_score=1.5, min_volume_ratio=1.1)
-            raw_analysis["patterns"] = [p['pattern'] for p in filtered_patterns]
-
             raw_analysis["divergence"] = detect_divergences(df_with_indicators.copy())
+
+            # اتصال جدید و هوشمند: کل زمینه تحلیلی به الگویاب جدید پاس داده می شود
+            pattern_detector = CandlestickPatternDetector(df.copy(), raw_analysis)
+            raw_analysis["patterns"] = pattern_detector.detect_high_quality_patterns()
 
             strategy_engine = StrategyEngine(raw_analysis)
             initial_signal = "HOLD"
