@@ -103,7 +103,7 @@ const PriceTicker = () => {
                                     })}
                                 </p>
                                 <p className={`text-sm font-bold ${p.change_24h >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                                    {p.change_24h >= 0 ? '+' : ''}{p.change_24h.toFixed(2)}%
+                                    {p.change_24h >= 0 ? '+' : ''}{Number(p.change_24h).toFixed(2)}%
                                 </p>
                             </div>
                         </div>
