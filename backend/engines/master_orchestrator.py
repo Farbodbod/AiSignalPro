@@ -1,4 +1,4 @@
-# engines/master_orchestrator.py (نسخه افسانه‌ای با تمام موتورها و تحلیل فارسی)
+# engines/master_orchestrator.py (نسخه نهایی با هماهنگ‌سازی کامل موتورها)
 
 import os
 import google.generativeai as genai
@@ -15,7 +15,8 @@ from .trend_analyzer import analyze_trend
 from .market_structure_analyzer import LegPivotAnalyzer
 from .strategy_engine import StrategyEngine
 from .candlestick_reader import CandlestickPatternDetector
-from .divergence_detector import DivergenceDetector
+# --- اصلاح شد: وارد کردن تابع به جای کلاس ---
+from .divergence_detector import detect_divergences 
 from .whale_analyzer import WhaleAnalyzer
 
 logger = logging.getLogger(__name__)
@@ -41,7 +42,6 @@ class MasterOrchestrator:
     def analyze_single_dataframe(self, df: pd.DataFrame, timeframe: str, symbol: str) -> Dict[str, Any]:
         raw_analysis = {"symbol": symbol, "timeframe": timeframe}
         try:
-            # اجرای تمام موتورها با مدیریت خطای مجزا برای هر کدام
             df_with_indicators = calculate_indicators(df.copy())
             latest_indicator_values = {col: df_with_indicators[col].dropna().iloc[-1] for col in df_with_indicators.columns if col not in df.columns and not df_with_indicators[col].dropna().empty}
             if not df.empty and 'close' in df.columns: latest_indicator_values['close'] = df['close'].iloc[-1]
@@ -50,7 +50,8 @@ class MasterOrchestrator:
             raw_analysis["trend"] = analyze_trend(df_with_indicators.copy(), timeframe=timeframe)
             raw_analysis["market_structure"] = LegPivotAnalyzer(df_with_indicators.copy()).analyze()
             raw_analysis["candlestick_patterns"] = CandlestickPatternDetector(df.copy()).analyze()
-            raw_analysis["divergence"] = DivergenceDetector(df_with_indicators.copy()).analyze()
+            # --- اصلاح شد: فراخوانی به صورت تابع ---
+            raw_analysis["divergence"] = detect_divergences(df_with_indicators.copy())
             raw_analysis["whale_activity"] = WhaleAnalyzer(df.copy()).analyze()
             
             strategy_engine = StrategyEngine(raw_analysis)
@@ -65,24 +66,19 @@ class MasterOrchestrator:
     async def _query_gemini_with_rate_limit(self, prompt: str) -> Dict[str, Any]:
         default_response = {"signal": "N/A", "confidence": 0, "explanation_fa": "تحلیل AI به دلیل محدودیت فراخوانی انجام نشد."}
         now = time.time()
-        if (now - self.last_gemini_call_time) < GEMINI_CALL_COOLDOWN_SECONDS:
+        if (now - self.last_gemini_call_time) < 600: # 10 minutes cooldown
             logger.info("Gemini call skipped due to rate limiting cooldown.")
             return default_response
-        
         try:
             logger.info("Querying Gemini AI for signal confirmation and explanation...")
             response = await asyncio.to_thread(self.gemini_model.generate_content, prompt)
             self.last_gemini_call_time = time.time()
-            
             cleaned_response = response.text.replace("`", "").replace("json", "").strip()
             json_response = json.loads(cleaned_response)
-            
             signal = json_response.get("signal", "HOLD").upper()
             explanation = json_response.get("explanation_fa", "توضیحات توسط AI ارائه نشد.")
             confidence = 85 if signal != "HOLD" else 50
-            
             return {"signal": signal, "confidence": confidence, "explanation_fa": explanation}
-
         except Exception as e:
             logger.error(f"Gemini API call or JSON parsing failed: {e}")
             default_response["explanation_fa"] = "خطا در پردازش پاسخ AI."
@@ -91,11 +87,9 @@ class MasterOrchestrator:
 
     async def get_multi_timeframe_signal(self, all_tf_analysis: Dict[str, Any]) -> Dict[str, Any]:
         buy_score, sell_score = 0.0, 0.0
-        
         for tf, data in all_tf_analysis.items():
             if not isinstance(data, dict): continue
             weight = TIMEFRAME_WEIGHTS.get(tf, 1)
-            
             if "Uptrend" in data.get('trend', {}).get('signal', ''): buy_score += 1.5 * weight
             if "Downtrend" in data.get('trend', {}).get('signal', ''): sell_score += 1.5 * weight
             if data.get('divergence', {}).get('rsi_bullish'): buy_score += 1.0 * weight
@@ -112,22 +106,18 @@ class MasterOrchestrator:
         gemini_confirmation = {"signal": "N/A", "confidence": 0, "explanation_fa": "تحلیل AI انجام نشد (سیگنال اولیه ضعیف بود)."}
         if final_signal != "HOLD" and self.gemini_model:
             symbol = next((data['symbol'] for data in all_tf_analysis.values() if 'symbol' in data), "N/A")
-            
             prompt = f"""
             You are an expert, senior crypto technical analyst providing analysis for a trader.
             Analyze the following JSON data for the cryptocurrency {symbol}.
             Based SOLELY on the provided data, provide your final signal recommendation and a concise, easy-to-understand explanation in Persian.
             Your analysis MUST highlight the most important technical factors and mention any conflicts between timeframes if they exist.
-
             Technical Data:
             {json.dumps(all_tf_analysis, indent=2, default=str)}
-
             Provide your response ONLY in the following JSON format. Do not add any other text or formatting.
             {{
               "signal": "BUY",
               "explanation_fa": "یک توضیح خلاصه و حرفه‌ای به زبان فارسی در اینجا بنویس."
             }}
-            
             Replace "BUY" with "SELL" or "HOLD" based on your final conclusion from the data.
             """
             gemini_confirmation = await self._query_gemini_with_rate_limit(prompt)
