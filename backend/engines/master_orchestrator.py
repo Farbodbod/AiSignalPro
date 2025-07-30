@@ -1,4 +1,4 @@
-# engines/master_orchestrator.py (نسخه نهایی با پرامپت هوشمند)
+# engines/master_orchestrator.py (نسخه افسانه‌ای با تمام موتورها و تحلیل فارسی)
 
 import os
 import google.generativeai as genai
@@ -9,16 +9,19 @@ import time
 import asyncio
 import json
 
-from engines.indicator_analyzer import calculate_indicators
-from engines.trend_analyzer import analyze_trend
-from engines.market_structure_analyzer import LegPivotAnalyzer
-from engines.strategy_engine import StrategyEngine
+# --- وارد کردن تمام موتورهای تحلیلی شما ---
+from .indicator_analyzer import calculate_indicators
+from .trend_analyzer import analyze_trend
+from .market_structure_analyzer import LegPivotAnalyzer
+from .strategy_engine import StrategyEngine
+from .candlestick_reader import CandlestickPatternDetector
+from .divergence_detector import DivergenceDetector
+from .whale_analyzer import WhaleAnalyzer
 
 logger = logging.getLogger(__name__)
 
 TIMEFRAME_WEIGHTS = {'1d': 3, '4h': 2.5, '1h': 2, '15m': 1, '5m': 0.5}
-SCORE_THRESHOLD = 4.0
-GEMINI_CALL_COOLDOWN_SECONDS = 600
+SCORE_THRESHOLD = 5.0
 
 class MasterOrchestrator:
     def __init__(self):
@@ -30,8 +33,7 @@ class MasterOrchestrator:
                 self.gemini_model = genai.GenerativeModel('gemini-1.5-flash-latest')
                 logger.info("Gemini AI model configured successfully.")
             except Exception as e:
-                self.gemini_model = None
-                logger.error(f"Failed to configure Gemini: {e}")
+                self.gemini_model = None; logger.error(f"Failed to configure Gemini: {e}")
         else:
             self.gemini_model = None
             logger.warning("GEMINI_API_KEY not found. Gemini confirmation will be disabled.")
@@ -39,16 +41,22 @@ class MasterOrchestrator:
     def analyze_single_dataframe(self, df: pd.DataFrame, timeframe: str, symbol: str) -> Dict[str, Any]:
         raw_analysis = {"symbol": symbol, "timeframe": timeframe}
         try:
+            # اجرای تمام موتورها با مدیریت خطای مجزا برای هر کدام
             df_with_indicators = calculate_indicators(df.copy())
             latest_indicator_values = {col: df_with_indicators[col].dropna().iloc[-1] for col in df_with_indicators.columns if col not in df.columns and not df_with_indicators[col].dropna().empty}
-            if not df.empty and 'close' in df.columns:
-                latest_indicator_values['close'] = df['close'].iloc[-1]
+            if not df.empty and 'close' in df.columns: latest_indicator_values['close'] = df['close'].iloc[-1]
             raw_analysis["indicators"] = latest_indicator_values
-            raw_analysis["trend"] = analyze_trend(df.copy(), timeframe=timeframe)
-            raw_analysis["market_structure"] = LegPivotAnalyzer(df.copy()).analyze()
+            
+            raw_analysis["trend"] = analyze_trend(df_with_indicators.copy(), timeframe=timeframe)
+            raw_analysis["market_structure"] = LegPivotAnalyzer(df_with_indicators.copy()).analyze()
+            raw_analysis["candlestick_patterns"] = CandlestickPatternDetector(df.copy()).analyze()
+            raw_analysis["divergence"] = DivergenceDetector(df_with_indicators.copy()).analyze()
+            raw_analysis["whale_activity"] = WhaleAnalyzer(df.copy()).analyze()
+            
             strategy_engine = StrategyEngine(raw_analysis)
             signal_type = "BUY" if "Uptrend" in raw_analysis.get("trend", {}).get('signal', '') else ("SELL" if "Downtrend" in raw_analysis.get("trend", {}).get('signal', '') else "HOLD")
             raw_analysis["strategy"] = strategy_engine.generate_strategy(signal_type)
+
         except Exception as e:
             logger.error(f"Major failure in analyze_single_dataframe for {symbol}@{timeframe}: {e}", exc_info=True)
             return {"error": str(e), "symbol": symbol, "timeframe": timeframe}
@@ -82,14 +90,21 @@ class MasterOrchestrator:
             return default_response
 
     async def get_multi_timeframe_signal(self, all_tf_analysis: Dict[str, Any]) -> Dict[str, Any]:
-        buy_score, sell_score = 0, 0
+        buy_score, sell_score = 0.0, 0.0
+        
         for tf, data in all_tf_analysis.items():
             if not isinstance(data, dict): continue
             weight = TIMEFRAME_WEIGHTS.get(tf, 1)
-            trend_signal = data.get('trend', {}).get('signal', '')
-            if "Uptrend" in trend_signal: buy_score += 1 * weight
-            if "Downtrend" in trend_signal: sell_score += 1 * weight
-        
+            
+            if "Uptrend" in data.get('trend', {}).get('signal', ''): buy_score += 1.5 * weight
+            if "Downtrend" in data.get('trend', {}).get('signal', ''): sell_score += 1.5 * weight
+            if data.get('divergence', {}).get('rsi_bullish'): buy_score += 1.0 * weight
+            if data.get('divergence', {}).get('rsi_bearish'): sell_score += 1.0 * weight
+            if any('Bullish' in p for p in data.get('candlestick_patterns', [])): buy_score += 0.5 * weight
+            if any('Bearish' in p for p in data.get('candlestick_patterns', [])): sell_score += 0.5 * weight
+            if data.get('whale_activity', {}).get('activity') == 'Accumulation': buy_score += 0.75 * weight
+            if data.get('whale_activity', {}).get('activity') == 'Distribution': sell_score += 0.75 * weight
+
         final_signal = "HOLD"
         if buy_score > sell_score and buy_score >= SCORE_THRESHOLD: final_signal = "BUY"
         elif sell_score > buy_score and sell_score >= SCORE_THRESHOLD: final_signal = "SELL"
@@ -105,7 +120,7 @@ class MasterOrchestrator:
             Your analysis MUST highlight the most important technical factors and mention any conflicts between timeframes if they exist.
 
             Technical Data:
-            {json.dumps(all_tf_analysis, indent=2)}
+            {json.dumps(all_tf_analysis, indent=2, default=str)}
 
             Provide your response ONLY in the following JSON format. Do not add any other text or formatting.
             {{
@@ -118,3 +133,4 @@ class MasterOrchestrator:
             gemini_confirmation = await self._query_gemini_with_rate_limit(prompt)
         
         return {"rule_based_signal": final_signal, "buy_score": round(buy_score, 2), "sell_score": round(sell_score, 2), "gemini_confirmation": gemini_confirmation, "details": all_tf_analysis}
+
