@@ -1,95 +1,86 @@
-# candlestick_reader.py - نسخه اصلاح شده و آماده برای بک‌اند
+# engines/candlestick_reader.py (نسخه نهایی و هوشمند مبتنی بر زمینه)
 
 import pandas as pd
 import numpy as np
-# ما دیگر به mplfinance نیازی نداریم چون در سرور قابل استفاده نیست
-# import mplfinance as mpf
-from datetime import datetime
+from typing import Dict, Any, List
 
 class CandlestickPatternDetector:
-    # مشکل اول در اینجا اصلاح شد: init -> __init__
-    def __init__(self, df):
+    def __init__(self, df: pd.DataFrame, analysis_context: Dict[str, Any]):
+        """
+        این نسخه جدید، علاوه بر دیتافریم، به زمینه تحلیلی (شامل روند و پیوت ها) نیز دسترسی دارد.
+        """
         if not isinstance(df, pd.DataFrame) or df.empty:
             raise ValueError("Input must be a non-empty pandas DataFrame.")
         
-        required_columns = {'timestamp', 'open', 'high', 'low', 'close', 'volume'}
-        if not required_columns.issubset(df.columns):
-            raise ValueError(f"DataFrame must contain columns: {required_columns}")
-
-        self.df = df.copy()
+        self.df = df.copy().reset_index(drop=True)
+        self.context = analysis_context
         self.patterns = []
+        # استخراج داده های مورد نیاز از کانتکست
+        self.trend_signal = self.context.get("trend", {}).get("signal", "Neutral")
+        self.pivots = self.context.get("market_structure", {}).get("pivots", [])
+        self.atr = self.context.get("indicators", {}).get("atr", 0)
+        if self.atr == 0: # Fallback in case ATR is not calculated
+            self.atr = (self.df['high'] - self.df['low']).mean()
 
-    def detect_patterns(self):
+    def _is_near_pivot(self, index: int) -> bool:
+        """بررسی می کند که آیا کندل در نزدیکی یک سطح پیوت مهم قرار دارد یا خیر."""
+        if not self.pivots or self.atr == 0:
+            return False
+        
+        current_price = self.df.iloc[index]['close']
+        for p_index, p_price, p_strength in self.pivots:
+            # اگر الگو در فاصله کمتر از نصف ATR از یک پیوت باشد، معتبر است
+            if abs(current_price - p_price) < (self.atr * 0.5):
+                return True
+        return False
+
+    def detect_high_quality_patterns(self) -> List[str]:
+        """
+        فقط الگوهایی را شناسایی می کند که با روند کلی همسو باشند یا در نقاط استراتژیک (پیوت) تشکیل شوند.
+        """
         self.patterns = []
+        is_uptrend = "Uptrend" in self.trend_signal
+        is_downtrend = "Downtrend" in self.trend_signal
+
         for i in range(2, len(self.df)):
-            row = self.df.iloc[i]
-            prev = self.df.iloc[i-1]
-            prev2 = self.df.iloc[i-2]
+            row = self.df.iloc[i]; prev = self.df.iloc[i-1]; prev2 = self.df.iloc[i-2]
+            body = abs(row['close'] - row['open']); total_range = row['high'] - row['low']
+            if total_range == 0: continue
 
-            body = abs(row['close'] - row['open'])
-            upper_shadow = row['high'] - max(row['close'], row['open'])
-            lower_shadow = min(row['close'], row['open']) - row['low']
-            total_range = row['high'] - row['low']
-            if total_range == 0: continue # از تقسیم بر صفر جلوگیری می‌کند
+            pattern_info = None
 
-            pattern = None
-            score = 0
+            # --- الگوهای صعودی (فقط در روند صعودی یا در نزدیکی پیوت بررسی می شوند) ---
+            if is_uptrend or self._is_near_pivot(i):
+                is_bullish_engulfing = prev['close'] < prev['open'] and row['close'] > row['open'] and row['close'] >= prev['open'] and row['open'] <= prev['close']
+                if is_bullish_engulfing:
+                    pattern_info = {"pattern": "Bullish Engulfing"}
 
-            # الگوهای پوشا (Engulfing)
-            is_bullish_engulfing = row['close'] > prev['open'] and row['open'] < prev['close'] and prev['close'] < prev['open'] and row['close'] > row['open']
-            is_bearish_engulfing = row['open'] > prev['close'] and row['close'] < prev['open'] and prev['close'] > prev['open'] and row['close'] < row['open']
+                lower_shadow = min(row['close'], row['open']) - row['low']
+                if body / total_range < 0.3 and lower_shadow > 2 * body:
+                    pattern_info = {"pattern": "Hammer"}
+                
+                is_morning_star = prev2['close'] < prev2['open'] and abs(prev['close'] - prev['open']) < abs(prev2['open'] - prev2['close']) * 0.3 and row['close'] > row['open'] and row['close'] > (prev2['open'] + prev2['close']) / 2
+                if is_morning_star:
+                    pattern_info = {"pattern": "Morning Star"}
 
-            if is_bullish_engulfing:
-                pattern, score = "Bullish Engulfing", 1.5
-            elif is_bearish_engulfing:
-                pattern, score = "Bearish Engulfing", 1.5
-            # چکش (Hammer)
-            elif body / total_range < 0.3 and lower_shadow > 2 * body and upper_shadow < body:
-                pattern, score = "Hammer", 1.2
-            # چکش معکوس (Inverted Hammer)
-            elif body / total_range < 0.3 and upper_shadow > 2 * body and lower_shadow < body:
-                pattern, score = "Inverted Hammer", 1.2
-            # ستاره صبحگاهی (Morning Star)
-            elif prev2['close'] < prev2['open'] and abs(prev['close'] - prev['open']) < abs(prev2['open'] - prev2['close']) * 0.3 and row['close'] > row['open'] and row['close'] > (prev2['open'] + prev2['close']) / 2:
-                pattern, score = "Morning Star", 2.0
-            # ستاره عصرگاهی (Evening Star)
-            elif prev2['close'] > prev2['open'] and abs(prev['close'] - prev['open']) < abs(prev2['close'] - prev2['open']) * 0.3 and row['close'] < row['open'] and row['close'] < (prev2['open'] + prev2['close']) / 2:
-                pattern, score = "Evening Star", 2.0
-            # ستاره ثاقب (Shooting Star)
-            elif body / total_range < 0.3 and upper_shadow > 2 * body and row['open'] > row['low'] and row['close'] < row['open']:
-                pattern, score = "Shooting Star", 1.3
-             # دوجی (Doji)
-            elif body / total_range < 0.05:
-                pattern, score = "Doji", 1.0
+            # --- الگوهای نزولی (فقط در روند نزولی یا در نزدیکی پیوت بررسی می شوند) ---
+            if is_downtrend or self._is_near_pivot(i):
+                is_bearish_engulfing = prev['close'] > prev['open'] and row['close'] < row['open'] and row['close'] <= prev['open'] and row['open'] >= prev['close']
+                if is_bearish_engulfing:
+                    pattern_info = {"pattern": "Bearish Engulfing"}
 
+                upper_shadow = row['high'] - max(row['close'], row['open'])
+                if body / total_range < 0.3 and upper_shadow > 2 * body:
+                    pattern_info = {"pattern": "Shooting Star"}
+                
+                is_evening_star = prev2['close'] > prev2['open'] and abs(prev['close'] - prev['open']) < abs(prev2['close'] - prev2['open']) * 0.3 and row['close'] < row['open'] and row['close'] < (prev2['open'] + prev2['close']) / 2
+                if is_evening_star:
+                    pattern_info = {"pattern": "Evening Star"}
 
-            if pattern:
-                self.patterns.append({
-                    "index": i,
-                    "timestamp": self.df.iloc[i]['timestamp'],
-                    "pattern": pattern,
-                    "score": score,
-                    "volume": row['volume']
-                })
-        return self.patterns
-
-    def apply_filters(self, min_score=1.2, min_volume_ratio=1.0):
-        if not self.patterns:
-            self.detect_patterns()
-
-        volume_mean = self.df['volume'].rolling(window=20).mean()
-        filtered_patterns = []
-
-        for p in self.patterns:
-            if p['pattern'] is None:
-                continue
-            
-            vol = p['volume']
-            vol_avg = volume_mean.iloc[p['index']]
-            
-            if vol_avg > 0 and p['score'] >= min_score and vol > (vol_avg * min_volume_ratio):
-                filtered_patterns.append(p)
-
-        return filtered_patterns
-
-    # متد visualize حذف شد چون در سرور قابل استفاده نیست
+            # --- اعمال فیلتر نهایی بر اساس حجم و اضافه کردن الگوی معتبر ---
+            if pattern_info:
+                avg_volume = self.df['volume'].rolling(window=20).mean().iloc[i]
+                if pd.notna(avg_volume) and avg_volume > 0 and row['volume'] > avg_volume * 1.1: # فیلتر حجم
+                    self.patterns.append(pattern_info['pattern'])
+        
+        return list(set(self.patterns)) # حذف موارد تکراری
