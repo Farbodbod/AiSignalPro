@@ -1,5 +1,3 @@
-# engines/signal_adapter.py (نسخه نهایی - با معماری تمیز و بهبود‌یافته)
-
 from typing import Dict, Any, Optional, List
 from datetime import datetime
 import uuid
@@ -11,7 +9,8 @@ class SignalAdapter:
         self.details = self.analytics.get("details", {})
 
     def _get_primary_data(self, key: str, default: Any = None):
-        if not self.details: return default
+        if not self.details:
+            return default
         for tf in ['1h', '4h', '1d', '15m', '5m']:
             if tf in self.details and isinstance(self.details.get(tf), dict):
                 if key in self.details[tf] and self.details[tf].get(key) is not None:
@@ -24,35 +23,42 @@ class SignalAdapter:
     def _aggregate_reasons(self) -> List[str]:
         reasons = set()
         for tf, analysis in self.details.items():
-            if not isinstance(analysis, dict): continue
-            
-            if "Uptrend" in analysis.get('trend', {}).get('signal', ''): reasons.add(f"Uptrend on {tf}")
-            if "Downtrend" in analysis.get('trend', {}).get('signal', ''): reasons.add(f"Downtrend on {tf}")
-            if analysis.get('divergence', {}).get('rsi_bullish'): reasons.add(f"Bullish RSI Divergence on {tf}")
-            if analysis.get('divergence', {}).get('rsi_bearish'): reasons.add(f"Bearish RSI Divergence on {tf}")
-            
-            whale_activity = analysis.get('whale_activity', {}).get('activity') or analysis.get('whale_activity', {}).get('type')
-            if whale_activity == 'volume_spike': reasons.add(f"Whale Volume Spike on {tf}")
-            if whale_activity == 'anomaly': reasons.add(f"Whale Anomaly Detected on {tf}")
-
+            if not isinstance(analysis, dict):
+                continue
+            if "Uptrend" in analysis.get('trend', {}).get('signal', ''):
+                reasons.add(f"Uptrend on {tf}")
+            if "Downtrend" in analysis.get('trend', {}).get('signal', ''):
+                reasons.add(f"Downtrend on {tf}")
+            if analysis.get('divergence', {}).get('rsi_bullish'):
+                reasons.add(f"Bullish RSI Divergence on {tf}")
+            if analysis.get('divergence', {}).get('rsi_bearish'):
+                reasons.add(f"Bearish RSI Divergence on {tf}")
+            whale_activity = analysis.get('whale_activity', {}).get('type') or analysis.get('whale_activity', {}).get('activity')
+            if whale_activity == 'volume_spike':
+                reasons.add(f"Whale Volume Spike on {tf}")
+            if whale_activity == 'anomaly':
+                reasons.add(f"Whale Anomaly Detected on {tf}")
             for pattern in analysis.get('patterns', []):
                 reasons.add(f"{pattern} on {tf}")
-
         return sorted(list(reasons))
 
     def _determine_final_signal(self) -> str:
         rule_based_signal = self.analytics.get("rule_based_signal", "HOLD")
         ai_signal = self.ai_confirmation.get("signal", "HOLD").upper()
-        if ai_signal in ["N/A", "ERROR"]: ai_signal = "HOLD"
-
+        if ai_signal in ["N/A", "ERROR"]:
+            ai_signal = "HOLD"
         if rule_based_signal == "HOLD":
             return "HOLD"
+        is_contradictory = (
+            (rule_based_signal == "BUY" and ai_signal == "SELL") or
+            (rule_based_signal == "SELL" and ai_signal == "BUY")
+        )
+        return "HOLD" if is_contradictory else rule_based_signal
 
-        is_contradictory = (rule_based_signal == "BUY" and ai_signal == "SELL") or (rule_based_signal == "SELL" and ai_signal == "BUY")
-        return rule_based_signal if not is_contradictory else "HOLD"
-
-    def _build_output_payload(self, final_signal: str) -> Optional[Dict[str, Any]]:
-        if final_signal == "HOLD": return None
+    def generate_final_signal(self) -> Optional[Dict[str, Any]]:
+        final_signal = self._determine_final_signal()
+        if final_signal == "HOLD":
+            return None
 
         strategy_data, primary_tf_with_strategy = {}, None
         for tf in ['1h', '4h', '1d', '15m', '5m']:
@@ -62,14 +68,16 @@ class SignalAdapter:
                 primary_tf_with_strategy = tf
                 break
 
-        if not strategy_data: return None
+        if not strategy_data:
+            return None
 
         symbol = self._get_primary_data("symbol", "N/A")
-        if symbol == "N/A": return None
+        if symbol == "N/A":
+            return None
 
         aggregated_reasons = self._aggregate_reasons()
 
-        return {
+        final_payload = {
             "signal_id": str(uuid.uuid4()),
             "symbol": symbol,
             "timeframe": primary_tf_with_strategy,
@@ -84,10 +92,7 @@ class SignalAdapter:
             "reasons": aggregated_reasons or ["Score Based Analysis"],
             "explanation_fa": self.ai_confirmation.get("explanation_fa", "توضیحات AI در دسترس نیست."),
             "issued_at": datetime.utcnow().replace(microsecond=0).isoformat() + "Z",
-            "timeframes_analyzed": list(self.details.keys()),
-            "raw_analysis_details": self.analytics
+            "timeframes_analyzed": list(self.details.keys())
         }
 
-    def generate_final_signal(self) -> Optional[Dict[str, Any]]:
-        final_signal = self._determine_final_signal()
-        return self._build_output_payload(final_signal)
+        return final_payload
