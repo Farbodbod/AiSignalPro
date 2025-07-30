@@ -1,4 +1,4 @@
-# core/exchange_fetcher.py (نسخه 3.0 - نرمال‌سازی مقاوم)
+# core/exchange_fetcher.py (نسخه 3.1 - اصلاح نهایی kline fetcher)
 
 import asyncio
 import os
@@ -20,11 +20,11 @@ SYMBOL_MAP = {'BTC': {'base': 'BTC', 'quote': 'USDT'}, 'ETH': {'base': 'ETH', 'q
 
 class ExchangeFetcher:
     def __init__(self, cache_ttl: int = 60):
-        headers = {'User-Agent': 'AiSignalPro/3.0.0', 'Accept': 'application/json'}
+        headers = {'User-Agent': 'AiSignalPro/3.1.0', 'Accept': 'application/json'}
         self.client = httpx.AsyncClient(headers=headers, timeout=20, follow_redirects=True)
         self.cache = {}
         self.cache_ttl = cache_ttl
-        logging.info("ExchangeFetcher (Resilient Edition v3.0) initialized.")
+        logging.info("ExchangeFetcher (Resilient Edition v3.1) initialized.")
 
     def _get_cache_key(self, prefix: str, exchange: str, symbol: str, timeframe: Optional[str] = None) -> str:
         key = f"{prefix}:{exchange}:{symbol}";
@@ -53,30 +53,17 @@ class ExchangeFetcher:
         response.raise_for_status();
         return response.json()
 
-    # --- اصلاح شد: تابع نرمال‌سازی اکنون بسیار مقاوم‌تر است ---
     def _normalize_kline_data(self, data: List[list], source: str) -> List[Dict[str, Any]]:
         if not data: return []
-        
         normalized_data = []
         if source == 'okx': data.reverse()
-            
         for k in data:
             try:
-                # هر کندل را به صورت جداگانه بررسی می‌کنیم
-                candle = {
-                    "timestamp": int(k[0]),
-                    "open": float(k[1]),
-                    "high": float(k[2]),
-                    "low": float(k[3]),
-                    "close": float(k[4]),
-                    "volume": float(k[5])
-                }
+                candle = {"timestamp": int(k[0]), "open": float(k[1]), "high": float(k[2]), "low": float(k[3]), "close": float(k[4]), "volume": float(k[5])}
                 normalized_data.append(candle)
-            except (ValueError, TypeError, IndexError) as e:
-                # اگر یک کندل مشکل داشت، آن را نادیده گرفته و به بعدی می‌رویم
-                logging.warning(f"Skipping malformed candle from {source}: {k}. Reason: {e}")
+            except (ValueError, TypeError, IndexError):
+                logging.warning(f"Skipping malformed candle from {source}: {k}")
                 continue
-                
         return normalized_data
 
     async def get_klines_from_one_exchange(self, exchange: str, symbol: str, timeframe: str, limit: int = 200) -> Optional[List[Dict]]:
@@ -98,65 +85,67 @@ class ExchangeFetcher:
         logging.warning(f"Final attempt failed for klines from {exchange} on {symbol}@{timeframe}.");
         return None
         
+    # --- اصلاح شد: بازنویسی کامل برای حذف task.get_name() ---
     async def get_first_successful_klines(self, symbol: str, timeframe:str) -> Optional[Tuple[pd.DataFrame, str]]:
         exchanges = ['mexc', 'kucoin', 'okx']
-        tasks = [asyncio.create_task(self.get_klines_from_one_exchange(ex, symbol, timeframe), name=ex) for ex in exchanges]
-        for task in asyncio.as_completed(tasks):
-            try:
-                result = await task;
-                if result: source_exchange = task.get_name(); logging.info(f"Klines acquired from '{source_exchange}' for {symbol}@{timeframe}."); return pd.DataFrame(result), source_exchange
-            except Exception as e:
-                logging.error(f"Task for {task.get_name()} failed unexpectedly: {e}", exc_info=False)
-        logging.error(f"Critical Failure: Could not fetch klines for {symbol}@{timeframe} from any available exchange.");
+        
+        async def fetch_and_tag(exchange: str):
+            """یک wrapper که نام صرافی را همراه با نتیجه برمی‌گرداند."""
+            result = await self.get_klines_from_one_exchange(exchange, symbol, timeframe)
+            if result:
+                return exchange, pd.DataFrame(result)
+            return None
+
+        tasks = [asyncio.create_task(fetch_and_tag(ex)) for ex in exchanges]
+        
+        try:
+            for future in asyncio.as_completed(tasks):
+                result_tuple = await future
+                if result_tuple:
+                    for task in tasks:
+                        if not task.done():
+                            task.cancel()
+                    
+                    source_exchange, df = result_tuple
+                    logging.info(f"Klines acquired from '{source_exchange}' for {symbol}@{timeframe}.")
+                    return df, source_exchange
+        except asyncio.CancelledError:
+             logging.info(f"Kline fetch tasks for {symbol} cancelled as a successful one was completed.")
+        except Exception as e:
+            logging.error(f"An unexpected error in get_first_successful_klines: {e}")
+
+        logging.error(f"Critical Failure: Could not fetch klines for {symbol}@{timeframe} from any exchange.");
         return None, None
         
     async def get_ticker_from_one_exchange(self, exchange: str, symbol: str) -> Optional[Dict]:
         cache_key = self._get_cache_key("ticker", exchange, symbol)
         if cache_key in self.cache and (time.time() - self.cache[cache_key]['timestamp']) < 15:
             return self.cache[cache_key]['data']
-
-        config = EXCHANGE_CONFIG.get(exchange)
-        formatted_symbol = self._format_symbol(symbol, exchange)
-        if not all([config, formatted_symbol, 'ticker_endpoint' in config]):
-            return None
-
-        url = config['base_url'] + config['ticker_endpoint']
+        config = EXCHANGE_CONFIG.get(exchange); formatted_symbol = self._format_symbol(symbol, exchange);
+        if not all([config, formatted_symbol, 'ticker_endpoint' in config]): return None
+        url = config['base_url'] + config['ticker_endpoint'];
         params = {'instId': formatted_symbol} if exchange == 'okx' else {'symbol': formatted_symbol}
-        
-        raw_data = await self._safe_async_request('GET', url, params=params, exchange_name=exchange)
+        raw_data = await self._safe_async_request('GET', url, params=params, exchange_name=exchange);
         if raw_data:
             price, change = 0.0, 0.0
             try:
                 if exchange == 'mexc':
                     data = raw_data[0] if isinstance(raw_data, list) and raw_data else raw_data
-                    price = float(data.get('lastPrice', 0))
-                    change = float(data.get('priceChangePercent', 0)) * 100
+                    price = float(data.get('lastPrice', 0)); change = float(data.get('priceChangePercent', 0)) * 100
                 elif exchange == 'kucoin' and raw_data.get('data'):
-                    data = raw_data['data']
-                    price = float(data.get('last', 0))
-                    change = float(data.get('changeRate', 0)) * 100
+                    data = raw_data['data']; price = float(data.get('last', 0)); change = float(data.get('changeRate', 0)) * 100
                 elif exchange == 'okx' and raw_data.get('data'):
-                    data = raw_data['data'][0]
-                    price = float(data.get('last', 0))
-                    open_price_24h = float(data.get('open24h', 0))
-                    if open_price_24h > 0:
-                        change = ((price - open_price_24h) / open_price_24h) * 100
-                    else:
-                        change = 0.0
-
+                    data = raw_data['data'][0]; price = float(data.get('last', 0));
+                    open_price_24h = float(data.get('open24h', 0));
+                    if open_price_24h > 0: change = ((price - open_price_24h) / open_price_24h) * 100
+                    else: change = 0.0
                 if price > 0:
-                    result = {'price': price, 'change_24h': change, 'source': exchange, 'symbol': symbol}
-                    logging.info(f"✅ Final Ticker Data: {result}")
-                    self.cache[cache_key] = {'timestamp': time.time(), 'data': result}
-                    return result
-                else:
-                    logging.warning(f"Price returned as 0 for {exchange} on {symbol}. Trying next exchange.")
-                    return None
-
+                    result = {'price': price, 'change_24h': change, 'source': exchange, 'symbol': symbol};
+                    self.cache[cache_key] = {'timestamp': time.time(), 'data': result}; return result
+                else: return None
             except (ValueError, TypeError, IndexError, KeyError) as e:
                  logging.warning(f"Ticker data normalization failed for {exchange} on {symbol}: {e}")
-
-        logging.warning(f"Final attempt failed for ticker from {exchange} on {symbol}.")
+        logging.warning(f"Final attempt failed for ticker from {exchange} on {symbol}.");
         return None
 
     async def get_first_successful_ticker(self, symbol: str) -> Optional[Dict]:
