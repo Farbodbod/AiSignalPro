@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 ENGINE_VERSION = "5.1.0"
 TIMEFRAME_WEIGHTS = {'1d': 3, '4h': 2.5, '1h': 2, '15m': 1, '5m': 0.5}
 SCORE_THRESHOLD = 5.0
-GEMINI_CALL_COOLDOWN_SECONDS = 600
+GEMINI_CALL_COOLDOWN_SECONDS = 900
 
 class MasterOrchestrator:
     def __init__(self):
