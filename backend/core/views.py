@@ -1,4 +1,4 @@
-# core/views.py (نسخه نهایی با اصلاح باگ price_ticker_view)
+# core/views.py (هماهنگ شده با SignalAdapter جدید)
 
 import asyncio
 import logging
@@ -62,8 +62,11 @@ async def get_composite_signal_view(request):
             return JsonResponse({"status": "NO_DATA", "message": f"Could not fetch market data for {symbol}."})
         final_result = await orchestrator.get_multi_timeframe_signal(all_tf_analysis)
         adapter = SignalAdapter(analytics_output=final_result)
-        final_signal_object = adapter.combine()
-        if not final_signal_object or final_signal_object.get("signal_type") == "HOLD":
+
+        # --- اصلاح شد: استفاده از نام متد جدید ---
+        final_signal_object = adapter.generate_final_signal()
+
+        if not final_signal_object:
             return JsonResponse({"status": "NEUTRAL", "message": "Market is neutral.", "details": convert_numpy_types(final_result)})
         return JsonResponse({"status": "SUCCESS", "signal": convert_numpy_types(final_signal_object)})
     except Exception as e:
@@ -84,20 +87,3 @@ async def list_open_trades_view(request):
     except Exception as e:
         logger.error(f"Error in list_open_trades_view: {e}")
         return JsonResponse({'error': str(e)}, status=500)
-
-async def price_ticker_view(request):
-    fetcher = ExchangeFetcher()
-    symbols_to_fetch = ['BTC', 'ETH', 'XRP', 'SOL', 'DOGE']
-    try:
-        tasks = [fetcher.get_first_successful_ticker(sym) for sym in symbols_to_fetch]
-        results = await asyncio.gather(*tasks)
-        
-        # --- اصلاح شد: حذف حلقه معیوب و فیلتر کردن نتایج ناموفق ---
-        successful_results = [res for res in results if res is not None]
-        
-        return JsonResponse(successful_results, safe=False)
-    except Exception as e:
-        logger.error(f"Error in price_ticker_view: {e}", exc_info=True)
-        return JsonResponse({"error": "Failed to fetch ticker data"}, status=500)
-    finally:
-        await fetcher.close()
