@@ -1,4 +1,4 @@
-# engines/master_orchestrator.py (نسخه نهایی با هماهنگ‌سازی کامل موتورها)
+# engines/master_orchestrator.py (نسخه نهایی با هماهنگ‌سازی کامل و بی‌نقص موتورها)
 
 import os
 import google.generativeai as genai
@@ -9,6 +9,7 @@ import time
 import asyncio
 import json
 
+# --- وارد کردن تمام موتورهای تحلیلی شما ---
 from .indicator_analyzer import calculate_indicators
 from .trend_analyzer import analyze_trend
 from .market_structure_analyzer import LegPivotAnalyzer
@@ -38,7 +39,8 @@ class MasterOrchestrator:
             logger.warning("GEMINI_API_KEY not found. Gemini confirmation will be disabled.")
 
     def analyze_single_dataframe(self, df: pd.DataFrame, timeframe: str, symbol: str) -> Dict[str, Any]:
-        raw_analysis = {"symbol": symbol, "timeframe": timeframe}
+        # در این تابع، تحلیل‌های پایه‌ای که روی یک دیتافریم تکی کار می‌کنند، اجرا می‌شوند.
+        raw_analysis = {"symbol": symbol, "timeframe": timeframe, "dataframe": df} # دیتافریم اصلی را برای استفاده‌های بعدی نگه می‌داریم
         try:
             df_with_indicators = calculate_indicators(df.copy())
             latest_indicator_values = {col: df_with_indicators[col].dropna().iloc[-1] for col in df_with_indicators.columns if col not in df.columns and not df_with_indicators[col].dropna().empty}
@@ -48,11 +50,13 @@ class MasterOrchestrator:
             raw_analysis["trend"] = analyze_trend(df_with_indicators.copy(), timeframe=timeframe)
             raw_analysis["market_structure"] = LegPivotAnalyzer(df_with_indicators.copy()).analyze()
             
-            # --- اصلاح شد: استفاده از متد و کلید صحیح ---
-            raw_analysis["patterns"] = CandlestickPatternDetector(df.copy()).detect_patterns()
-            
+            # --- اصلاح شد: استفاده از متد و کلید صحیح برای موتور کندل ---
+            patterns_result = CandlestickPatternDetector(df.copy()).detect_patterns()
+            raw_analysis["patterns"] = [p['pattern'] for p in patterns_result]
+
             raw_analysis["divergence"] = detect_divergences(df_with_indicators.copy())
-            raw_analysis["whale_activity"] = WhaleAnalyzer(df.copy()).analyze()
+            
+            # تحلیل نهنگ‌ها از این تابع حذف و به get_multi_timeframe_signal منتقل شد
             
             strategy_engine = StrategyEngine(raw_analysis)
             signal_type = "BUY" if "Uptrend" in raw_analysis.get("trend", {}).get('signal', '') else ("SELL" if "Downtrend" in raw_analysis.get("trend", {}).get('signal', '') else "HOLD")
@@ -87,18 +91,40 @@ class MasterOrchestrator:
 
     async def get_multi_timeframe_signal(self, all_tf_analysis: Dict[str, Any]) -> Dict[str, Any]:
         buy_score, sell_score = 0.0, 0.0
+        
+        # --- اصلاح شد: معماری جدید برای اجرای موتورهای چند-تایم‌فریمی ---
+        try:
+            whale_analyzer = WhaleAnalyzer()
+            for tf, data in all_tf_analysis.items():
+                if isinstance(data, dict) and "dataframe" in data:
+                    whale_analyzer.update_data(tf, data["dataframe"])
+            
+            whale_analyzer.generate_signals()
+            whale_signals = whale_analyzer.get_signals()
+            
+            # اضافه کردن نتایج تحلیل نهنگ‌ها به ساختار داده اصلی
+            for tf, signals in whale_signals.items():
+                if tf in all_tf_analysis and signals:
+                    # برای سادگی، فقط آخرین سیگنال نهنگ را در نظر می‌گیریم
+                    all_tf_analysis[tf]['whale_activity'] = signals[-1]
+        except Exception as e:
+            logger.error(f"Whale analysis failed: {e}")
+
+
         for tf, data in all_tf_analysis.items():
-            if not isinstance(data, dict) or "error" in data: continue # از تحلیل تایم‌فریم‌های ناموفق صرف نظر کن
+            if not isinstance(data, dict) or "error" in data: continue
             weight = TIMEFRAME_WEIGHTS.get(tf, 1)
             if "Uptrend" in data.get('trend', {}).get('signal', ''): buy_score += 1.5 * weight
             if "Downtrend" in data.get('trend', {}).get('signal', ''): sell_score += 1.5 * weight
             if data.get('divergence', {}).get('rsi_bullish'): buy_score += 1.0 * weight
             if data.get('divergence', {}).get('rsi_bearish'): sell_score += 1.0 * weight
-            # --- اصلاح شد: خواندن از کلید صحیح patterns ---
             if any('Bullish' in p for p in data.get('patterns', [])): buy_score += 0.5 * weight
             if any('Bearish' in p for p in data.get('patterns', [])): sell_score += 0.5 * weight
-            if data.get('whale_activity', {}).get('activity') == 'Accumulation': buy_score += 0.75 * weight
-            if data.get('whale_activity', {}).get('activity') == 'Distribution': sell_score += 0.75 * weight
+            # امتیازدهی بر اساس نوع سیگنال نهنگ (نه فقط وجود فعالیت)
+            whale_signal_type = data.get('whale_activity', {}).get('type')
+            if whale_signal_type == 'volume_spike': buy_score += 0.75 * weight
+            if whale_signal_type == 'anomaly': sell_score += 0.75 * weight
+
 
         final_signal = "HOLD"
         if buy_score > sell_score and buy_score >= SCORE_THRESHOLD: final_signal = "BUY"
