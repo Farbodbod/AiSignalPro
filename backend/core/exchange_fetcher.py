@@ -1,4 +1,4 @@
-# core/exchange_fetcher.py (نسخه 2.7 - اصلاح نهایی درصد تمام صرافی‌ها)
+# core/exchange_fetcher.py (نسخه 2.8 - اصلاح نهایی درصد OKX بر اساس تحقیقات کاربر)
 
 import asyncio
 import os
@@ -20,11 +20,11 @@ SYMBOL_MAP = {'BTC': {'base': 'BTC', 'quote': 'USDT'}, 'ETH': {'base': 'ETH', 'q
 
 class ExchangeFetcher:
     def __init__(self, cache_ttl: int = 60):
-        headers = {'User-Agent': 'AiSignalPro/2.7.0', 'Accept': 'application/json'}
+        headers = {'User-Agent': 'AiSignalPro/2.8.0', 'Accept': 'application/json'}
         self.client = httpx.AsyncClient(headers=headers, timeout=20, follow_redirects=True)
         self.cache = {}
         self.cache_ttl = cache_ttl
-        logging.info("ExchangeFetcher (Legendary Edition v2.7) initialized.")
+        logging.info("ExchangeFetcher (Legendary Edition v2.8) initialized.")
 
     def _get_cache_key(self, prefix: str, exchange: str, symbol: str, timeframe: Optional[str] = None) -> str:
         key = f"{prefix}:{exchange}:{symbol}";
@@ -109,17 +109,16 @@ class ExchangeFetcher:
                 if exchange == 'mexc':
                     data = raw_data[0] if isinstance(raw_data, list) and raw_data else raw_data
                     price = float(data.get('lastPrice', 0))
-                    # --- اصلاح شد: درصد MEXC نیز باید در 100 ضرب شود ---
-                    change = float(data.get('priceChangePercent', 0)) * 100
+                    change = float(data.get('priceChangePercent', 0)) * 100 # صحیح: MEXC نرخ می‌دهد
                 elif exchange == 'kucoin' and raw_data.get('data'):
                     data = raw_data['data']
                     price = float(data.get('last', 0))
-                    change = float(data.get('changeRate', 0)) * 100
+                    change = float(data.get('changeRate', 0)) * 100 # صحیح: KuCoin نرخ می‌دهد
                 elif exchange == 'okx' and raw_data.get('data'):
                     data = raw_data['data'][0]
                     price = float(data.get('last', 0))
-                    # --- اصلاح شد: درصد OKX نیز باید در 100 ضرب شود ---
-                    change = float(data.get('chg24h', 0)) * 100
+                    # --- اصلاح نهایی بر اساس تحقیق شما ---
+                    change = float(data.get('chg24h', 0)) # صحیح: OKX درصد کامل می‌دهد و نباید ضرب شود
 
                 if price > 0:
                     result = {'price': price, 'change_24h': change, 'source': exchange, 'symbol': symbol}
