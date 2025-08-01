@@ -22,3 +22,4 @@ pytz
 uvicorn
 gunicorn
 #forcing deploy v1.6
+#final sync v2.0
