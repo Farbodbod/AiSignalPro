@@ -13,16 +13,18 @@ class SignalAdapter:
     def _calculate_valid_until(self, timeframe: str) -> str:
         """زمان اعتبار سیگنال را بر اساس تایم فریم محاسبه می‌کند."""
         now = datetime.utcnow()
-        if timeframe == '5m':
-            valid_until = now + timedelta(minutes=30)
-        elif timeframe == '15m':
-            valid_until = now + timedelta(hours=2)
-        elif timeframe == '1h':
-            valid_until = now + timedelta(hours=6)
-        elif timeframe == '4h':
-            valid_until = now + timedelta(hours=24)
-        else:
-            valid_until = now + timedelta(days=2)
+        if 'm' in timeframe:
+            minutes = int(timeframe.replace('m', ''))
+            # اعتبار سیگنال های کوتاه مدت حدود ۶ کندل بعدی است
+            valid_until = now + timedelta(minutes=minutes * 6)
+        elif 'h' in timeframe:
+            hours = int(timeframe.replace('h', ''))
+            valid_until = now + timedelta(hours=hours * 6)
+        elif 'd' in timeframe:
+            days = int(timeframe.replace('d', ''))
+            valid_until = now + timedelta(days=days * 2)
+        else: # Fallback
+            valid_until = now + timedelta(hours=4)
         return valid_until.replace(microsecond=0).isoformat() + "Z"
 
     def generate_final_signal(self) -> Optional[Dict[str, Any]]:
@@ -36,8 +38,10 @@ class SignalAdapter:
         if final_signal == "HOLD": return None
 
         strategy_data, primary_tf_with_strategy = {}, None
-        for tf in ['1h', '4h', '1d', '15m', '5m']:
+        # اولویت با تایم فریم های بالاتر برای یافتن استراتژی معتبر
+        for tf in ['4h', '1h', '15m', '5m']:
             current_strategy = self.details.get(tf, {}).get("strategy", {})
+            # یک استراتژی معتبر باید تارگت داشته باشد
             if current_strategy and current_strategy.get("targets"):
                 strategy_data = current_strategy; primary_tf_with_strategy = tf; break
         
@@ -56,8 +60,8 @@ class SignalAdapter:
             "targets": strategy_data.get("targets", []),
             "stop_loss": strategy_data.get("stop_loss"),
             "risk_reward_ratio": strategy_data.get("risk_reward_ratio"),
-            "strategy_name": strategy_data.get("strategy_name", "Pivot Reversion"), # <-- برچسب استراتژی
-            "valid_until": self._calculate_valid_until(primary_tf_with_strategy), # <-- زمان اعتبار
+            "strategy_name": strategy_data.get("strategy_name", "Pivot Reversion"),
+            "valid_until": self._calculate_valid_until(primary_tf_with_strategy),
             "ai_confidence_percent": self.ai_confirmation.get("confidence", 0),
             "system_confidence_percent": round(abs(self.analytics.get("buy_score", 0) - self.analytics.get("sell_score", 0)) * 10, 2),
             "explanation_fa": self.ai_confirmation.get("explanation_fa", "AI analysis not available."),
