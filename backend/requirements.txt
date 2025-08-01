@@ -21,3 +21,4 @@ jdatetime
 pytz
 uvicorn
 gunicorn
+forcing deploy v1.6
