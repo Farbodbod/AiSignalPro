@@ -1,8 +1,11 @@
-# engines/signal_adapter.py (نسخه 9.0 هماهنگ با استراتژی شکست)
+# engines/signal_adapter.py (نسخه نهایی هماهنگ با تمام استراتژی‌ها)
 
 from typing import Dict, Any, Optional, List
 from datetime import datetime, timedelta
 import uuid
+import logging
+
+logger = logging.getLogger(__name__)
 
 class SignalAdapter:
     def __init__(self, analytics_output: Dict[str, Any], **kwargs):
@@ -11,19 +14,23 @@ class SignalAdapter:
         self.details = self.analytics.get("details", {})
 
     def _calculate_valid_until(self, timeframe: str) -> str:
+        """زمان اعتبار سیگنال را بر اساس تایم فریم محاسبه می‌کند."""
         now = datetime.utcnow()
-        if 'm' in timeframe:
-            minutes = int(timeframe.replace('m', ''))
-            valid_until = now + timedelta(minutes=minutes * 6)
-        elif 'h' in timeframe:
-            hours = int(timeframe.replace('h', ''))
-            valid_until = now + timedelta(hours=hours * 6)
-        elif 'd' in timeframe:
-            days = int(timeframe.replace('d', ''))
-            valid_until = now + timedelta(days=days * 2)
-        else:
-            valid_until = now + timedelta(hours=4)
-        return valid_until.replace(microsecond=0).isoformat() + "Z"
+        try:
+            if 'm' in timeframe:
+                minutes = int(timeframe.replace('m', ''))
+                valid_until = now + timedelta(minutes=minutes * 6)
+            elif 'h' in timeframe:
+                hours = int(timeframe.replace('h', ''))
+                valid_until = now + timedelta(hours=hours * 4)
+            elif 'd' in timeframe:
+                days = int(timeframe.replace('d', ''))
+                valid_until = now + timedelta(days=days * 2)
+            else:
+                valid_until = now + timedelta(hours=4)
+            return valid_until.replace(microsecond=0).isoformat() + "Z"
+        except Exception:
+            return (now + timedelta(hours=4)).replace(microsecond=0).isoformat() + "Z"
 
     def generate_final_signal(self) -> Optional[Dict[str, Any]]:
         rule_based_signal = self.analytics.get("rule_based_signal", "HOLD")
@@ -36,10 +43,13 @@ class SignalAdapter:
         if final_signal == "HOLD": return None
 
         strategy_data, primary_tf_with_strategy = {}, None
+        # اولویت با تایم فریم های بالاتر برای یافتن استراتژی معتبر
         for tf in ['4h', '1h', '15m', '5m']:
             current_strategy = self.details.get(tf, {}).get("strategy", {})
             if current_strategy and current_strategy.get("targets"):
-                strategy_data = current_strategy; primary_tf_with_strategy = tf; break
+                strategy_data = current_strategy
+                primary_tf_with_strategy = tf
+                break
         
         if not strategy_data: return None
 
@@ -56,7 +66,6 @@ class SignalAdapter:
             "targets": strategy_data.get("targets", []),
             "stop_loss": strategy_data.get("stop_loss"),
             "risk_reward_ratio": strategy_data.get("risk_reward_ratio"),
-            # --- ✨ اصلاح کلیدی: افزودن نام استراتژی جدید ---
             "strategy_name": strategy_data.get("strategy_name", "Unknown"),
             "valid_until": self._calculate_valid_until(primary_tf_with_strategy),
             "ai_confidence_percent": self.ai_confirmation.get("confidence", 0),
