@@ -1,4 +1,4 @@
-# engines/strategy_engine.py (نسخه 8.0 با دو استراتژی معاملاتی)
+# engines/strategy_engine.py (نسخه 9.0 با سه استراتژی معاملاتی)
 
 import logging
 from typing import Dict, Any, List, Optional
@@ -15,7 +15,6 @@ class StrategyEngine:
     def _calculate_entry_zone(self, entry_price: float) -> List[float]:
         atr = self.indicators.get("atr", 0)
         if atr > 0 and entry_price > 0:
-            # ایجاد یک محدوده کوچک بر اساس درصدی از نوسان بازار
             offset = atr * 0.15 
             return sorted([round(entry_price - offset, 4), round(entry_price + offset, 4)])
         return [round(entry_price, 4)]
@@ -24,22 +23,14 @@ class StrategyEngine:
         if stop_loss is None or entry_price == stop_loss: return []
         risk_amount = abs(entry_price - stop_loss)
         if risk_amount == 0: return []
-        
         targets = []
-        pivots = self.market_structure.get("pivots", [])
-        try:
-            if direction == 'BUY':
-                # تارگت اول بر اساس ریسک به ریوارد
-                targets.append(round(entry_price + (risk_amount * 1.5), 4))
-                # تارگت دوم بر اساس پیوت مقاومت بعدی
-                potential_targets = sorted([p[1] for p in pivots if p[1] > targets[0]])
-                if potential_targets: targets.append(round(potential_targets[0], 4))
-            elif direction == 'SELL':
-                targets.append(round(entry_price - (risk_amount * 1.5), 4))
-                potential_targets = sorted([p[1] for p in pivots if p[1] < targets[0]], reverse=True)
-                if potential_targets: targets.append(round(potential_targets[0], 4))
-            return sorted(list(set(targets)))
-        except Exception: return []
+        if direction == 'BUY':
+            targets.append(round(entry_price + (risk_amount * 1.5), 4))
+            targets.append(round(entry_price + (risk_amount * 3.0), 4))
+        elif direction == 'SELL':
+            targets.append(round(entry_price - (risk_amount * 1.5), 4))
+            targets.append(round(entry_price - (risk_amount * 3.0), 4))
+        return sorted(list(set(targets)))
 
     # --- استراتژی شماره ۱: مبتنی بر سطوح (Pivot Reversion) ---
     def _generate_pivot_strategy(self, direction: str) -> Dict[str, Any]:
@@ -47,7 +38,6 @@ class StrategyEngine:
         pivots = self.market_structure.get("pivots", [])
         atr = self.indicators.get("atr", 0)
         if not pivots or atr == 0: return {}
-
         stop_loss = None
         if direction == 'BUY':
             relevant_pivots = [p[1] for p in pivots if p[1] < entry_price]
@@ -55,7 +45,6 @@ class StrategyEngine:
         elif direction == 'SELL':
             relevant_pivots = [p[1] for p in pivots if p[1] > entry_price]
             if relevant_pivots: stop_loss = round(min(relevant_pivots) + (atr * 0.2), 4)
-
         targets = self._calculate_targets(direction, entry_price, stop_loss)
         return {"entry_price": entry_price, "stop_loss": stop_loss, "targets": targets, "strategy_name": "Pivot Reversion"}
 
@@ -64,34 +53,55 @@ class StrategyEngine:
         entry_price = self.indicators.get("close", 0)
         atr = self.indicators.get("atr", 0)
         if atr == 0: return {}
-
         stop_loss = None
         if direction == 'BUY':
-            stop_loss = round(entry_price - (atr * 1.5), 4) # حد ضرر ۱.۵ برابر ATR پایین‌تر
+            stop_loss = round(entry_price - (atr * 1.5), 4)
         elif direction == 'SELL':
-            stop_loss = round(entry_price + (atr * 1.5), 4) # حد ضرر ۱.۵ برابر ATR بالاتر
-
+            stop_loss = round(entry_price + (atr * 1.5), 4)
         targets = self._calculate_targets(direction, entry_price, stop_loss)
         return {"entry_price": entry_price, "stop_loss": stop_loss, "targets": targets, "strategy_name": "Trend Hunter"}
+
+    # --- ✨ استراتژی شماره ۳: شکارچی شکست (Breakout Hunter) ✨ ---
+    def _generate_breakout_strategy(self, direction: str) -> Dict[str, Any]:
+        entry_price = self.indicators.get("close", 0)
+        pivots = self.market_structure.get("pivots", [])
+        atr = self.indicators.get("atr", 0)
+        if not pivots or atr == 0: return {}
+        stop_loss = None
+        if direction == 'BUY':
+            # حد ضرر زیر سطح مقاومتی است که شکسته شده
+            broken_resistance = max([p[1] for p in pivots if p[1] < entry_price], default=None)
+            if broken_resistance: stop_loss = round(broken_resistance - (atr * 0.2), 4)
+        elif direction == 'SELL':
+            # حد ضرر بالای سطح حمایتی است که شکسته شده
+            broken_support = min([p[1] for p in pivots if p[1] > entry_price], default=None)
+            if broken_support: stop_loss = round(broken_support + (atr * 0.2), 4)
+        
+        targets = self._calculate_targets(direction, entry_price, stop_loss)
+        return {"entry_price": entry_price, "stop_loss": stop_loss, "targets": targets, "strategy_name": "Breakout Hunter"}
 
     def generate_strategy(self, signal_type: str) -> Dict[str, Any]:
         if signal_type not in ["BUY", "SELL"]: return {}
         
+        # --- ✨ توزیع کننده هوشمند استراتژی ✨ ---
+        is_breakout = self.trend.get("breakout", False)
         adx = self.trend.get("adx", 0)
         strategy_plan = {}
 
-        if adx > 35: # اگر روند بسیار قوی است -> شکارچی روند
+        if is_breakout:
+            logger.info(f"Breakout detected. Using Breakout Hunter strategy.")
+            strategy_plan = self._generate_breakout_strategy(signal_type)
+        elif adx > 35:
             logger.info(f"Strong trend detected (ADX: {adx}). Using Trend Hunter strategy.")
             strategy_plan = self._generate_trend_strategy(signal_type)
-        else: # در غیر این صورت -> بازگشت به سطوح
+        else:
             logger.info(f"Normal/Ranging market (ADX: {adx}). Using Pivot Reversion strategy.")
             strategy_plan = self._generate_pivot_strategy(signal_type)
         
         entry_price = strategy_plan.get("entry_price")
-        if not entry_price: return {} # اگر استراتژی پایه تولید نشد
+        if not entry_price: return {}
 
         strategy_plan["entry_zone"] = self._calculate_entry_zone(entry_price)
-        
         risk_reward_ratio = 0
         targets = strategy_plan.get("targets")
         stop_loss = strategy_plan.get("stop_loss")
