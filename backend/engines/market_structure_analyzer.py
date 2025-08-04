@@ -1,104 +1,74 @@
-# engines/market_structure_analyzer.py (نسخه نهایی با import صحیح)
+# engines/market_structure_analyzer.py (نسخه نهایی 4.1 - کامل و بازبینی شده)
 
 import numpy as np
 import pandas as pd
-from typing import List, Dict, Any, Optional # <-- کلمه Optional اینجا اضافه شد
+from typing import List, Dict, Any
+from sklearn.cluster import MeanShift
 
-class PivotPoint:
-    def __init__(self, index: int, price: float, strength: str):
-        self.index = index
-        self.price = price
-        self.strength = strength
+class MarketStructureAnalyzer:
+    def __init__(self, df: pd.DataFrame, config: Dict[str, Any]):
+        self.df = df.copy()
+        self.config = config
+        self.sensitivity = self.config.get('sensitivity', 7)
+        self.cluster_strength = self.config.get('sr_cluster_strength', 0.02)
+        self.pivots: List[Dict] = []
 
-class Leg:
-    def __init__(self, start_pivot: PivotPoint, end_pivot: PivotPoint, df: pd.DataFrame):
-        self.start = start_pivot
-        self.end = end_pivot
-        self.length = abs(end_pivot.price - start_pivot.price)
-        self.duration = abs(end_pivot.index - start_pivot.index)
-        self.angle = np.degrees(np.arctan2(self.length, self.duration)) if self.duration > 0 else 0
+    def _detect_pivots(self):
+        lows, highs = [], []
+        df_len = len(self.df)
+        for i in range(self.sensitivity, df_len - self.sensitivity):
+            window = self.df.iloc[i - self.sensitivity : i + self.sensitivity + 1]
+            if self.df['low'].iloc[i] <= window['low'].min():
+                lows.append({'index': i, 'price': self.df['low'].iloc[i], 'type': 'low'})
+            if self.df['high'].iloc[i] >= window['high'].max():
+                highs.append({'index': i, 'price': self.df['high'].iloc[i], 'type': 'high'})
         
-        start_idx = max(0, self.start.index)
-        end_idx = min(len(df), self.end.index)
-        if start_idx < end_idx:
-            self.volume_sum = df['volume'].iloc[start_idx:end_idx].sum()
-        else:
-            self.volume_sum = 0
-            
-        self.score = self.calculate_score()
-
-    def calculate_score(self):
-        normalized_length = self.length / (self.duration + 1e-6)
-        return round((self.angle * normalized_length * np.log1p(self.volume_sum)), 2)
-
-class LegPivotAnalyzer:
-    def __init__(self, df: pd.DataFrame, sensitivity: int = 5):
-        self.df = df.reset_index(drop=True)
-        self.sensitivity = sensitivity
-        self.pivots: List[PivotPoint] = []
-        self.legs: List[Leg] = []
-        self.market_phase = None
-
-    def detect_pivots(self):
-        prices = self.df['close']
-        for i in range(self.sensitivity, len(prices) - self.sensitivity):
-            window = prices.iloc[i - self.sensitivity : i + self.sensitivity + 1]
-            if prices.iloc[i] == window.min():
-                self.pivots.append(PivotPoint(i, prices.iloc[i], 'minor'))
-            elif prices.iloc[i] == window.max():
-                self.pivots.append(PivotPoint(i, prices.iloc[i], 'minor'))
-        self._refine_major_pivots()
-
-    def _refine_major_pivots(self):
-        if not self.pivots: return
-        atr = (self.df['high'] - self.df['low']).mean()
-        if atr == 0: atr = self.df['close'].std()
+        raw_pivots = sorted(lows + highs, key=lambda p: p['index'])
+        if not raw_pivots: return
         
-        refined = []
-        if self.pivots:
-            refined.append(self.pivots[0])
-            for i in range(1, len(self.pivots)):
-                if abs(self.pivots[i].price - refined[-1].price) > (atr * 1.5):
-                     refined.append(self.pivots[i])
-            self.pivots = refined
+        # حذف پیوت‌های متوالی از یک نوع
+        self.pivots.append(raw_pivots[0])
+        for i in range(1, len(raw_pivots)):
+            if raw_pivots[i]['type'] != self.pivots[-1]['type']:
+                self.pivots.append(raw_pivots[i])
 
-    def build_legs(self):
-        if len(self.pivots) < 2: return
-        for i in range(len(self.pivots) - 1):
-            leg = Leg(self.pivots[i], self.pivots[i + 1], self.df)
-            self.legs.append(leg)
+    def _calculate_volume_profile(self) -> Dict[str, Any]:
+        if self.df.empty or 'volume' not in self.df.columns or self.df['volume'].sum() == 0:
+            return {}
 
-    def detect_market_phase(self):
-        if not self.legs:
-            self.market_phase = 'undetermined'; return
-        angles = [leg.angle for leg in self.legs if leg.duration > 0]
-        if not angles:
-            self.market_phase = 'undetermined'; return
-        avg_angle = np.mean(angles)
-        if avg_angle < 15: self.market_phase = 'ranging'
-        elif avg_angle < 40: self.market_phase = 'weak_trend'
-        else: self.market_phase = 'strong_trend'
-
-    def predict_next_leg_direction(self) -> Optional[str]:
-        if len(self.pivots) < 4: return None
-        last_p, second_last_p = self.pivots[-1], self.pivots[-2]
-        third_last_p, fourth_last_p = self.pivots[-3], self.pivots[-4]
+        price_bins = np.linspace(self.df['low'].min(), self.df['high'].max(), 100)
+        volume_at_price = [self.df['volume'][(self.df['low'] <= p) & (self.df['high'] >= p)].sum() for p in price_bins]
         
-        if last_p.price > third_last_p.price and second_last_p.price > fourth_last_p.price:
-            return 'up'
-        elif last_p.price < third_last_p.price and second_last_p.price < fourth_last_p.price:
-            return 'down'
-        return 'uncertain'
+        volume_profile = pd.DataFrame({'price': price_bins, 'volume': volume_at_price}).dropna()
+        if volume_profile.empty: return {}
+
+        poc_index = volume_profile['volume'].idxmax()
+        poc = volume_profile.loc[poc_index].to_dict()
+
+        total_volume = volume_profile['volume'].sum()
+        value_area_volume = total_volume * 0.7
+        
+        current_volume = poc['volume']
+        high_idx, low_idx = poc_index, poc_index
+        while current_volume < value_area_volume and (low_idx > 0 or high_idx < len(volume_profile) - 1):
+            vol_above = volume_profile['volume'].get(high_idx + 1, 0)
+            vol_below = volume_profile['volume'].get(low_idx - 1, 0)
+            if vol_above > vol_below: high_idx += 1; current_volume += vol_above
+            else: low_idx -= 1; current_volume += vol_below
+        
+        value_area_high = volume_profile['price'].get(high_idx, poc['price'])
+        value_area_low = volume_profile['price'].get(low_idx, poc['price'])
+
+        return {
+            "point_of_control": poc.get('price'),
+            "value_area_high": value_area_high,
+            "value_area_low": value_area_low
+        }
 
     def analyze(self) -> Dict[str, Any]:
-        self.detect_pivots()
-        self.build_legs()
-        self.detect_market_phase()
-        next_direction = self.predict_next_leg_direction()
-        
+        self._detect_pivots()
+        volume_profile_analysis = self._calculate_volume_profile()
         return {
-            'pivots': [(p.index, p.price, 'major') for p in self.pivots],
-            'legs_count': len(self.legs),
-            'market_phase': self.market_phase,
-            'predicted_next_leg_direction': next_direction
+            "pivots": self.pivots,
+            "volume_profile": volume_profile_analysis
         }
