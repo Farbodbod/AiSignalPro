@@ -1,64 +1,75 @@
-# core/views.py (نسخه نهایی و بدون تابع تست)
+# core/views.py (نسخه نهایی و کاملاً سازگار)
 
 import asyncio
 import logging
-import traceback
 from django.http import JsonResponse
 import httpx
-from asgiref.sync import sync_to_async
-import pandas as pd
-import numpy as np
 
+# وارد کردن ماژول‌های لازم با معماری جدید
 from .exchange_fetcher import ExchangeFetcher
-from engines.master_orchestrator import MasterOrchestrator
+from engines.master_orchestrator import MasterOrchestrator, EngineConfig
 from engines.signal_adapter import SignalAdapter
 from .utils import convert_numpy_types
 from engines.trade_manager import TradeManager
+from asgiref.sync import sync_to_async
+
 
 logger = logging.getLogger(__name__)
 
-# تمام VIEW های اصلی شما
+# ساخت یک نمونه Singleton از ارکستراتور برای استفاده در تمام درخواست‌ها
+# این کار از ساخت مکرر آبجکت‌های سنگین جلوگیری کرده و عملکرد را بهبود می‌بخشد.
+engine_config = EngineConfig()
+orchestrator = MasterOrchestrator(config=engine_config)
+
+
 async def get_composite_signal_view(request):
+    """
+    این View نقطه ورودی اصلی برای دریافت سیگنال به صورت آنی است.
+    کاملاً با معماری جدید MasterOrchestrator هماهنگ شده است.
+    """
     symbol = request.GET.get('symbol', 'BTC').upper()
     fetcher = ExchangeFetcher()
     try:
-        orchestrator = MasterOrchestrator()
-        all_tf_analysis = {}
+        # ۱. جمع‌آوری تمام دیتافریم‌ها از تایم‌فریم‌های مختلف
         timeframes = ['5m', '15m', '1h', '4h']
         tasks = [fetcher.get_first_successful_klines(symbol, tf) for tf in timeframes]
         results = await asyncio.gather(*tasks)
+        
+        dataframes = {}
         for i, result in enumerate(results):
             if result and result[0] is not None:
-                df, source = result; tf = timeframes[i]
-                analysis = orchestrator.analyze_single_dataframe(df, tf, symbol)
-                analysis['source'] = source; all_tf_analysis[tf] = analysis
-        if not all_tf_analysis:
-            return JsonResponse({"status": "NO_DATA", "message": f"Could not fetch data for {symbol}."})
-        final_result = await orchestrator.get_multi_timeframe_signal(all_tf_analysis)
+                df, source = result
+                dataframes[timeframes[i]] = df
+
+        if not dataframes:
+            return JsonResponse({"status": "NO_DATA", "message": f"Could not fetch reliable market data for {symbol}."})
+
+        # ۲. فراخوانی متد اصلی و جدید ارکستراتور
+        final_result = await orchestrator.get_final_signal(dataframes, symbol)
+        
+        # ۳. تبدیل خروجی به آبجکت سیگنال نهایی
         adapter = SignalAdapter(analytics_output=final_result)
         final_signal_object = adapter.generate_final_signal()
+
+        # ۴. ارسال پاسخ به کاربر
         if not final_signal_object:
-            detailed_overview = final_result.get("details", {})
-            for tf_analysis in detailed_overview.values():
-                if isinstance(tf_analysis, dict): tf_analysis.pop('dataframe', None)
+            # اگر سیگنالی پیدا نشد، جزئیات تحلیل را برمی‌گردانیم
             return JsonResponse({
                 "status": "NEUTRAL",
-                "message": "Market is neutral. No high-quality signal found.",
-                "scores": {
-                    "rule_based_signal": final_result.get("rule_based_signal", "HOLD"),
-                    "buy_score": final_result.get("buy_score", 0),
-                    "sell_score": final_result.get("sell_score", 0),
-                    "ai_signal": final_result.get("gemini_confirmation", {}).get("signal", "N/A"),
-                },
-                "full_analysis_details": convert_numpy_types(detailed_overview)
+                "message": final_result.get("message", "Market is neutral. No high-quality signal found."),
+                "winning_strategy_details": final_result.get("winning_strategy", {}),
+                "full_analysis_details": convert_numpy_types(final_result.get("full_analysis_details", {}))
             })
+        
         return JsonResponse({"status": "SUCCESS", "signal": convert_numpy_types(final_signal_object)})
+
     except Exception as e:
         logger.error(f"CRITICAL ERROR in get_composite_signal_view for {symbol}: {e}", exc_info=True)
         return JsonResponse({"status": "ERROR", "message": "An internal server error occurred."})
     finally:
         await fetcher.close()
 
+# ... سایر View های شما (system_status_view, market_overview_view و غیره) بدون تغییر باقی می‌مانند ...
 async def system_status_view(request):
     exchanges_to_check = [{'name': 'Kucoin', 'status_url': 'https://api.kucoin.com/api/v1/timestamp'},{'name': 'MEXC', 'status_url': 'https://api.mexc.com/api/v3/time'},{'name': 'OKX', 'status_url': 'https://www.okx.com/api/v5/system/time'}]
     async with httpx.AsyncClient(timeout=10) as client:
