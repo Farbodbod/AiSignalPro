@@ -1,4 +1,4 @@
-# core/views.py (نسخه نهایی و کاملاً سازگار)
+# core/views.py (نسخه نهایی 2.2 - با نمایش وتوی AI)
 
 import asyncio
 import logging
@@ -16,21 +16,18 @@ from asgiref.sync import sync_to_async
 
 logger = logging.getLogger(__name__)
 
-# ساخت یک نمونه Singleton از ارکستراتور برای استفاده در تمام درخواست‌ها
-# این کار از ساخت مکرر آبجکت‌های سنگین جلوگیری کرده و عملکرد را بهبود می‌بخشد.
+# ساخت یک نمونه Singleton از ارکستراتور
 engine_config = EngineConfig()
 orchestrator = MasterOrchestrator(config=engine_config)
 
 
 async def get_composite_signal_view(request):
     """
-    این View نقطه ورودی اصلی برای دریافت سیگنال به صورت آنی است.
-    کاملاً با معماری جدید MasterOrchestrator هماهنگ شده است.
+    نقطه ورودی اصلی API که حالا وتوی هوش مصنوعی را به وضوح نمایش می‌دهد.
     """
     symbol = request.GET.get('symbol', 'BTC').upper()
     fetcher = ExchangeFetcher()
     try:
-        # ۱. جمع‌آوری تمام دیتافریم‌ها از تایم‌فریم‌های مختلف
         timeframes = ['5m', '15m', '1h', '4h']
         tasks = [fetcher.get_first_successful_klines(symbol, tf) for tf in timeframes]
         results = await asyncio.gather(*tasks)
@@ -44,22 +41,44 @@ async def get_composite_signal_view(request):
         if not dataframes:
             return JsonResponse({"status": "NO_DATA", "message": f"Could not fetch reliable market data for {symbol}."})
 
-        # ۲. فراخوانی متد اصلی و جدید ارکستراتور
         final_result = await orchestrator.get_final_signal(dataframes, symbol)
         
-        # ۳. تبدیل خروجی به آبجکت سیگنال نهایی
         adapter = SignalAdapter(analytics_output=final_result)
         final_signal_object = adapter.generate_final_signal()
 
-        # ۴. ارسال پاسخ به کاربر
+        # --- ✨ بخش اصلاح شده و کلیدی برای نمایش وتو ---
         if not final_signal_object:
-            # اگر سیگنالی پیدا نشد، جزئیات تحلیل را برمی‌گردانیم
-            return JsonResponse({
-                "status": "NEUTRAL",
-                "message": final_result.get("message", "Market is neutral. No high-quality signal found."),
-                "winning_strategy_details": final_result.get("winning_strategy", {}),
-                "full_analysis_details": convert_numpy_types(final_result.get("full_analysis_details", {}))
-            })
+            # بررسی می‌کنیم که آیا دلیل عدم وجود سیگنال، وتوی هوش مصنوعی بوده است یا خیر
+            rule_based_signal = final_result.get("final_signal", "HOLD")
+            ai_signal = final_result.get("gemini_confirmation", {}).get("signal", "HOLD")
+            
+            is_vetoed = (rule_based_signal == "BUY" and ai_signal == "SELL") or \
+                        (rule_based_signal == "SELL" and ai_signal == "BUY")
+
+            if is_vetoed:
+                # اگر وتو شده بود، یک پاسخ اختصاصی با تمام جزئیات برمی‌گردانیم
+                return JsonResponse({
+                    "status": "VETOED_BY_AI",
+                    "message": "A high-quality signal was found but vetoed by the AI due to conflicting analysis.",
+                    "system_signal_details": {
+                        "signal": rule_based_signal,
+                        "winning_strategy": final_result.get("winning_strategy", {})
+                    },
+                    "ai_veto_details": {
+                        "signal": ai_signal,
+                        "explanation_fa": final_result.get("gemini_confirmation", {}).get("explanation_fa")
+                    },
+                    "full_analysis_details": convert_numpy_types(final_result.get("full_analysis_details", {}))
+                })
+            else:
+                # اگر دلیل دیگری داشت، پاسخ خنثی معمولی را برمی‌گردانیم
+                return JsonResponse({
+                    "status": "NEUTRAL",
+                    "message": final_result.get("message", "Market is neutral. No high-quality signal found."),
+                    "winning_strategy_details": final_result.get("winning_strategy", {}),
+                    "full_analysis_details": convert_numpy_types(final_result.get("full_analysis_details", {}))
+                })
+        # --- پایان بخش اصلاح شده ---
         
         return JsonResponse({"status": "SUCCESS", "signal": convert_numpy_types(final_signal_object)})
 
@@ -69,8 +88,9 @@ async def get_composite_signal_view(request):
     finally:
         await fetcher.close()
 
-# ... سایر View های شما (system_status_view, market_overview_view و غیره) بدون تغییر باقی می‌مانند ...
+# ... سایر View های شما بدون تغییر باقی می‌مانند ...
 async def system_status_view(request):
+    # ... کد کامل از پاسخ‌های قبلی ...
     exchanges_to_check = [{'name': 'Kucoin', 'status_url': 'https://api.kucoin.com/api/v1/timestamp'},{'name': 'MEXC', 'status_url': 'https://api.mexc.com/api/v3/time'},{'name': 'OKX', 'status_url': 'https://www.okx.com/api/v5/system/time'}]
     async with httpx.AsyncClient(timeout=10) as client:
         tasks = {asyncio.create_task(client.get(ex['status_url'])): ex['name'] for ex in exchanges_to_check}
@@ -87,6 +107,7 @@ async def system_status_view(request):
     return JsonResponse(results, safe=False)
 
 async def market_overview_view(request):
+    # ... کد کامل از پاسخ‌های قبلی ...
     response_data = {}
     try:
         async with httpx.AsyncClient(timeout=10) as client:
@@ -106,10 +127,12 @@ async def market_overview_view(request):
 
 @sync_to_async
 def _get_open_trades_sync():
+    # ... کد کامل از پاسخ‌های قبلی ...
     trade_manager = TradeManager()
     return trade_manager.get_open_trades()
 
 async def list_open_trades_view(request):
+    # ... کد کامل از پاسخ‌های قبلی ...
     try:
         open_trades = await _get_open_trades_sync()
         return JsonResponse(open_trades, safe=False)
@@ -118,6 +141,7 @@ async def list_open_trades_view(request):
         return JsonResponse({'error': str(e)}, status=500)
 
 async def price_ticker_view(request):
+    # ... کد کامل از پاسخ‌های قبلی ...
     fetcher = ExchangeFetcher()
     symbols_to_fetch = ['BTC', 'ETH', 'XRP', 'SOL', 'DOGE']
     try:
