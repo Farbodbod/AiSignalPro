@@ -1,14 +1,14 @@
-# engines/market_structure_analyzer.py (نسخه نهایی و پیشرفته LegPivotAnalyzer)
+# engines/market_structure_analyzer.py (نسخه نهایی با import صحیح)
 
 import numpy as np
 import pandas as pd
-from typing import List, Dict, Any,
+from typing import List, Dict, Any, Optional # <-- کلمه Optional اینجا اضافه شد
 
 class PivotPoint:
     def __init__(self, index: int, price: float, strength: str):
         self.index = index
         self.price = price
-        self.strength = strength # 'major' or 'minor'
+        self.strength = strength
 
 class Leg:
     def __init__(self, start_pivot: PivotPoint, end_pivot: PivotPoint, df: pd.DataFrame):
@@ -18,7 +18,6 @@ class Leg:
         self.duration = abs(end_pivot.index - start_pivot.index)
         self.angle = np.degrees(np.arctan2(self.length, self.duration)) if self.duration > 0 else 0
         
-        # اطمینان از اینکه ایندکس ها در محدوده دیتافریم هستند
         start_idx = max(0, self.start.index)
         end_idx = min(len(df), self.end.index)
         if start_idx < end_idx:
@@ -39,8 +38,6 @@ class LegPivotAnalyzer:
         self.pivots: List[PivotPoint] = []
         self.legs: List[Leg] = []
         self.market_phase = None
-        self.patterns: List[str] = []
-        self.anomalies: List[Dict[str, Any]] = []
 
     def detect_pivots(self):
         prices = self.df['close']
@@ -54,15 +51,13 @@ class LegPivotAnalyzer:
 
     def _refine_major_pivots(self):
         if not self.pivots: return
-        # محاسبه ATR برای تعیین اهمیت پیوت
         atr = (self.df['high'] - self.df['low']).mean()
-        if atr == 0: atr = self.df['close'].std() # Fallback
+        if atr == 0: atr = self.df['close'].std()
         
         refined = []
         if self.pivots:
-            refined.append(self.pivots[0]) # همیشه اولین پیوت را نگه دار
+            refined.append(self.pivots[0])
             for i in range(1, len(self.pivots)):
-                # اگر پیوت جدید به اندازه کافی از پیوت قبلی فاصله داشته باشد
                 if abs(self.pivots[i].price - refined[-1].price) > (atr * 1.5):
                      refined.append(self.pivots[i])
             self.pivots = refined
@@ -75,14 +70,10 @@ class LegPivotAnalyzer:
 
     def detect_market_phase(self):
         if not self.legs:
-            self.market_phase = 'undetermined'
-            return
-        
+            self.market_phase = 'undetermined'; return
         angles = [leg.angle for leg in self.legs if leg.duration > 0]
         if not angles:
-            self.market_phase = 'undetermined'
-            return
-            
+            self.market_phase = 'undetermined'; return
         avg_angle = np.mean(angles)
         if avg_angle < 15: self.market_phase = 'ranging'
         elif avg_angle < 40: self.market_phase = 'weak_trend'
@@ -93,10 +84,8 @@ class LegPivotAnalyzer:
         last_p, second_last_p = self.pivots[-1], self.pivots[-2]
         third_last_p, fourth_last_p = self.pivots[-3], self.pivots[-4]
         
-        # Higher Highs and Higher Lows -> Uptrend
         if last_p.price > third_last_p.price and second_last_p.price > fourth_last_p.price:
             return 'up'
-        # Lower Highs and Lower Lows -> Downtrend
         elif last_p.price < third_last_p.price and second_last_p.price < fourth_last_p.price:
             return 'down'
         return 'uncertain'
@@ -108,7 +97,7 @@ class LegPivotAnalyzer:
         next_direction = self.predict_next_leg_direction()
         
         return {
-            'pivots': [(p.index, p.price, 'major') for p in self.pivots], # Simplified for now
+            'pivots': [(p.index, p.price, 'major') for p in self.pivots],
             'legs_count': len(self.legs),
             'market_phase': self.market_phase,
             'predicted_next_leg_direction': next_direction
