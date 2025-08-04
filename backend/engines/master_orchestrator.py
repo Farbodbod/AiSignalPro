@@ -1,9 +1,10 @@
-# engines/master_orchestrator.py (نسخه نهایی 12.2 - کامل و بازبینی شده)
+# engines/master_orchestrator.py (نسخه نهایی 12.3 - ضد خطا و پایدار)
 
 import logging, json, time, asyncio
 import pandas as pd
 from typing import Dict, Any, Optional, List
 
+# وارد کردن تمام ماژول‌های لازم
 from .config import EngineConfig
 from .indicator_analyzer import IndicatorAnalyzer
 from .trend_analyzer import analyze_trend
@@ -22,14 +23,13 @@ class MasterOrchestrator:
         self.gemini_handler = GeminiHandler()
         self.whale_analyzer = WhaleAnalyzer()
         self.last_gemini_call_time = 0
-        self.ENGINE_VERSION = "12.2.0"
-        logger.info(f"MasterOrchestrator v{self.ENGINE_VERSION} (Final Audited Arch) initialized.")
+        self.ENGINE_VERSION = "12.3.0"
+        logger.info(f"MasterOrchestrator v{self.ENGINE_VERSION} (Stable & Fault-Tolerant Arch) initialized.")
 
     def _analyze_single_dataframe(self, df: pd.DataFrame) -> Dict[str, Any]:
         analysis = {}
         try:
             df_with_indicators = IndicatorAnalyzer(df).calculate_all()
-            # نرمالایز کردن ATR برای استفاده در آستانه پویا
             if 'atr' in df_with_indicators and 'close' in df_with_indicators and df_with_indicators['close'].iloc[-1] > 0:
                 df_with_indicators['atr_normalized'] = (df_with_indicators['atr'] / df_with_indicators['close']) * 100
             
@@ -44,6 +44,7 @@ class MasterOrchestrator:
             analysis["whale_activity"] = self.whale_analyzer.get_signals("5m")
             self.whale_analyzer.clear_signals()
         except Exception as e:
+            logger.error(f"Error in _analyze_single_dataframe: {e}", exc_info=True)
             return {"error": str(e)}
         return analysis
 
@@ -64,11 +65,9 @@ class MasterOrchestrator:
         base_threshold = self.config.min_strategy_score_threshold
         main_tf_analysis = analysis_context.get('1h', {}) or analysis_context.get('4h', {})
         if not main_tf_analysis: return base_threshold
-        
         atr_normalized = main_tf_analysis.get('indicators', {}).get('atr_normalized', 1.0)
         if atr_normalized > 1.5: return base_threshold * 1.2
         elif atr_normalized < 0.7: return base_threshold * 0.85
-
         trend_signal = main_tf_analysis.get('trend', {}).get('signal', 'Neutral')
         if "Strong" in trend_signal: return base_threshold * 0.9
         elif "Ranging" in trend_signal: return base_threshold * 1.1
@@ -89,14 +88,27 @@ class MasterOrchestrator:
                 enhanced_strat['timeframe'] = tf
                 enhanced_strat['weighted_score'] = enhanced_strat.get('score', 0) * self.config.timeframe_weights.get(tf, 1.0)
                 all_potential_strategies.append(enhanced_strat)
-
-        if not all_potential_strategies: return {"final_signal": "HOLD", "message": "No valid strategies found."}
         
+        # --- ✨ بخش اصلاح شده و کلیدی ---
+        # قبل از هر کاری، چک می‌کنیم که آیا اصلاً استراتژی معتبری پیدا شده است یا خیر
+        if not all_potential_strategies:
+            return {
+                "final_signal": "HOLD",
+                "message": "No valid strategies found that meet the initial criteria.",
+                "full_analysis_details": full_analysis_details
+            }
+        # --- پایان بخش اصلاح شده ---
+
         best_strategy = max(all_potential_strategies, key=lambda s: s['weighted_score'])
         adaptive_threshold = self._calculate_adaptive_threshold(full_analysis_details)
         
         if best_strategy['weighted_score'] < adaptive_threshold:
-            return {"final_signal": "HOLD", "message": f"Best strategy score ({best_strategy['weighted_score']:.2f}) is below adaptive threshold ({adaptive_threshold:.2f})."}
+            return {
+                "final_signal": "HOLD",
+                "message": f"Best strategy score ({best_strategy['weighted_score']:.2f}) is below adaptive threshold ({adaptive_threshold:.2f}).",
+                "winning_strategy": best_strategy, # استراتژی برنده را هم برمی‌گردانیم تا قابل بررسی باشد
+                "full_analysis_details": full_analysis_details
+            }
 
         final_signal_type = best_strategy.get("direction")
         gemini_confirmation = {"signal": "N/A", "confidence": 0, "explanation_fa": "AI analysis not triggered."}
@@ -111,3 +123,4 @@ class MasterOrchestrator:
                 gemini_confirmation = await self.gemini_handler.query(prompt)
 
         return {"symbol": symbol, "engine_version": self.ENGINE_VERSION, "final_signal": final_signal_type, "winning_strategy": best_strategy, "full_analysis_details": full_analysis_details, "gemini_confirmation": gemini_confirmation}
+
