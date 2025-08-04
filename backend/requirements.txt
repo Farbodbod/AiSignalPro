@@ -21,4 +21,4 @@ jdatetime
 pytz
 uvicorn
 gunicorn
-#final deploy trigger v2.2
+#final deploy trigger v2.3
