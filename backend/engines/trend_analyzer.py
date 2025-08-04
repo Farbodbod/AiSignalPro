@@ -1,4 +1,4 @@
-# engines/trend_analyzer.py (نسخه نهایی با تشخیص دقیق بازار رنج)
+# engines/trend_analyzer.py (نسخه نهایی با تشخیص انفجار نوسان)
 
 import pandas as pd
 import numpy as np
@@ -21,30 +21,24 @@ def calc_bollinger_bands(df, period=20, std_dev=2):
     upper = sma + std_dev * std
     lower = sma - std_dev * std
     return upper, lower
+    
+def calc_atr(df, period=14):
+    high_low = df['high'] - df['low']
+    high_close = np.abs(df['high'] - df['close'].shift())
+    low_close = np.abs(df['low'] - df['close'].shift())
+    tr = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
+    return tr.rolling(window=period).mean()
 
 def calc_adx(df, period=14):
     df = df.copy()
-    df['tr'] = pd.concat([
-        abs(df['high'] - df['low']),
-        abs(df['high'] - df['close'].shift()),
-        abs(df['low'] - df['close'].shift())
-    ], axis=1).max(axis=1)
-    df['+DM'] = np.where((df['high'] - df['high'].shift()) > (df['low'].shift() - df['low']),
-                         np.maximum(df['high'] - df['high'].shift(), 0), 0)
-    df['-DM'] = np.where((df['low'].shift() - df['low']) > (df['high'] - df['high'].shift()),
-                         np.maximum(df['low'].shift() - df['low'], 0), 0)
-
-    tr14 = df['tr'].rolling(period).sum()
-    plus_dm14 = df['+DM'].rolling(period).sum()
-    minus_dm14 = df['-DM'].rolling(period).sum()
-    
+    df['tr'] = pd.concat([abs(df['high'] - df['low']), abs(df['high'] - df['close'].shift()), abs(df['low'] - df['close'].shift())], axis=1).max(axis=1)
+    df['+DM'] = np.where((df['high'] - df['high'].shift()) > (df['low'].shift() - df['low']), np.maximum(df['high'] - df['high'].shift(), 0), 0)
+    df['-DM'] = np.where((df['low'].shift() - df['low']) > (df['high'] - df['high'].shift()), np.maximum(df['low'].shift() - df['low'], 0), 0)
+    tr14, plus_dm14, minus_dm14 = df['tr'].rolling(period).sum(), df['+DM'].rolling(period).sum(), df['-DM'].rolling(period).sum()
     tr14 = tr14.replace(0, np.nan)
-    plus_di = 100 * plus_dm14 / tr14
-    minus_di = 100 * minus_dm14 / tr14
-    
+    plus_di, minus_di = 100 * plus_dm14 / tr14, 100 * minus_dm14 / tr14
     dx_denominator = (plus_di + minus_di).replace(0, np.nan)
     dx = 100 * abs(plus_di - minus_di) / dx_denominator
-    
     adx = dx.rolling(period).mean()
     return pd.DataFrame({'adx': adx, 'plus_di': plus_di, 'minus_di': minus_di})
 
@@ -57,32 +51,34 @@ def analyze_trend(df: pd.DataFrame, timeframe: str) -> Dict[str, Any]:
     df['upper_bb'], df['lower_bb'] = calc_bollinger_bands(df, 20)
     adx_df = calc_adx(df, 14)
     df = pd.concat([df, adx_df], axis=1)
+    
+    # --- ✨ منطق جدید: تشخیص انفجار نوسان (Volatility Spike) ---
+    df['atr'] = calc_atr(df, 14)
+    df['atr_sma'] = df['atr'].rolling(window=20).mean()
+    # اگر ATR فعلی ۲.۵ برابر میانگین ATR باشد، یک انفجار نوسان داریم
+    df['volatility_spike'] = df['atr'] > (df['atr_sma'] * 2.5)
+
     df['breakout'] = (df['close'] > df['upper_bb'].shift(1)) & (df['volume'] > df['volume'].rolling(10).mean() * 1.5)
     
     last = df.iloc[-1]
     
-    signal = "Neutral"
-    adx_value = last.get('adx', 0)
-    
+    signal, adx_value = "Neutral", last.get('adx', 0)
     is_uptrend = last['close'] > last['ema20'] and last['ema20'] > last['sma50']
     is_downtrend = last['close'] < last['ema20'] and last['ema20'] < last['sma50']
 
     if adx_value > 25:
-        if is_uptrend:
-            signal = "StrongUptrend"
-        elif is_downtrend:
-            signal = "StrongDowntrend"
+        if is_uptrend: signal = "StrongUptrend"
+        elif is_downtrend: signal = "StrongDowntrend"
     elif adx_value < 20:
         signal = "RangingMarket"
     else:
-        if is_uptrend:
-            signal = "WeakUptrend"
-        elif is_downtrend:
-            signal = "WeakDowntrend"
+        if is_uptrend: signal = "WeakUptrend"
+        elif is_downtrend: signal = "WeakDowntrend"
 
     return {
         'timeframe': timeframe,
         'signal': signal,
         'adx': round(adx_value, 2) if pd.notna(adx_value) else 0,
         'breakout': bool(last.get('breakout', False)),
+        'volatility_spike': bool(last.get('volatility_spike', False)), # <-- خروجی جدید
     }
