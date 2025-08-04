@@ -1,4 +1,4 @@
-# engines/strategy_engine.py (نسخه نهایی 14.2 - با استراتژی پروفایل حجم)
+# engines/strategy_engine.py (نسخه نهایی 14.3 - با اصلاح SL ایچیموکو)
 
 import logging
 from typing import Dict, Any, List, Optional
@@ -55,44 +55,38 @@ class StrategyEngine:
         if not all([price, senkou_a, senkou_b, kijun]): return None
         direction = "BUY" if price > senkou_a and price > senkou_b else "SELL" if price < senkou_a and price < senkou_b else None
         if not direction: return None
-        sl_price = kijun - self.atr * self.config.ichimoku_kijun_sl_multiplier if direction == "BUY" else kijun + self.atr * self.config.ichimoku_kijun_sl_multiplier
+        
+        # --- ✨ اصلاح کلیدی و بسیار مهم برای حد ضرر ---
+        # حد ضرر باید همیشه در سمت امن قیمت ورودی باشد
+        if direction == "BUY":
+            sl_price = min(price, kijun) - (self.atr * self.config.ichimoku_kijun_sl_multiplier)
+        else: # SELL
+            sl_price = max(price, kijun) + (self.atr * self.config.ichimoku_kijun_sl_multiplier)
+        # --- پایان اصلاح ---
+
         sl_tp_data = self._calculate_sl_tp(direction, sl_price)
         if not sl_tp_data: return None
         return {**sl_tp_data, "strategy_name": "Ichimoku Breakout", "direction": direction, "score": 6.0, "confirmations": ["Kumo Breakout"]}
 
     def _try_volume_profile_reversion(self) -> Optional[Dict]:
-        """جدید: استراتژی بازگشت به میانگین بر اساس نقاط کلیدی پروفایل حجم."""
         vp = self.market.get("volume_profile", {})
-        poc = vp.get("point_of_control")
-        val = vp.get("value_area_low")
-        vah = vp.get("value_area_high")
+        poc, val, vah = vp.get("point_of_control"), vp.get("value_area_low"), vp.get("value_area_high")
         if not all([poc, val, vah]): return None
-
         direction, target, sl_base = None, None, None
-        # اگر به کف محدوده ارزشمند نزدیکیم، به دنبال خرید هستیم
         if abs(self.entry_price - val) < self.atr * 0.5:
             direction, target, sl_base = "BUY", poc, val
-        # اگر به سقف محدوده ارزشمند نزدیکیم، به دنبال فروش هستیم
         elif abs(self.entry_price - vah) < self.atr * 0.5:
             direction, target, sl_base = "SELL", poc, vah
-        
         if not direction: return None
-
         sl_price = sl_base - self.atr if direction == "BUY" else sl_base + self.atr
         sl_tp_data = self._calculate_sl_tp(direction, sl_price)
         if not sl_tp_data: return None
-        # افزودن تارگت POC به لیست تارگت‌ها
         sl_tp_data['targets'].insert(0, target)
         sl_tp_data['targets'] = sorted(list(set(sl_tp_data['targets'])), reverse=(direction=="SELL"))
-
         return {**sl_tp_data, "strategy_name": "Volume Profile Reversion", "direction": direction, "score": 8.0, "confirmations": ["Near Value Area Edge"]}
 
     def generate_all_valid_strategies(self) -> List[Dict[str, Any]]:
-        strategies = [
-            self._try_trend_strategy(),
-            self._try_ichimoku_strategy(),
-            self._try_volume_profile_reversion(),
-        ]
+        strategies = [self._try_trend_strategy(), self._try_ichimoku_strategy(), self._try_volume_profile_reversion()]
         valid_strategies = [s for s in strategies if s and self._is_valid(s)]
         for s in valid_strategies:
             s["entry_price"] = self.entry_price
