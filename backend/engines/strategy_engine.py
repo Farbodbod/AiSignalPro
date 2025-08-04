@@ -1,8 +1,8 @@
-# engines/strategy_engine.py (نسخه 10.0 با چهار استراتژی معاملاتی)
+# engines/strategy_engine.py (نسخه نهایی با استراتژی شکارچی نوسان)
 
 import logging
 from typing import Dict, Any, List, Optional
-import pandas as pd # برای استفاده از pd.notna
+import pandas as pd
 
 logger = logging.getLogger(__name__)
 
@@ -60,35 +60,36 @@ class StrategyEngine:
         targets = self._calculate_targets(direction, entry_price, stop_loss)
         return {"entry_price": entry_price, "stop_loss": stop_loss, "targets": targets, "strategy_name": "Trend Hunter"}
 
-    def _generate_breakout_strategy(self, direction: str) -> Dict[str, Any]:
+    # --- ✨ استراتژی جدید و ارتقا یافته: شکارچی نوسان و شکست ✨ ---
+    def _generate_volatility_breakout_strategy(self, direction: str) -> Dict[str, Any]:
         entry_price = self.indicators.get("close", 0)
-        pivots = self.market_structure.get("pivots", [])
         atr = self.indicators.get("atr", 0)
-        if not pivots or atr == 0 or entry_price == 0: return {}
+        if atr == 0 or entry_price == 0: return {}
+        
+        # در شکست‌های ناشی از نوسان، حد ضرر باید محافظه‌کارانه‌تر باشد
         stop_loss = None
         if direction == 'BUY':
-            broken_resistance = max([p[1] for p in pivots if p[1] < entry_price], default=None)
-            if broken_resistance: stop_loss = round(broken_resistance - (atr * 0.2), 4)
+            # حد ضرر را زیر کف کندل شکست قرار می‌دهیم (اگر در دسترس باشد)
+            # این نیاز به ارسال خود دیتافریم به موتور استراتژی دارد که پیچیدگی را زیاد می‌کند
+            # راه حل ساده‌تر: استفاده از ضریب کوچکتر ATR
+            stop_loss = round(entry_price - (atr * 1.0), 4)
         elif direction == 'SELL':
-            broken_support = min([p[1] for p in pivots if p[1] > entry_price], default=None)
-            if broken_support: stop_loss = round(broken_support + (atr * 0.2), 4)
+            stop_loss = round(entry_price + (atr * 1.0), 4)
+        
         targets = self._calculate_targets(direction, entry_price, stop_loss)
-        return {"entry_price": entry_price, "stop_loss": stop_loss, "targets": targets, "strategy_name": "Breakout Hunter"}
+        return {"entry_price": entry_price, "stop_loss": stop_loss, "targets": targets, "strategy_name": "Volatility Breakout"}
 
     def _generate_range_strategy(self) -> Dict[str, Any]:
         pivots = self.market_structure.get("pivots", [])
         if len(pivots) < 4: return {}
-        
         recent_pivots = sorted(pivots, key=lambda x: x[0], reverse=True)[:4]
         highs = sorted([p[1] for p in recent_pivots], reverse=True)
         lows = sorted([p[1] for p in recent_pivots])
         if len(highs) < 2 or len(lows) < 2: return {}
-
         resistance, support = highs[0], lows[0]
         entry_price = self.indicators.get("close", 0)
         atr = self.indicators.get("atr", 0)
         if atr == 0 or entry_price == 0: return {}
-
         if abs(entry_price - support) < (atr * 0.5):
             direction, stop_loss = "BUY", round(support - (atr * 0.5), 4)
             targets = self._calculate_targets(direction, entry_price, stop_loss, custom_target=resistance)
@@ -100,21 +101,23 @@ class StrategyEngine:
         return {}
 
     def generate_strategy(self, signal_type: str) -> Dict[str, Any]:
+        # --- ✨ توزیع کننده هوشمند نهایی ✨ ---
         trend_signal = self.trend.get("signal", "Neutral")
         is_breakout = self.trend.get("breakout", False)
+        is_volatility_spike = self.trend.get("volatility_spike", False)
         strategy_plan = {}
 
-        if is_breakout:
-            logger.info(f"Condition: Breakout detected. Trying Breakout Hunter strategy.")
-            strategy_plan = self._generate_breakout_strategy(signal_type)
+        if is_breakout or is_volatility_spike:
+            logger.info(f"Volatility/Breakout detected. Trying Volatility Breakout strategy.")
+            strategy_plan = self._generate_volatility_breakout_strategy(signal_type)
         elif "Strong" in trend_signal:
-            logger.info(f"Condition: Strong trend detected ({trend_signal}). Trying Trend Hunter strategy.")
+            logger.info(f"Strong trend detected ({trend_signal}). Trying Trend Hunter strategy.")
             strategy_plan = self._generate_trend_strategy(signal_type)
         elif "Ranging" in trend_signal:
-            logger.info(f"Condition: Ranging market detected. Trying Range Hunter strategy.")
+            logger.info(f"Ranging market detected. Trying Range Hunter strategy.")
             strategy_plan = self._generate_range_strategy()
         else: 
-            logger.info(f"Condition: Weak/Uncertain market ({trend_signal}). Trying Pivot Reversion strategy.")
+            logger.info(f"Weak/Uncertain market ({trend_signal}). Trying Pivot Reversion strategy.")
             strategy_plan = self._generate_pivot_strategy(signal_type)
         
         entry_price = strategy_plan.get("entry_price")
