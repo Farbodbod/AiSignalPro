@@ -2,7 +2,7 @@
 
 import numpy as np
 import pandas as pd
-from typing import List, Dict, Any,optional
+from typing import List, Dict, Any,
 
 class PivotPoint:
     def __init__(self, index: int, price: float, strength: str):
