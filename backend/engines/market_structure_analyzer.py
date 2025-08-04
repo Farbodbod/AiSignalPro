@@ -1,27 +1,31 @@
-# engines/market_structure_analyzer.py
+# engines/market_structure_analyzer.py (نسخه نهایی و پیشرفته LegPivotAnalyzer)
 
 import numpy as np
 import pandas as pd
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.preprocessing import StandardScaler
 from typing import List, Dict, Any
 
 class PivotPoint:
-    # --- اصلاح شد ---
     def __init__(self, index: int, price: float, strength: str):
         self.index = index
         self.price = price
         self.strength = strength # 'major' or 'minor'
 
 class Leg:
-    # --- اصلاح شد ---
     def __init__(self, start_pivot: PivotPoint, end_pivot: PivotPoint, df: pd.DataFrame):
         self.start = start_pivot
         self.end = end_pivot
         self.length = abs(end_pivot.price - start_pivot.price)
         self.duration = abs(end_pivot.index - start_pivot.index)
         self.angle = np.degrees(np.arctan2(self.length, self.duration)) if self.duration > 0 else 0
-        self.volume_sum = df['volume'][start_pivot.index:end_pivot.index].sum()
+        
+        # اطمینان از اینکه ایندکس ها در محدوده دیتافریم هستند
+        start_idx = max(0, self.start.index)
+        end_idx = min(len(df), self.end.index)
+        if start_idx < end_idx:
+            self.volume_sum = df['volume'].iloc[start_idx:end_idx].sum()
+        else:
+            self.volume_sum = 0
+            
         self.score = self.calculate_score()
 
     def calculate_score(self):
@@ -29,7 +33,6 @@ class Leg:
         return round((self.angle * normalized_length * np.log1p(self.volume_sum)), 2)
 
 class LegPivotAnalyzer:
-    # --- اصلاح شد ---
     def __init__(self, df: pd.DataFrame, sensitivity: int = 5):
         self.df = df.reset_index(drop=True)
         self.sensitivity = sensitivity
@@ -42,21 +45,27 @@ class LegPivotAnalyzer:
     def detect_pivots(self):
         prices = self.df['close']
         for i in range(self.sensitivity, len(prices) - self.sensitivity):
-            window = prices[i - self.sensitivity:i + self.sensitivity + 1]
-            if prices[i] == window.min():
-                self.pivots.append(PivotPoint(i, prices[i], 'minor'))
-            elif prices[i] == window.max():
-                self.pivots.append(PivotPoint(i, prices[i], 'minor'))
+            window = prices.iloc[i - self.sensitivity : i + self.sensitivity + 1]
+            if prices.iloc[i] == window.min():
+                self.pivots.append(PivotPoint(i, prices.iloc[i], 'minor'))
+            elif prices.iloc[i] == window.max():
+                self.pivots.append(PivotPoint(i, prices.iloc[i], 'minor'))
         self._refine_major_pivots()
 
     def _refine_major_pivots(self):
         if not self.pivots: return
+        # محاسبه ATR برای تعیین اهمیت پیوت
+        atr = (self.df['high'] - self.df['low']).mean()
+        if atr == 0: atr = self.df['close'].std() # Fallback
+        
         refined = []
-        for i, p in enumerate(self.pivots):
-            is_major = (i == 0 or i == len(self.pivots) - 1 or abs(p.price - self.pivots[i - 1].price) > self.df['close'].std())
-            if is_major:
-                refined.append(PivotPoint(p.index, p.price, 'major'))
-        self.pivots = refined
+        if self.pivots:
+            refined.append(self.pivots[0]) # همیشه اولین پیوت را نگه دار
+            for i in range(1, len(self.pivots)):
+                # اگر پیوت جدید به اندازه کافی از پیوت قبلی فاصله داشته باشد
+                if abs(self.pivots[i].price - refined[-1].price) > (atr * 1.5):
+                     refined.append(self.pivots[i])
+            self.pivots = refined
 
     def build_legs(self):
         if len(self.pivots) < 2: return
@@ -68,58 +77,39 @@ class LegPivotAnalyzer:
         if not self.legs:
             self.market_phase = 'undetermined'
             return
-        avg_angle = np.mean([leg.angle for leg in self.legs])
+        
+        angles = [leg.angle for leg in self.legs if leg.duration > 0]
+        if not angles:
+            self.market_phase = 'undetermined'
+            return
+            
+        avg_angle = np.mean(angles)
         if avg_angle < 15: self.market_phase = 'ranging'
         elif avg_angle < 40: self.market_phase = 'weak_trend'
         else: self.market_phase = 'strong_trend'
 
-    def detect_patterns(self):
-        if len(self.legs) < 2: return
-        for i in range(len(self.legs) - 2):
-            l1, l2 = self.legs[i], self.legs[i + 1]
-            if l1.length > 0.8 * l2.length and abs(l1.angle - l2.angle) < 10:
-                self.patterns.append('Double Top/Bottom')
-            if l1.angle > 45 and l2.angle < -45:
-                self.patterns.append('Flag Reversal')
-
-    def detect_anomalies(self):
-        if not self.legs: return
-        scores = [leg.score for leg in self.legs]
-        if not scores: return
-        threshold = np.percentile(scores, 90)
-        for leg in self.legs:
-            if leg.score > threshold * 1.5:
-                self.anomalies.append({'start': leg.start.index, 'end': leg.end.index, 'score': leg.score, 'type': 'high_strength'})
-
-    def ml_predict_next_leg_direction(self):
-        if len(self.legs) < 6: return None
-        features = [[leg.angle, leg.duration, leg.length, leg.volume_sum, leg.score] for leg in self.legs]
-        labels = [1 if self.legs[i + 1].end.price > self.legs[i].end.price else 0 for i in range(len(self.legs) - 1)]
-        X, y = features[:-1], labels
+    def predict_next_leg_direction(self) -> Optional[str]:
+        if len(self.pivots) < 4: return None
+        last_p, second_last_p = self.pivots[-1], self.pivots[-2]
+        third_last_p, fourth_last_p = self.pivots[-3], self.pivots[-4]
         
-        scaler = StandardScaler()
-        X_scaled = scaler.fit_transform(X)
-        
-        clf = RandomForestClassifier(n_estimators=50, random_state=42)
-        clf.fit(X_scaled, y)
-        
-        next_feature = scaler.transform([features[-1]])
-        prediction = clf.predict(next_feature)
-        return 'up' if prediction[0] == 1 else 'down'
+        # Higher Highs and Higher Lows -> Uptrend
+        if last_p.price > third_last_p.price and second_last_p.price > fourth_last_p.price:
+            return 'up'
+        # Lower Highs and Lower Lows -> Downtrend
+        elif last_p.price < third_last_p.price and second_last_p.price < fourth_last_p.price:
+            return 'down'
+        return 'uncertain'
 
-    def analyze(self):
+    def analyze(self) -> Dict[str, Any]:
         self.detect_pivots()
         self.build_legs()
         self.detect_market_phase()
-        self.detect_patterns()
-        self.detect_anomalies()
-        next_direction = self.ml_predict_next_leg_direction()
+        next_direction = self.predict_next_leg_direction()
         
         return {
-            'pivots': [(p.index, p.price, p.strength) for p in self.pivots],
+            'pivots': [(p.index, p.price, 'major') for p in self.pivots], # Simplified for now
             'legs_count': len(self.legs),
             'market_phase': self.market_phase,
-            'patterns': list(set(self.patterns)), # remove duplicates
-            'anomalies': self.anomalies,
             'predicted_next_leg_direction': next_direction
         }
