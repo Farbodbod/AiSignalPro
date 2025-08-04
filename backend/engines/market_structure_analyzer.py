@@ -1,17 +1,22 @@
-# engines/market_structure_analyzer.py (نسخه نهایی 4.1 - کامل و بازبینی شده)
+# engines/market_structure_analyzer.py (نسخه کاملاً نهایی 4.2)
 
 import numpy as np
 import pandas as pd
 from typing import List, Dict, Any
-from sklearn.cluster import MeanShift
 
 class MarketStructureAnalyzer:
     def __init__(self, df: pd.DataFrame, config: Dict[str, Any]):
-        self.df = df.copy()
+        self.df = df.copy().reset_index(drop=True)
         self.config = config
         self.sensitivity = self.config.get('sensitivity', 7)
         self.cluster_strength = self.config.get('sr_cluster_strength', 0.02)
         self.pivots: List[Dict] = []
+        if 'atr' not in self.df.columns or self.df['atr'].isnull().all():
+            tr1 = self.df['high'] - self.df['low']
+            tr2 = np.abs(self.df['high'] - self.df['close'].shift())
+            tr3 = np.abs(self.df['low'] - self.df['close'].shift())
+            tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+            self.df['atr'] = tr.rolling(window=14).mean()
 
     def _detect_pivots(self):
         lows, highs = [], []
@@ -26,7 +31,6 @@ class MarketStructureAnalyzer:
         raw_pivots = sorted(lows + highs, key=lambda p: p['index'])
         if not raw_pivots: return
         
-        # حذف پیوت‌های متوالی از یک نوع
         self.pivots.append(raw_pivots[0])
         for i in range(1, len(raw_pivots)):
             if raw_pivots[i]['type'] != self.pivots[-1]['type']:
@@ -44,31 +48,25 @@ class MarketStructureAnalyzer:
 
         poc_index = volume_profile['volume'].idxmax()
         poc = volume_profile.loc[poc_index].to_dict()
-
-        total_volume = volume_profile['volume'].sum()
-        value_area_volume = total_volume * 0.7
-        
-        current_volume = poc['volume']
-        high_idx, low_idx = poc_index, poc_index
-        while current_volume < value_area_volume and (low_idx > 0 or high_idx < len(volume_profile) - 1):
-            vol_above = volume_profile['volume'].get(high_idx + 1, 0)
-            vol_below = volume_profile['volume'].get(low_idx - 1, 0)
-            if vol_above > vol_below: high_idx += 1; current_volume += vol_above
-            else: low_idx -= 1; current_volume += vol_below
-        
-        value_area_high = volume_profile['price'].get(high_idx, poc['price'])
-        value_area_low = volume_profile['price'].get(low_idx, poc['price'])
-
-        return {
-            "point_of_control": poc.get('price'),
-            "value_area_high": value_area_high,
-            "value_area_low": value_area_low
-        }
+        return {"point_of_control": poc.get('price')}
 
     def analyze(self) -> Dict[str, Any]:
         self._detect_pivots()
-        volume_profile_analysis = self._calculate_volume_profile()
+        vp_analysis = self._calculate_volume_profile()
+        
+        key_levels = {}
+        poc = vp_analysis.get("point_of_control")
+        if poc:
+            key_levels['point_of_control'] = poc
+        
+        recent_pivots = self.pivots[-10:]
+        supports = sorted([p['price'] for p in recent_pivots if p['type'] == 'low'], reverse=True)
+        resistances = sorted([p['price'] for p in recent_pivots if p['type'] == 'high'])
+        
+        key_levels['supports'] = supports[:5]
+        key_levels['resistances'] = resistances[:5]
+
         return {
             "pivots": self.pivots,
-            "volume_profile": volume_profile_analysis
+            "key_levels": key_levels
         }
