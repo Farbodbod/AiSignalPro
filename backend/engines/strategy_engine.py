@@ -1,11 +1,8 @@
-# engines/strategy_engine.py (نسخه 12.0: متصل به مدیر ریسک پیشرفته)
+# engines/strategy_engine.py (نسخه 11.0 با تنظیمات بهینه ریسک)
 
 import logging
 from typing import Dict, Any, List, Optional
 import pandas as pd
-
-# ✨ ایمپورت جدید: توابع از مدیر ریسک پیشرفته شما
-from .advanced_risk_manager import calc_risk_reward, kelly_criterion
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +29,7 @@ class StrategyEngine:
             targets.append(round(custom_target, 4))
         if direction == 'BUY':
             targets.append(round(entry_price + (risk_amount * 1.5), 4))
-            targets.append(round(entry_price + (risk_amount * 2.5), 4))
+            targets.append(round(entry_price + (risk_amount * 2.5), 4)) # اضافه کردن تارگت دوم
         elif direction == 'SELL':
             targets.append(round(entry_price - (risk_amount * 1.5), 4))
             targets.append(round(entry_price - (risk_amount * 2.5), 4))
@@ -46,10 +43,10 @@ class StrategyEngine:
         stop_loss = None
         if direction == 'BUY':
             relevant_pivots = [p[1] for p in pivots if p[1] < entry_price]
-            if relevant_pivots: stop_loss = round(max(relevant_pivots) - (atr * 0.1), 4)
+            if relevant_pivots: stop_loss = round(max(relevant_pivots) - (atr * 0.1), 4) # ضریب کمتر
         elif direction == 'SELL':
             relevant_pivots = [p[1] for p in pivots if p[1] > entry_price]
-            if relevant_pivots: stop_loss = round(min(relevant_pivots) + (atr * 0.1), 4)
+            if relevant_pivots: stop_loss = round(min(relevant_pivots) + (atr * 0.1), 4) # ضریب کمتر
         targets = self._calculate_targets(direction, entry_price, stop_loss)
         return {"entry_price": entry_price, "stop_loss": stop_loss, "targets": targets, "strategy_name": "Pivot Reversion"}
 
@@ -58,6 +55,7 @@ class StrategyEngine:
         atr = self.indicators.get("atr", 0)
         if atr == 0 or entry_price == 0: return {}
         stop_loss = None
+        # ✨ بهینه‌سازی: ضریب ATR برای حد ضرر کمی کاهش یافت تا در نوسانات بالا منطقی‌تر باشد
         if direction == 'BUY':
             stop_loss = round(entry_price - (atr * 1.2), 4) 
         elif direction == 'SELL':
@@ -70,6 +68,7 @@ class StrategyEngine:
         atr = self.indicators.get("atr", 0)
         if atr == 0 or entry_price == 0: return {}
         stop_loss = None
+        # ✨ بهینه‌سازی: در شکست‌های ناشی از نوسان، حد ضرر باید نزدیک‌تر باشد
         if direction == 'BUY':
             stop_loss = round(entry_price - (atr * 0.8), 4)
         elif direction == 'SELL':
@@ -88,7 +87,7 @@ class StrategyEngine:
         entry_price = self.indicators.get("close", 0)
         atr = self.indicators.get("atr", 0)
         if atr == 0 or entry_price == 0: return {}
-        if abs(entry_price - support) < (atr * 0.3):
+        if abs(entry_price - support) < (atr * 0.3): # کمی انعطاف‌پذیری بیشتر
             direction, stop_loss = "BUY", round(support - (atr * 0.3), 4)
             targets = self._calculate_targets(direction, entry_price, stop_loss, custom_target=resistance)
             return {"entry_price": entry_price, "stop_loss": stop_loss, "targets": targets, "strategy_name": "Range Hunter"}
@@ -131,35 +130,9 @@ class StrategyEngine:
         return strategy_plan
 
     def is_strategy_valid(self, strategy: Dict[str, Any]) -> bool:
-        """
-        (نسخه ارتقا یافته) با استفاده از مدیر ریسک پیشرفته، اعتبار استراتژی را می‌سنجد.
-        """
         if not strategy: return False
-        
-        entry = strategy.get("entry_price")
-        stop = strategy.get("stop_loss")
-        targets = strategy.get("targets")
-
-        if not all([entry, stop, targets]):
-            return False
-
-        try:
-            # --- اتصال به مدیر ریسک پیشرفته ---
-            risk_reward = calc_risk_reward(entry, stop, targets[0])
-            # فرض وین ریت ۵۰٪ برای یک سیستم قوی
-            win_rate = 0.5 
-            kelly = kelly_criterion(win_rate, risk_reward)
-            
-            logger.info(f"Advanced Risk Analysis for {strategy.get('strategy_name')}: R/R={risk_reward:.2f}, Kelly={kelly:.2f}")
-
-            # --- قوانین جدید و سختگیرانه‌تر برای تأیید معامله ---
-            is_viable = (
-                risk_reward >= 1.5 and # حداقل ریسک به ریوارد ۱.۵
-                kelly > 0.05           # حداقل کسر کلی ۵٪ برای جلوگیری از ریسک بیش از حد
-            )
-            
-            return is_viable
-
-        except Exception as e:
-            logger.error(f"Error during advanced risk validation: {e}")
-            return False
+        has_stop_loss = strategy.get("stop_loss") is not None
+        has_targets = strategy.get("targets") is not None and len(strategy["targets"]) > 0
+        # اضافه کردن یک فیلتر ریسک به ریوارد
+        has_good_rr = strategy.get("risk_reward_ratio", 0) >= 1.2 
+        return has_stop_loss and has_targets and has_good_rr
