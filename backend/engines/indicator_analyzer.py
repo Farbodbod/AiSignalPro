@@ -1,11 +1,14 @@
-# engines/indicator_analyzer.py (نسخه نهایی با پشتیبانی از ADX)
+# engines/indicator_analyzer.py (نسخه نهایی با پشتیبانی از SuperTrend)
 
 import pandas as pd
 import logging
 from typing import Dict, Any, Type, List
 
 # --- ۱. ایمپورت کلاس جدید ---
-from .indicators import BaseIndicator, RsiIndicator, MacdIndicator, BollingerIndicator, IchimokuIndicator, AdxIndicator
+from .indicators import (
+    BaseIndicator, RsiIndicator, MacdIndicator, BollingerIndicator, 
+    IchimokuIndicator, AdxIndicator, SuperTrendIndicator
+)
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +24,7 @@ class IndicatorAnalyzer:
             'bollinger': BollingerIndicator,
             'ichimoku': IchimokuIndicator,
             'adx': AdxIndicator,
+            'supertrend': SuperTrendIndicator,
         }
         
         self.calculated_indicators: List[str] = []
@@ -32,12 +36,14 @@ class IndicatorAnalyzer:
             'macd': {'fast_period': 12, 'slow_period': 26, 'signal_period': 9, 'enabled': True},
             'bollinger': {'period': 20, 'std_dev': 2, 'enabled': True},
             'ichimoku': {'tenkan_period': 9, 'kijun_period': 26, 'senkou_b_period': 52, 'enabled': True},
-            # --- ۳. افزودن کانفیگ پیش‌فرض ---
             'adx': {'period': 14, 'enabled': True},
+            # --- ۳. افزودن کانفیگ پیش‌فرض ---
+            'supertrend': {'period': 10, 'multiplier': 3.0, 'enabled': True},
         }
 
     # متدهای calculate_all و get_analysis_summary بدون هیچ تغییری باقی می‌مانند
     def calculate_all(self) -> pd.DataFrame:
+        # ... (کد بدون تغییر)
         logger.info("Starting calculation for all enabled indicators based on config.")
         for name, params in self.config.items():
             if params.get('enabled', False):
@@ -54,7 +60,9 @@ class IndicatorAnalyzer:
                     logger.warning(f"Indicator class for '{name}' not found in _indicator_classes.")
         return self.df
 
+
     def get_analysis_summary(self) -> Dict[str, Any]:
+        # ... (کد بدون تغییر)
         logger.info("Generating analysis summary from calculated indicators.")
         summary: Dict[str, Any] = {}
         for name in self.calculated_indicators:
