@@ -21,4 +21,5 @@ jdatetime
 pytz
 uvicorn
 pandas-ta
+djangorestframework
 #final deploy trigger v3.0
