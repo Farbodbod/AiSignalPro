@@ -1,8 +1,11 @@
-# engines/master_orchestrator.py (نسخه نهایی 12.7 - با import کامل)
+# engines/master_orchestrator.py (نسخه کاملاً نهایی و بی‌نقص 12.8)
 
-import logging, json, time, asyncio
+import logging
+import json
+import time
+import asyncio
 import pandas as pd
-from typing import Dict, Any, Optional, List # <-- ✨ اصلاح کلیدی در این خط بود
+from typing import Dict, Any, Optional, List
 
 # وارد کردن تمام ماژول‌های لازم
 from .config import EngineConfig
@@ -23,8 +26,8 @@ class MasterOrchestrator:
         self.gemini_handler = GeminiHandler()
         self.whale_analyzer = WhaleAnalyzer()
         self.last_gemini_call_time = 0
-        self.ENGINE_VERSION = "12.7.0"
-        logger.info(f"MasterOrchestrator v{self.ENGINE_VERSION} (Import Hotfix) initialized.")
+        self.ENGINE_VERSION = "12.8.0"
+        logger.info(f"MasterOrchestrator v{self.ENGINE_VERSION} (Final Audited Arch) initialized.")
 
     def _analyze_single_dataframe(self, df: pd.DataFrame) -> Dict[str, Any]:
         analysis = {}
@@ -49,7 +52,7 @@ class MasterOrchestrator:
             analysis["whale_activity"] = self.whale_analyzer.get_signals("5m")
             self.whale_analyzer.clear_signals()
         except Exception as e:
-            logger.error(f"Error in _analyze_single_dataframe: {e}", exc_info=True)
+            logger.error(f"Error in _analyze_single_dataframe for {df.shape}: {e}", exc_info=True)
             return {"error": str(e)}
         return analysis
 
@@ -68,7 +71,8 @@ class MasterOrchestrator:
             is_conflicting = (direction == "BUY" and "Downtrend" in higher_tf_trend) or (direction == "SELL" and "Uptrend" in higher_tf_trend)
             if is_aligned: bonus_points += 5.0; bonus_confirmations.append("HTF Trend Aligned")
             elif is_conflicting: bonus_points -= 8.0; bonus_confirmations.append("HTF Trend Conflict!")
-        strategy['score'] += bonus_points; strategy['confirmations'].extend(bonus_confirmations)
+        strategy['score'] += bonus_points
+        strategy['confirmations'].extend(bonus_confirmations)
         return strategy
 
     def _calculate_adaptive_threshold(self, analysis_context: Dict) -> float:
@@ -87,16 +91,21 @@ class MasterOrchestrator:
         all_potential_strategies: List[Dict] = []
         full_analysis_details: Dict = {}
         timeframe_order = ['5m', '15m', '1h', '4h', '1d']
-        for tf in dataframes.keys():
-            base_analysis = self._analyze_single_dataframe(dataframes[tf])
+
+        for tf, df in dataframes.items():
+            if df is None or df.empty or len(df) < 50: continue
+            base_analysis = self._analyze_single_dataframe(df)
             if "error" in base_analysis: continue
             full_analysis_details[tf] = {k:v for k,v in base_analysis.items() if k != 'dataframe'}
+        
         for tf, analysis in full_analysis_details.items():
             current_tf_index = timeframe_order.index(tf) if tf in timeframe_order else -1
             higher_tf_trend = None
             if current_tf_index != -1 and current_tf_index < len(timeframe_order) - 1:
                 higher_tf = timeframe_order[current_tf_index + 1]
-                if higher_tf in full_analysis_details: higher_tf_trend = full_analysis_details[higher_tf].get("trend", {}).get("signal")
+                if higher_tf in full_analysis_details:
+                    higher_tf_trend = full_analysis_details[higher_tf].get("trend", {}).get("signal")
+
             strategy_engine = StrategyEngine(analysis, self.config.strategy_config)
             strategies = strategy_engine.generate_all_valid_strategies()
             for strat in strategies:
@@ -106,13 +115,13 @@ class MasterOrchestrator:
                 all_potential_strategies.append(enhanced_strat)
         
         if not all_potential_strategies:
-            return {"final_signal": "HOLD", "message": "No valid strategies found.", "full_analysis_details": full_analysis_details}
-
+            return {"final_signal": "HOLD", "message": "No valid strategies found."}
+        
         best_strategy = max(all_potential_strategies, key=lambda s: s['weighted_score'])
         adaptive_threshold = self._calculate_adaptive_threshold(full_analysis_details)
         
         if best_strategy['weighted_score'] < adaptive_threshold:
-            return {"final_signal": "HOLD", "message": f"Best score ({best_strategy['weighted_score']:.2f}) below threshold ({adaptive_threshold:.2f}).", "winning_strategy": best_strategy, "full_analysis_details": full_analysis_details}
+            return {"final_signal": "HOLD", "message": f"Best score ({best_strategy['weighted_score']:.2f}) below threshold ({adaptive_threshold:.2f})."}
 
         final_signal_type = best_strategy.get("direction")
         gemini_confirmation = {"signal": "N/A", "confidence": 0, "explanation_fa": "AI analysis not triggered."}
@@ -123,7 +132,12 @@ class MasterOrchestrator:
             else:
                 self.last_gemini_call_time = now
                 prompt_context = {"winning_strategy": {k:v for k,v in best_strategy.items() if 'score' not in k}, "analysis_summary": full_analysis_details.get(best_strategy['timeframe'], {})}
-                prompt = (f'Analyze JSON for {symbol} and respond ONLY in JSON with "signal" (BUY/SELL/HOLD) and "explanation_fa" (concise, Persian explanation).\nData: {json.dumps(prompt_context, indent=2, default=str)}')
+                
+                prompt = (f'Analyze JSON for {symbol}. Respond ONLY in JSON with "signal" (BUY/SELL/HOLD), '
+                          f'"confidence_percent" (a number from 1 to 100 indicating your confidence), and '
+                          f'"explanation_fa" (concise, Persian explanation).\n'
+                          f'Data: {json.dumps(prompt_context, indent=2, default=str)}')
+                
                 gemini_confirmation = await self.gemini_handler.query(prompt)
 
         return {"symbol": symbol, "engine_version": self.ENGINE_VERSION, "final_signal": final_signal_type, "winning_strategy": best_strategy, "full_analysis_details": full_analysis_details, "gemini_confirmation": gemini_confirmation}
