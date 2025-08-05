@@ -1,4 +1,5 @@
-# engines/signal_adapter.py (نسخه نهایی 2.2 - کاملاً هماهنگ)
+# engines/signal_adapter.py (نسخه نهایی 2.3 - رفع خطا و بهبود امتیازدهی)
+
 from typing import Dict, Any, Optional
 from datetime import datetime, timedelta
 import hashlib, logging
@@ -6,8 +7,9 @@ import hashlib, logging
 logger = logging.getLogger(__name__)
 
 class SignalAdapter:
-    def __init__(self, orchestrator_output: Dict[str, Any]):
-        self.output = orchestrator_output or {}
+    # --- ✨ اصلاح کلیدی: تغییر نام پارامتر برای هماهنگی با views.py ---
+    def __init__(self, analytics_output: Dict[str, Any]):
+        self.output = analytics_output or {}
         self.ai_confirmation = self.output.get("gemini_confirmation", {})
 
     def _calculate_valid_until(self, timeframe: str) -> str:
@@ -20,31 +22,27 @@ class SignalAdapter:
         except Exception: return (now + timedelta(hours=4)).replace(microsecond=0).isoformat() + "Z"
 
     def generate_final_signal(self) -> Optional[Dict[str, Any]]:
-        # --- ✨ اصلاح کلیدی: خواندن کلید صحیح از خروجی جدید ---
         rule_based_signal = self.output.get("final_signal", "HOLD")
         ai_signal = str(self.ai_confirmation.get("signal", "HOLD")).upper()
-
-        # بررسی تناقض بین سیگنال سیستم و سیگنال AI
         is_contradictory = (rule_based_signal == "BUY" and ai_signal == "SELL") or \
                           (rule_based_signal == "SELL" and ai_signal == "BUY")
 
-        # اگر سیگنال پایه HOLD است یا تناقض وجود دارد، سیگنال را لغو کن
         if rule_based_signal == "HOLD" or is_contradictory:
             if is_contradictory:
-                logger.info(f"Signal for {self.output.get('symbol')} VETOED by AI. System: {rule_based_signal}, AI: {ai_signal}")
+                logger.info(f"Signal for {self.output.get('symbol')} VETOED by AI.")
             return None
         
         strategy = self.output.get("winning_strategy")
         if not strategy: return None
         
-        symbol = self.output.get("symbol", "N/A")
-        timeframe = strategy.get("timeframe", "N/A")
-        entry_price = strategy.get("entry_price")
-        
-        if any(x == "N/A" for x in [symbol, timeframe, entry_price]): return None
+        symbol, timeframe, entry_price = self.output.get("symbol"), strategy.get("timeframe"), strategy.get("entry_price")
+        if not all([symbol, timeframe, entry_price]): return None
             
         signal_id = hashlib.md5(f"{symbol}_{timeframe}_{rule_based_signal}_{entry_price}".encode()).hexdigest()
-        confidence = min(round((strategy.get('weighted_score', 0) / 15.0) * 100, 1), 100)
+        
+        # --- ✨ اصلاح کلیدی: بهبود فرمول محاسبه امتیاز سیستم ---
+        # سقف امتیاز را روی ۲۵ در نظر می‌گیریم تا مقادیر پویاتری داشته باشیم
+        confidence = min(round((strategy.get('weighted_score', 0) / 25.0) * 100, 1), 100)
         
         return {
             "signal_id": signal_id, "symbol": symbol, "timeframe": timeframe,
