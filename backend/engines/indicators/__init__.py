@@ -1,4 +1,4 @@
-# engines/indicators/__init__.py (نهایی با ATR)
+# engines/indicators/__init__.py (کامل با DivergenceIndicator)
 
 from .base import BaseIndicator
 from .rsi import RsiIndicator
@@ -11,4 +11,6 @@ from .obv import ObvIndicator
 from .stochastic import StochasticIndicator
 from .cci import CciIndicator
 from .mfi import MfiIndicator
-from .atr import AtrIndicator # <--- این خط برای ATR اضافه شده است
+from .atr import AtrIndicator
+from .pattern_indicator import PatternIndicator
+from .divergence_indicator import DivergenceIndicator
