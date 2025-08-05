@@ -1,4 +1,4 @@
-# engines/indicators/__init__.py
+# engines/indicators/__init__.py (نهایی با ATR)
 
 from .base import BaseIndicator
 from .rsi import RsiIndicator
@@ -10,4 +10,5 @@ from .supertrend import SuperTrendIndicator
 from .obv import ObvIndicator
 from .stochastic import StochasticIndicator
 from .cci import CciIndicator
-from .mfi import MfiIndicator # <--- این خط را اضافه کنید
+from .mfi import MfiIndicator
+from .atr import AtrIndicator # <--- این خط برای ATR اضافه شده است
