@@ -1,10 +1,9 @@
-# Dockerfile (نسخه نهایی و قطعی برای AiSignalPro)
+# Dockerfile (نسخه نهایی با سیستم‌عامل به‌روز)
 
-# ۱. انتخاب سیستم‌عامل پایه (یک لینوکس دبیان بهینه با پایتون ۳.۱۱)
-FROM python:3.11-slim-buster
+# ۱. انتخاب سیستم‌عامل پایه (ارتقا از buster به bullseye)
+FROM python:3.11-slim-bullseye
 
-# ۲. نصب پیش‌نیازهای سیستمی با apt-get
-# این بار ما کنترل کامل روی سیستم‌عامل داریم
+# ۲. نصب پیش‌نیازهای سیستمی (این دستورات روی bullseye بدون مشکل کار می‌کنند)
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     wget \
@@ -14,7 +13,6 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 # ۳. دانلود، کامپایل و نصب کتابخانه C از سورس کد اصلی آن
-# این دستورات در یک محیط باثبات و قابل پیش‌بینی اجرا می‌شوند
 RUN wget http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz && \
     tar -xzf ta-lib-0.4.0-src.tar.gz && \
     cd ta-lib/ && \
@@ -28,7 +26,6 @@ RUN wget http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz && \
 WORKDIR /app
 
 # ۵. کپی کردن فایل نیازمندی‌ها و نصب پکیج‌های پایتون
-# این مرحله پس از نصب موفقیت‌آمیز کتابخانه C اجرا می‌شود
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
@@ -37,6 +34,4 @@ COPY . .
 
 # ۷. تعریف دستور نهایی برای اجرای برنامه
 # مطمئن شوید gunicorn در requirements.txt شما هست
-# این دستور سرور جنگو شما را اجرا می‌کند
 CMD ["gunicorn", "trading_app.wsgi"]
-
