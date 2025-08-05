@@ -21,4 +21,5 @@ jdatetime
 pytz
 uvicorn
 gunicorn
+TA-Lib
 #final deploy trigger v3.0
