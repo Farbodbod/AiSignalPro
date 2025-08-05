@@ -1,14 +1,10 @@
-# nixpacks.toml (نسخه نهایی با دستورات زنجیر شده)
+# nixpacks.toml (نسخه نهایی، ساده‌شده و صحیح)
 
 [phases.setup]
-# همچنان ابزارهای مورد نیاز را نصب می‌کنیم.
+# ما فقط فاز setup را برای نصب پیش‌نیازهای سیستمی خود سفارشی می‌کنیم.
 aptPkgs = ["wget", "tar", "build-essential"]
-
-# تمام دستورات را در یک خط و با && به هم متصل می‌کنیم تا در یک محیط واحد اجرا شوند.
 cmds = [
     "wget http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz && tar -xzf ta-lib-0.4.0-src.tar.gz && cd ta-lib/ && ./configure --prefix=/usr && make && sudo make install"
 ]
 
-[phases.install]
-cmds = ["pip install -r requirements.txt"]
-
+# بخش [phases.install] را به طور کامل حذف می‌کنیم تا Nixpacks از رفتار پیش‌فرض و صحیح خود استفاده کند.
