@@ -1,19 +1,14 @@
-# nixpacks.toml (نسخه حرفه‌ای با کامپایل از سورس)
+# nixpacks.toml (نسخه نهایی با دستورات زنجیر شده)
 
 [phases.setup]
-# در این مرحله، فقط ابزارهای مورد نیاز برای دانلود و ساخت را نصب می‌کنیم.
+# همچنان ابزارهای مورد نیاز را نصب می‌کنیم.
 aptPkgs = ["wget", "tar", "build-essential"]
 
-# در این بخش، دستورات خط فرمان را برای ساخت TA-Lib از سورس اجرا می‌کنیم.
+# تمام دستورات را در یک خط و با && به هم متصل می‌کنیم تا در یک محیط واحد اجرا شوند.
 cmds = [
-    "wget http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz",
-    "tar -xzf ta-lib-0.4.0-src.tar.gz",
-    "cd ta-lib/",
-    "./configure --prefix=/usr",
-    "make",
-    "sudo make install"
+    "wget http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz && tar -xzf ta-lib-0.4.0-src.tar.gz && cd ta-lib/ && ./configure --prefix=/usr && make && sudo make install"
 ]
 
 [phases.install]
-# پس از نصب موفقیت‌آمیز کتابخانه C، حالا می‌توانیم پکیج پایتون را نصب کنیم.
 cmds = ["pip install -r requirements.txt"]
+
