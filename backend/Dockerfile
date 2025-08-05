@@ -1,9 +1,9 @@
-# Dockerfile (نسخه نهایی با سیستم‌عامل به‌روز)
+# Dockerfile (نسخه نهایی با آدرس‌دهی مستقیم)
 
-# ۱. انتخاب سیستم‌عامل پایه (ارتقا از buster به bullseye)
+# ۱. انتخاب سیستم‌عامل پایه
 FROM python:3.11-slim-bullseye
 
-# ۲. نصب پیش‌نیازهای سیستمی (این دستورات روی bullseye بدون مشکل کار می‌کنند)
+# ۲. نصب پیش‌نیازهای سیستمی
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     wget \
@@ -12,7 +12,7 @@ RUN apt-get update && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
-# ۳. دانلود، کامپایل و نصب کتابخانه C از سورس کد اصلی آن
+# ۳. دانلود، کامپایل و نصب کتابخانه C در مسیر استاندارد /usr
 RUN wget http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz && \
     tar -xzf ta-lib-0.4.0-src.tar.gz && \
     cd ta-lib/ && \
@@ -22,16 +22,21 @@ RUN wget http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz && \
     cd .. && \
     rm -rf ta-lib ta-lib-0.4.0-src.tar.gz
 
-# ۴. تنظیم پوشه کاری داخل کانتینر
+# ۴. ✨✨ اصلاحیه کلیدی: تعریف متغیرهای محیطی ✨✨
+# ما به صورت صریح به pip می‌گوییم که فایل‌های هدر (.h) و کتابخانه (.so) کجا هستند.
+ENV TA_INCLUDE_PATH=/usr/include
+ENV TA_LIBRARY_PATH=/usr/lib
+
+# ۵. تنظیم پوشه کاری داخل کانتینر
 WORKDIR /app
 
-# ۵. کپی کردن فایل نیازمندی‌ها و نصب پکیج‌های پایتون
+# ۶. کپی کردن فایل نیازمندی‌ها و نصب پکیج‌های پایتون
+# این بار pip آدرس دقیق را می‌داند و نباید شکست بخورد.
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# ۶. کپی کردن تمام کدهای پروژه به داخل کانتینر
+# ۷. کپی کردن تمام کدهای پروژه به داخل کانتینر
 COPY . .
 
-# ۷. تعریف دستور نهایی برای اجرای برنامه
-# مطمئن شوید gunicorn در requirements.txt شما هست
+# ۸. تعریف دستور نهایی برای اجرای برنامه
 CMD ["gunicorn", "trading_app.wsgi"]
