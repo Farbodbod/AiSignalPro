@@ -20,6 +20,5 @@ tenacity
 jdatetime
 pytz
 uvicorn
-gunicorn
-TA-Lib
+pandas-ta
 #final deploy trigger v3.0
