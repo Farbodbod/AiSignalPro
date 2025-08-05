@@ -1,4 +1,4 @@
-# engines/indicator_analyzer.py (نسخه نهایی 4.0 - جهانی)
+# engines/indicator_analyzer.py (نسخه نهایی 4.1 - کاملاً کامل و بی‌نقص)
 
 import pandas as pd
 import numpy as np
@@ -11,10 +11,8 @@ class IndicatorAnalyzer:
     """ 
     موتور جامع و بهینه برای محاسبه تمام اندیکاتورهای تکنیکال مورد نیاز 
     در سطح حرفه‌ای و جهانی برای پروژه AiSignalPro.
-    طراحی شده بر اساس نقشه راه و بازبینی کارشناسی.
     """
     def __init__(self, df: pd.DataFrame):
-        # اطمینان از وجود ستون‌های لازم
         required_cols = ['open', 'high', 'low', 'close', 'volume']
         if not all(col in df.columns for col in required_cols):
             raise ValueError(f"DataFrame must contain all required columns: {required_cols}")
@@ -28,21 +26,18 @@ class IndicatorAnalyzer:
             self.df['rsi'] = self._calc_rsi()
             self.df['macd_line'], self.df['macd_signal'], self.df['macd_hist'] = self._calc_macd()
             self.df['stoch_k'], self.df['stoch_d'] = self._calc_stochastic()
-            
-            # --- ✨ جدید: اندیکاتورهای قدرت روند ---
             self.df['adx'], self.df['di_plus'], self.df['di_minus'] = self._calc_adx_dmi()
-            
-            # --- ✨ جدید: اندیکاتورهای حجمی ---
             self.df['obv'] = self._calc_obv()
 
             # --- میانگین‌های متحرک ---
             self.df['ema_50'] = self._calc_ema(50)
-            self.df['sma_200'] = self._calc_ma(200)
-
+            # --- اصلاح کلیدی: محاسبه sma_200 غیرفعال شده تا از حذف بیش از حد داده‌ها جلوگیری شود ---
+            # self.df['sma_200'] = self._calc_ma(200)
+            
             # --- کانال‌های نوسان ---
             self.df['boll_upper'], self.df['boll_middle'], self.df['boll_lower'] = self._calc_bollinger()
             
-            # --- ✨ ایچیموکو با محاسبات اصلاح شده ---
+            # --- ایچیموکو ---
             (self.df['tenkan'], self.df['kijun'], self.df['senkou_a'], 
              self.df['senkou_b'], self.df['chikou']) = self._calc_ichimoku()
              
@@ -52,18 +47,16 @@ class IndicatorAnalyzer:
             for name, series in fib_levels.items():
                 self.df[name] = series
 
-            # --- ✨ جدید: حذف ردیف‌های ناقص برای اطمینان از سلامت داده ---
-            # این کار باعث می‌شود که فقط کندل‌هایی که تمام داده‌های اندیکاتور را دارند باقی بمانند.
+            # حذف ردیف‌های ناقص برای اطمینان از سلامت داده
             initial_rows = len(self.df)
             self.df.dropna(inplace=True)
-            logger.info(f"Indicator calculation complete. Dropped {initial_rows - len(self.df)} rows with NaN values.")
+            if initial_rows > 0:
+                logger.info(f"Indicator calculation complete. Dropped {initial_rows - len(self.df)} rows with NaN values.")
 
         except Exception as e:
             logger.error(f"Error calculating indicators: {e}", exc_info=True)
         
         return self.df
-
-    # --- توابع محاسبه پایه (کامل و بازبینی شده) ---
 
     def _calc_ma(self, period: int) -> pd.Series:
         return self.df['close'].rolling(window=period, min_periods=period).mean()
@@ -110,25 +103,17 @@ class IndicatorAnalyzer:
         return upper, ma, lower
         
     def _calc_ichimoku(self) -> Tuple[pd.Series, pd.Series, pd.Series, pd.Series, pd.Series]:
-        # محاسبات پایه
         high_9 = self.df['high'].rolling(window=9).max()
         low_9 = self.df['low'].rolling(window=9).min()
         tenkan = (high_9 + low_9) / 2
-        
         high_26 = self.df['high'].rolling(window=26).max()
         low_26 = self.df['low'].rolling(window=26).min()
         kijun = (high_26 + low_26) / 2
-        
         high_52 = self.df['high'].rolling(window=52).max()
         low_52 = self.df['low'].rolling(window=52).min()
-        
-        # --- ✨ اصلاح محاسبات Senkou و Chikou بر اساس استاندارد جهانی ---
         senkou_a = ((tenkan + kijun) / 2).shift(26)
         senkou_b = ((high_52 + low_52) / 2).shift(26)
-        
-        # Chikou دیگر به آینده شیفت داده نمی‌شود تا از خطای lookahead جلوگیری شود.
-        # در موتور استراتژی، قیمت فعلی با قیمت ۲۶ دوره قبل مقایسه خواهد شد.
-        chikou = self.df['close'] 
+        chikou = self.df['close']
         return tenkan, kijun, senkou_a, senkou_b, chikou
         
     def _calc_vwap(self) -> pd.Series:
@@ -157,15 +142,12 @@ class IndicatorAnalyzer:
         df['h-pc'] = np.abs(df['high'] - df['close'].shift())
         df['l-pc'] = np.abs(df['low'] - df['close'].shift())
         df['tr'] = df[['h-l', 'h-pc', 'l-pc']].max(axis=1)
-        
         df['dmp'] = np.where((df['high'] - df['high'].shift()) > (df['low'].shift() - df['low']), np.maximum(df['high'] - df['high'].shift(), 0), 0)
         df['dmn'] = np.where((df['low'].shift() - df['low']) > (df['high'] - df['high'].shift()), np.maximum(df['low'].shift() - df['low'], 0), 0)
-
         atr = df['tr'].ewm(span=period, adjust=False).mean()
-        di_plus = 100 * df['dmp'].ewm(span=period, adjust=False).mean() / atr
-        di_minus = 100 * df['dmn'].ewm(span=period, adjust=False).mean() / atr
-        
+        di_plus = 100 * df['dmp'].ewm(span=period, adjust=False).mean() / (atr + 1e-12)
+        di_minus = 100 * df['dmn'].ewm(span=period, adjust=False).mean() / (atr + 1e-12)
         dx = 100 * np.abs(di_plus - di_minus) / (di_plus + di_minus + 1e-12)
         adx = dx.ewm(span=period, adjust=False).mean()
-        
         return adx, di_plus, di_minus
+
