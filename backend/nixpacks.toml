@@ -1,15 +1,16 @@
-# nixpacks.toml (نسخه قطعی با تعریف محیط کامل)
+# nixpacks.toml (نسخه نهایی و قطعی - ترکیب Nix Environment و Build-From-Source)
 
 [phases.setup]
-# ما یک محیط کامل را با تمام نیازمندی‌های پروژه خود تعریف می‌کنیم:
-# python311: مفسر پایتون نسخه ۳.۱۱ (یک نسخه مدرن و پایدار)
-# gcc: کامپایلر GNU C/C++ که برای ساخت پکیج‌های پایتون لازم است
-# ta-lib: کتابخانه C برای TA-Lib
-# pkg-config: ابزار کمکی برای پیدا کردن کتابخانه‌ها توسط کامپایلر
-nixPkgs = ["python311", "gcc", "ta-lib", "pkg-config"]
+# ۱. یک محیط ساخت کامل و یکپارچه با تمام ابزارهای لازم ایجاد می‌کنیم.
+# این کار تضمین می‌کند که همه چیز با هم سازگار است.
+nixPkgs = ["python311", "gcc", "wget", "tar", "make", "pkg-config"]
+
+# ۲. اسکریپت کامپایل از سورس را درون این محیط یکپارچه اجرا می‌کنیم.
+# این کار کتابخانه C را در مسیر استاندارد /usr/ نصب می‌کند.
+cmds = [
+    "wget http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz && tar -xzf ta-lib-0.4.0-src.tar.gz && cd ta-lib/ && ./configure --prefix=/usr && make && sudo make install"
+]
 
 [start]
-# مشخص می‌کنیم که برنامه اصلی ما (وب سرور Django) چگونه باید اجرا شود.
-# ما از Gunicorn استفاده می‌کنیم که استاندارد صنعتی برای اجرای جنگو در محیط پروداکشن است.
-# همچنین به Nixpacks می‌گوییم که از پایتون ۳.۱۱ برای اجرای Gunicorn استفاده کند.
+# ۳. دستور شروع برنامه را با نسخه پایتون مشخص شده هماهنگ می‌کنیم.
 cmd = "python311 -m gunicorn trading_app.wsgi"
