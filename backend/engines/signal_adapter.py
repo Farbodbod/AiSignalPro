@@ -1,4 +1,4 @@
-# engines/signal_adapter.py (نسخه نهایی 2.3 - رفع خطا و بهبود امتیازدهی)
+# engines/signal_adapter.py (نسخه کاملاً نهایی و بی‌نقص 2.4)
 
 from typing import Dict, Any, Optional
 from datetime import datetime, timedelta
@@ -7,7 +7,6 @@ import hashlib, logging
 logger = logging.getLogger(__name__)
 
 class SignalAdapter:
-    # --- ✨ اصلاح کلیدی: تغییر نام پارامتر برای هماهنگی با views.py ---
     def __init__(self, analytics_output: Dict[str, Any]):
         self.output = analytics_output or {}
         self.ai_confirmation = self.output.get("gemini_confirmation", {})
@@ -15,12 +14,16 @@ class SignalAdapter:
     def _calculate_valid_until(self, timeframe: str) -> str:
         now = datetime.utcnow()
         try:
-            if 'm' in timeframe: valid_until = now + timedelta(minutes=int(timeframe.replace('m', '')) * 6)
-            elif 'h' in timeframe: valid_until = now + timedelta(hours=int(timeframe.replace('h', '')) * 4)
-            else: valid_until = now + timedelta(hours=4)
+            if 'm' in timeframe:
+                valid_until = now + timedelta(minutes=int(timeframe.replace('m', '')) * 6)
+            elif 'h' in timeframe:
+                valid_until = now + timedelta(hours=int(timeframe.replace('h', '')) * 4)
+            else:
+                valid_until = now + timedelta(hours=4)
             return valid_until.replace(microsecond=0).isoformat() + "Z"
-        except Exception: return (now + timedelta(hours=4)).replace(microsecond=0).isoformat() + "Z"
-
+        except (ValueError, TypeError):
+            return (now + timedelta(hours=4)).replace(microsecond=0).isoformat() + "Z"
+    
     def generate_final_signal(self) -> Optional[Dict[str, Any]]:
         rule_based_signal = self.output.get("final_signal", "HOLD")
         ai_signal = str(self.ai_confirmation.get("signal", "HOLD")).upper()
@@ -33,20 +36,27 @@ class SignalAdapter:
             return None
         
         strategy = self.output.get("winning_strategy")
-        if not strategy: return None
+        if not strategy:
+            return None
         
-        symbol, timeframe, entry_price = self.output.get("symbol"), strategy.get("timeframe"), strategy.get("entry_price")
-        if not all([symbol, timeframe, entry_price]): return None
+        symbol = self.output.get("symbol")
+        timeframe = strategy.get("timeframe")
+        entry_price = strategy.get("entry_price")
+        
+        if not all([symbol, timeframe, entry_price]):
+            return None
             
         signal_id = hashlib.md5(f"{symbol}_{timeframe}_{rule_based_signal}_{entry_price}".encode()).hexdigest()
         
-        # --- ✨ اصلاح کلیدی: بهبود فرمول محاسبه امتیاز سیستم ---
-        # سقف امتیاز را روی ۲۵ در نظر می‌گیریم تا مقادیر پویاتری داشته باشیم
-        confidence = min(round((strategy.get('weighted_score', 0) / 25.0) * 100, 1), 100)
+        # سقف امتیاز را روی ۳۵ در نظر می‌گیریم تا مقادیر واقعی‌تری داشته باشیم
+        confidence = min(round((strategy.get('weighted_score', 0) / 35.0) * 100, 1), 100)
         
         return {
-            "signal_id": signal_id, "symbol": symbol, "timeframe": timeframe,
-            "signal_type": rule_based_signal, "current_price": entry_price,
+            "signal_id": signal_id,
+            "symbol": symbol,
+            "timeframe": timeframe,
+            "signal_type": rule_based_signal,
+            "current_price": entry_price,
             "entry_zone": strategy.get("entry_zone", []), 
             "targets": strategy.get("targets", []),
             "stop_loss": strategy.get("stop_loss"), 
