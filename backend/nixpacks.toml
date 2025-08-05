@@ -1,0 +1,7 @@
+# nixpacks.toml
+
+[phases.setup]
+# لیستی از پکیج‌های سیستمی که باید قبل از نصب پایتون، با apt-get نصب شوند.
+# build-essential: ابزارهای لازم برای کامپایل کد (مانند gcc).
+# libta-lib-dev: کتابخانه توسعه‌دهندگان TA-Lib به زبان C.
+aptPkgs = ["build-essential", "libta-lib-dev"]
