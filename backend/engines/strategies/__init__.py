@@ -2,5 +2,4 @@
 
 from .base_strategy import BaseStrategy
 from .trend_rider import TrendRiderStrategy
-
-# هر استراتژی جدیدی که می‌سازیم، در اینجا import می‌کنیم
+from .mean_reversion import MeanReversionStrategy # <--- این خط را اضافه کنید
