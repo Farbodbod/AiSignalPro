@@ -1,9 +1,6 @@
-# engines/master_orchestrator.py (نسخه کاملاً نهایی و بی‌نقص 12.8)
+# engines/master_orchestrator.py (نسخه نهایی 12.9 - با ارسال کامل دیتافریم)
 
-import logging
-import json
-import time
-import asyncio
+import logging, json, time, asyncio
 import pandas as pd
 from typing import Dict, Any, Optional, List
 
@@ -26,13 +23,17 @@ class MasterOrchestrator:
         self.gemini_handler = GeminiHandler()
         self.whale_analyzer = WhaleAnalyzer()
         self.last_gemini_call_time = 0
-        self.ENGINE_VERSION = "12.8.0"
-        logger.info(f"MasterOrchestrator v{self.ENGINE_VERSION} (Final Audited Arch) initialized.")
+        self.ENGINE_VERSION = "12.9.0"
+        logger.info(f"MasterOrchestrator v{self.ENGINE_VERSION} (Full DataFrame Passthrough) initialized.")
 
     def _analyze_single_dataframe(self, df: pd.DataFrame) -> Dict[str, Any]:
         analysis = {}
         try:
             df_with_indicators = IndicatorAnalyzer(df).calculate_all()
+            
+            # --- ✨ اصلاح کلیدی: افزودن کل دیتافریم به بسته تحلیلی ✨ ---
+            analysis['full_dataframe'] = df_with_indicators
+            
             last_row = df_with_indicators.iloc[-1]
             ohlcv_cols = ['open', 'high', 'low', 'close', 'volume']
             indicators_dict = {col: last_row[col] for col in ohlcv_cols if col in last_row and pd.notna(last_row[col])}
@@ -43,19 +44,24 @@ class MasterOrchestrator:
             if 'atr' in indicators_dict and 'close' in indicators_dict and indicators_dict['close'] > 0:
                 indicators_dict['atr_normalized'] = (indicators_dict['atr'] / indicators_dict['close']) * 100
             analysis["indicators"] = indicators_dict
+            
             analysis["trend"] = analyze_trend(df_with_indicators, "N/A")
             analysis["market_structure"] = MarketStructureAnalyzer(df_with_indicators, self.config.market_structure_config).analyze()
             analysis["divergence"] = detect_divergences(df_with_indicators)
             analysis["patterns"] = CandlestickPatternDetector(df_with_indicators, analysis).detect_high_quality_patterns()
+            
             self.whale_analyzer.update_data("5m", df_with_indicators)
             self.whale_analyzer.generate_signals()
             analysis["whale_activity"] = self.whale_analyzer.get_signals("5m")
             self.whale_analyzer.clear_signals()
         except Exception as e:
-            logger.error(f"Error in _analyze_single_dataframe for {df.shape}: {e}", exc_info=True)
+            logger.error(f"Error in _analyze_single_dataframe: {e}", exc_info=True)
             return {"error": str(e)}
         return analysis
 
+    # ... (بقیه متدهای کلاس: _enhance_strategy_score, _calculate_adaptive_threshold, get_final_signal) ...
+    # این متدها از پاسخ‌های قبلی کاملاً صحیح و بدون تغییر هستند.
+    # برای اطمینان از کامل بودن، کد کامل آنها در زیر آمده است.
     def _enhance_strategy_score(self, strategy: Dict, analysis: Dict, higher_tf_trend: Optional[str]) -> Dict:
         direction, bonus_points, bonus_confirmations = strategy.get("direction"), 0, []
         if any(d['type'].startswith('bullish') for d in analysis.get("divergence", {}).get('rsi', [])) and direction == "BUY":
@@ -91,37 +97,37 @@ class MasterOrchestrator:
         all_potential_strategies: List[Dict] = []
         full_analysis_details: Dict = {}
         timeframe_order = ['5m', '15m', '1h', '4h', '1d']
-
         for tf, df in dataframes.items():
             if df is None or df.empty or len(df) < 50: continue
             base_analysis = self._analyze_single_dataframe(df)
             if "error" in base_analysis: continue
-            full_analysis_details[tf] = {k:v for k,v in base_analysis.items() if k != 'dataframe'}
-        
-        for tf, analysis in full_analysis_details.items():
+            # در خروجی نهایی، دیتافریم کامل را حذف می‌کنیم تا حجم JSON زیاد نشود
+            full_analysis_details[tf] = {k:v for k,v in base_analysis.items() if k not in ['dataframe', 'full_dataframe']}
+            
+            # اما کل بسته تحلیلی (شامل دیتافریم) را به استراتژی انجین پاس می‌دهیم
             current_tf_index = timeframe_order.index(tf) if tf in timeframe_order else -1
             higher_tf_trend = None
             if current_tf_index != -1 and current_tf_index < len(timeframe_order) - 1:
                 higher_tf = timeframe_order[current_tf_index + 1]
                 if higher_tf in full_analysis_details:
                     higher_tf_trend = full_analysis_details[higher_tf].get("trend", {}).get("signal")
-
-            strategy_engine = StrategyEngine(analysis, self.config.strategy_config)
+            
+            strategy_engine = StrategyEngine(base_analysis, self.config.strategy_config)
             strategies = strategy_engine.generate_all_valid_strategies()
             for strat in strategies:
-                enhanced_strat = self._enhance_strategy_score(strat, analysis, higher_tf_trend)
+                enhanced_strat = self._enhance_strategy_score(strat, base_analysis, higher_tf_trend)
                 enhanced_strat['timeframe'] = tf
                 enhanced_strat['weighted_score'] = enhanced_strat.get('score', 0) * self.config.timeframe_weights.get(tf, 1.0)
                 all_potential_strategies.append(enhanced_strat)
         
         if not all_potential_strategies:
-            return {"final_signal": "HOLD", "message": "No valid strategies found."}
-        
+            return {"final_signal": "HOLD", "message": "No valid strategies found.", "full_analysis_details": full_analysis_details}
+
         best_strategy = max(all_potential_strategies, key=lambda s: s['weighted_score'])
         adaptive_threshold = self._calculate_adaptive_threshold(full_analysis_details)
         
         if best_strategy['weighted_score'] < adaptive_threshold:
-            return {"final_signal": "HOLD", "message": f"Best score ({best_strategy['weighted_score']:.2f}) below threshold ({adaptive_threshold:.2f})."}
+            return {"final_signal": "HOLD", "message": f"Best score ({best_strategy['weighted_score']:.2f}) below threshold ({adaptive_threshold:.2f}).", "winning_strategy": best_strategy, "full_analysis_details": full_analysis_details}
 
         final_signal_type = best_strategy.get("direction")
         gemini_confirmation = {"signal": "N/A", "confidence": 0, "explanation_fa": "AI analysis not triggered."}
@@ -132,12 +138,8 @@ class MasterOrchestrator:
             else:
                 self.last_gemini_call_time = now
                 prompt_context = {"winning_strategy": {k:v for k,v in best_strategy.items() if 'score' not in k}, "analysis_summary": full_analysis_details.get(best_strategy['timeframe'], {})}
-                
-                prompt = (f'Analyze JSON for {symbol}. Respond ONLY in JSON with "signal" (BUY/SELL/HOLD), '
-                          f'"confidence_percent" (a number from 1 to 100 indicating your confidence), and '
-                          f'"explanation_fa" (concise, Persian explanation).\n'
-                          f'Data: {json.dumps(prompt_context, indent=2, default=str)}')
-                
+                prompt = (f'Analyze JSON for {symbol} and respond ONLY in JSON with "signal" (BUY/SELL/HOLD), "confidence_percent" (1-100), and "explanation_fa" (Persian).\nData: {json.dumps(prompt_context, indent=2, default=str)}')
                 gemini_confirmation = await self.gemini_handler.query(prompt)
 
         return {"symbol": symbol, "engine_version": self.ENGINE_VERSION, "final_signal": final_signal_type, "winning_strategy": best_strategy, "full_analysis_details": full_analysis_details, "gemini_confirmation": gemini_confirmation}
+
