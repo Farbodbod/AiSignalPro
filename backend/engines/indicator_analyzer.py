@@ -1,14 +1,14 @@
-# engines/indicator_analyzer.py (نسخه نهایی فاز اول - با تمام اندیکاتورها)
+# engines/indicator_analyzer.py (نهایی با ATR)
 
 import pandas as pd
 import logging
 from typing import Dict, Any, Type, List
 
-# --- ۱. ایمپورت کلاس نهایی ---
+# --- ایمپورت کلاس AtrIndicator ---
 from .indicators import (
     BaseIndicator, RsiIndicator, MacdIndicator, BollingerIndicator, 
     IchimokuIndicator, AdxIndicator, SuperTrendIndicator, ObvIndicator,
-    StochasticIndicator, CciIndicator, MfiIndicator
+    StochasticIndicator, CciIndicator, MfiIndicator, AtrIndicator
 )
 
 logger = logging.getLogger(__name__)
@@ -18,7 +18,7 @@ class IndicatorAnalyzer:
         self.df = df
         self.config = config if config is not None else self._get_default_config()
         
-        # --- ۲. افزودن کلاس نهایی به دیکشنری ---
+        # --- افزودن AtrIndicator به دیکشنری کلاس‌ها ---
         self._indicator_classes: Dict[str, Type[BaseIndicator]] = {
             'rsi': RsiIndicator,
             'macd': MacdIndicator,
@@ -30,6 +30,7 @@ class IndicatorAnalyzer:
             'stochastic': StochasticIndicator,
             'cci': CciIndicator,
             'mfi': MfiIndicator,
+            'atr': AtrIndicator,
         }
         
         self.calculated_indicators: List[str] = []
@@ -46,13 +47,13 @@ class IndicatorAnalyzer:
             'obv': {'ma_period': 20, 'enabled': True},
             'stochastic': {'k_period': 14, 'd_period': 3, 'smooth_k': 3, 'enabled': True},
             'cci': {'period': 20, 'constant': 0.015, 'enabled': True},
-            # --- ۳. افزودن کانفیگ نهایی ---
             'mfi': {'period': 14, 'enabled': True},
+            # --- افزودن کانفیگ پیش‌فرض برای ATR ---
+            'atr': {'period': 14, 'enabled': True},
         }
 
     # متدهای calculate_all و get_analysis_summary بدون هیچ تغییری باقی می‌مانند
     def calculate_all(self) -> pd.DataFrame:
-        # ... (کد بدون تغییر)
         logger.info("Starting calculation for all enabled indicators based on config.")
         for name, params in self.config.items():
             if params.get('enabled', False):
@@ -69,9 +70,7 @@ class IndicatorAnalyzer:
                     logger.warning(f"Indicator class for '{name}' not found in _indicator_classes.")
         return self.df
 
-
     def get_analysis_summary(self) -> Dict[str, Any]:
-        # ... (کد بدون تغییر)
         logger.info("Generating analysis summary from calculated indicators.")
         summary: Dict[str, Any] = {}
         for name in self.calculated_indicators:
