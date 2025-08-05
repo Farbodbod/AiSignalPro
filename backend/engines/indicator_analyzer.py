@@ -1,11 +1,11 @@
-# engines/indicator_analyzer.py (نسخه نهایی با پشتیبانی از بولینگر بندز)
+# engines/indicator_analyzer.py (نسخه نهایی با پشتیبانی از ایچیموکو)
 
 import pandas as pd
 import logging
 from typing import Dict, Any, Type, List
 
 # --- ۱. ایمپورت کلاس جدید ---
-from .indicators import BaseIndicator, RsiIndicator, MacdIndicator, BollingerIndicator
+from .indicators import BaseIndicator, RsiIndicator, MacdIndicator, BollingerIndicator, IchimokuIndicator
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +18,8 @@ class IndicatorAnalyzer:
         self._indicator_classes: Dict[str, Type[BaseIndicator]] = {
             'rsi': RsiIndicator,
             'macd': MacdIndicator,
-            'bollinger': BollingerIndicator, 
+            'bollinger': BollingerIndicator,
+            'ichimoku': IchimokuIndicator,
         }
         
         self.calculated_indicators: List[str] = []
@@ -28,10 +29,13 @@ class IndicatorAnalyzer:
         return {
             'rsi': {'period': 14, 'enabled': True},
             'macd': {'fast_period': 12, 'slow_period': 26, 'signal_period': 9, 'enabled': True},
-            # --- ۳. افزودن کانفیگ پیش‌فرض ---
             'bollinger': {'period': 20, 'std_dev': 2, 'enabled': True},
+            # --- ۳. افزودن کانفیگ پیش‌فرض ---
+            'ichimoku': {'tenkan_period': 9, 'kijun_period': 26, 'senkou_b_period': 52, 'enabled': True},
         }
 
+    # متدهای calculate_all و get_analysis_summary بدون هیچ تغییری باقی می‌مانند
+    # قدرت معماری جدید در همین است!
     def calculate_all(self) -> pd.DataFrame:
         logger.info("Starting calculation for all enabled indicators based on config.")
         for name, params in self.config.items():
