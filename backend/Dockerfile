@@ -1,7 +1,7 @@
-# Dockerfile (نسخه نهایی با آدرس‌دهی مستقیم)
+# Dockerfile (آخرین تلاش با ایمیج کامل و بازرسی)
 
-# ۱. انتخاب سیستم‌عامل پایه
-FROM python:3.11-slim-bullseye
+# ۱. ✨✨ تغییر کلیدی: استفاده از ایمیج کامل به جای نسخه slim ✨✨
+FROM python:3.11-bullseye
 
 # ۲. نصب پیش‌نیازهای سیستمی
 RUN apt-get update && \
@@ -12,7 +12,7 @@ RUN apt-get update && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
-# ۳. دانلود، کامپایل و نصب کتابخانه C در مسیر استاندارد /usr
+# ۳. دانلود، کامپایل و نصب کتابخانه C
 RUN wget http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz && \
     tar -xzf ta-lib-0.4.0-src.tar.gz && \
     cd ta-lib/ && \
@@ -22,21 +22,23 @@ RUN wget http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz && \
     cd .. && \
     rm -rf ta-lib ta-lib-0.4.0-src.tar.gz
 
-# ۴. ✨✨ اصلاحیه کلیدی: تعریف متغیرهای محیطی ✨✨
-# ما به صورت صریح به pip می‌گوییم که فایل‌های هدر (.h) و کتابخانه (.so) کجا هستند.
+# ۴. ✨✨ مرحله جدید: بازرسی و تایید نصب ✨✨
+# ما محتویات پوشه‌های نصب را در لاگ چاپ می‌کنیم تا مطمئن شویم فایل‌ها آنجا هستند.
+RUN ls -l /usr/include/ta-lib/ && ls -l /usr/lib/libta_*
+
+# ۵. تعریف متغیرهای محیطی برای آدرس‌دهی مستقیم
 ENV TA_INCLUDE_PATH=/usr/include
 ENV TA_LIBRARY_PATH=/usr/lib
 
-# ۵. تنظیم پوشه کاری داخل کانتینر
+# ۶. تنظیم پوشه کاری
 WORKDIR /app
 
-# ۶. کپی کردن فایل نیازمندی‌ها و نصب پکیج‌های پایتون
-# این بار pip آدرس دقیق را می‌داند و نباید شکست بخورد.
+# ۷. کپی و نصب نیازمندی‌های پایتون
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# ۷. کپی کردن تمام کدهای پروژه به داخل کانتینر
+# ۸. کپی کردن کدهای پروژه
 COPY . .
 
-# ۸. تعریف دستور نهایی برای اجرای برنامه
+# ۹. تعریف دستور نهایی برای اجرای برنامه
 CMD ["gunicorn", "trading_app.wsgi"]
