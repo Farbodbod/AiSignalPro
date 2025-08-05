@@ -1,13 +1,14 @@
-# engines/indicator_analyzer.py (نسخه نهایی با پشتیبانی از OBV)
+# engines/indicator_analyzer.py (نسخه نهایی فاز اول - با تمام اندیکاتورها)
 
 import pandas as pd
 import logging
 from typing import Dict, Any, Type, List
 
-# --- ۱. ایمپورت کلاس جدید ---
+# --- ۱. ایمپورت کلاس نهایی ---
 from .indicators import (
     BaseIndicator, RsiIndicator, MacdIndicator, BollingerIndicator, 
-    IchimokuIndicator, AdxIndicator, SuperTrendIndicator, ObvIndicator
+    IchimokuIndicator, AdxIndicator, SuperTrendIndicator, ObvIndicator,
+    StochasticIndicator, CciIndicator, MfiIndicator
 )
 
 logger = logging.getLogger(__name__)
@@ -17,7 +18,7 @@ class IndicatorAnalyzer:
         self.df = df
         self.config = config if config is not None else self._get_default_config()
         
-        # --- ۲. افزودن کلاس به دیکشنری ---
+        # --- ۲. افزودن کلاس نهایی به دیکشنری ---
         self._indicator_classes: Dict[str, Type[BaseIndicator]] = {
             'rsi': RsiIndicator,
             'macd': MacdIndicator,
@@ -26,6 +27,9 @@ class IndicatorAnalyzer:
             'adx': AdxIndicator,
             'supertrend': SuperTrendIndicator,
             'obv': ObvIndicator,
+            'stochastic': StochasticIndicator,
+            'cci': CciIndicator,
+            'mfi': MfiIndicator,
         }
         
         self.calculated_indicators: List[str] = []
@@ -39,8 +43,11 @@ class IndicatorAnalyzer:
             'ichimoku': {'tenkan_period': 9, 'kijun_period': 26, 'senkou_b_period': 52, 'enabled': True},
             'adx': {'period': 14, 'enabled': True},
             'supertrend': {'period': 10, 'multiplier': 3.0, 'enabled': True},
-            # --- ۳. افزودن کانفیگ پیش‌فرض ---
             'obv': {'ma_period': 20, 'enabled': True},
+            'stochastic': {'k_period': 14, 'd_period': 3, 'smooth_k': 3, 'enabled': True},
+            'cci': {'period': 20, 'constant': 0.015, 'enabled': True},
+            # --- ۳. افزودن کانفیگ نهایی ---
+            'mfi': {'period': 14, 'enabled': True},
         }
 
     # متدهای calculate_all و get_analysis_summary بدون هیچ تغییری باقی می‌مانند
@@ -61,6 +68,7 @@ class IndicatorAnalyzer:
                 else:
                     logger.warning(f"Indicator class for '{name}' not found in _indicator_classes.")
         return self.df
+
 
     def get_analysis_summary(self) -> Dict[str, Any]:
         # ... (کد بدون تغییر)
