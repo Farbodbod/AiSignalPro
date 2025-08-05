@@ -4,4 +4,5 @@ from .base import BaseIndicator
 from .rsi import RsiIndicator
 from .macd import MacdIndicator
 from .bollinger import BollingerIndicator
-from .ichimoku import IchimokuIndicator # <--- این خط را اضافه کنید
+from .ichimoku import IchimokuIndicator
+from .adx import AdxIndicator # <--- این خط را اضافه کنید
