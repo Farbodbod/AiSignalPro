@@ -1,212 +1,120 @@
-# live_monitor_worker.py (نسخه کاملاً نهایی و بی‌نقص 3.3)
+# engines/live_monitor_worker.py (نسخه نهایی و عملیاتی با تنظیمات بهینه)
 
 import asyncio
+import logging
 import os
 import django
-import logging
 import time
-from typing import Dict, Optional
-from datetime import datetime
-import pytz
-from jdatetime import datetime as jdatetime
+from typing import Dict, Tuple
 
-# --- تنظیمات اولیه جنگو ---
+# --- راه‌اندازی اولیه و ضروری Django ---
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'trading_app.settings')
 django.setup()
 
-# --- وارد کردن ماژول‌های پروژه ---
 from core.exchange_fetcher import ExchangeFetcher
 from engines.master_orchestrator import MasterOrchestrator
-from engines.config import EngineConfig
 from engines.signal_adapter import SignalAdapter
 from engines.telegram_handler import TelegramHandler
 
-# --- تعریف ثابت‌های مانیتورینگ ---
-SYMBOLS_TO_MONITOR = ['BTC', 'ETH', 'XRP', 'SOL', 'DOGE']
-TIME_FRAMES_TO_ANALYZE = ['5m', '15m', '1h', '4h']
-POLL_INTERVAL_SECONDS = 900  # 15 دقیقه
-SIGNAL_CACHE_TTL_SECONDS = 3600 # 1 ساعت
+# --- تنظیمات اصلی و قابل تغییر ربات ---
+SYMBOLS_TO_MONITOR = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'XRP/USDT', 'DOGE/USDT']
+TIMEFRAMES_TO_ANALYZE = ['15m', '1h', '4h']
+POLL_INTERVAL_SECONDS = 900  # ۱۵ دقیقه
 
-# --- تنظیمات لاگینگ ---
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - [%(funcName)s] - %(message)s')
-logger = logging.getLogger(__name__)
+# --- زمان کش داینامیک بر اساس تایم‌فریم (بر حسب ثانیه) ---
+SIGNAL_CACHE_TTL_MAP = {
+    '15m': 3 * 3600,  # ۳ ساعت
+    '1h': 6 * 3600,   # ۶ ساعت
+    '4h': 12 * 3600,  # ۱۲ ساعت
+    'default': 4 * 3600
+}
 
-# --- کلاس داخلی برای مدیریت سیگنال‌های تکراری ---
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - [%(module)s:%(funcName)s] - %(message)s')
+
 class SignalCache:
-    """کلاسی برای جلوگیری از ارسال سیگنال‌های تکراری در یک بازه زمانی مشخص."""
-    def __init__(self, ttl_seconds: int):
-        self.cache: Dict[str, tuple] = {}
-        self.ttl = ttl_seconds
+    """کلاس پیشرفته برای جلوگیری از ارسال سیگنال‌های تکراری با TTL داینامیک."""
+    def __init__(self, ttl_map: Dict[str, int]):
+        self._cache: Dict[Tuple[str, str, str], float] = {}
+        self.ttl_map = ttl_map
 
-    def is_duplicate(self, symbol: str, signal_type: str) -> bool:
-        """بررسی می‌کند که آیا سیگنال برای یک نماد تکراری است یا خیر."""
-        now = time.time()
-        if symbol in self.cache:
-            last_signal, last_time = self.cache[symbol]
-            if signal_type == last_signal and (now - last_time) < self.ttl:
+    def is_duplicate(self, symbol: str, timeframe: str, direction: str) -> bool:
+        key = (symbol, timeframe, direction)
+        ttl = self.ttl_map.get(timeframe, self.ttl_map['default'])
+        if key in self._cache:
+            last_sent_time = self._cache[key]
+            if (time.time() - last_sent_time) < ttl:
+                logging.info(f"Duplicate signal {key} found. Cooldown active for another {((last_sent_time + ttl) - time.time()) / 60:.1f} minutes.")
                 return True
         return False
 
-    def store(self, symbol: str, signal_type: str):
-        """سیگنال جدید را در حافظه کش ذخیره می‌کند."""
-        self.cache[symbol] = (signal_type, time.time())
+    def store_signal(self, symbol: str, timeframe: str, direction: str):
+        key = (symbol, timeframe, direction)
+        self._cache[key] = time.time()
 
-# --- تابع فرمت‌بندی پیام تلگرام (کامل و نهایی) ---
-def format_legendary_message(signal_obj: dict) -> str:
-    """یک آبجکت سیگنال نهایی را به یک پیام تلگرام کامل و خوانا تبدیل می‌کند."""
-    # --- استخراج داده‌ها ---
-    symbol = signal_obj.get("symbol", "N/A")
-    timeframe = signal_obj.get("timeframe", "N/A")
-    signal_type = signal_obj.get("signal_type", "N/A")
-    strategy_name = signal_obj.get("strategy_name", "Unknown")
-    
-    winning_strategy = signal_obj.get("winning_strategy", {})
-    entry_zone = winning_strategy.get("entry_zone", [])
-    stop_loss = winning_strategy.get("stop_loss", 0.0)
-    targets = winning_strategy.get("targets", [])
-    rr_ratio = winning_strategy.get("risk_reward_ratio")
-    confirmations = winning_strategy.get("confirmations", [])
-    
-    analysis_details = signal_obj.get("full_analysis_details", {}).get(timeframe, {})
-    key_levels = analysis_details.get("market_structure", {}).get("key_levels", {})
-    supports = key_levels.get('supports', [])
-    resistances = key_levels.get('resistances', [])
-    
-    sys_confidence = signal_obj.get("system_confidence_percent", 0)
-    ai_confidence = signal_obj.get("ai_confidence_percent", 0)
-    ai_explanation = signal_obj.get("explanation_fa", "AI analysis skipped due to cooldown.")
-    if not isinstance(ai_explanation, str) or ai_explanation == "N/A":
-        ai_explanation = "AI analysis skipped due to cooldown."
-    
-    issued_at_utc_str = signal_obj.get("issued_at", "")
-    valid_until_utc_str = signal_obj.get("valid_until", "")
-
-    # --- فرمت‌بندی بخش‌های پیام ---
-    signal_header = "🟢 LONG (BUY)" if signal_type == "BUY" else "🔴 SHORT (SELL)"
-    entry_range_str = f"`{entry_zone[0]:.4f} - {entry_zone[1]:.4f}`" if entry_zone and len(entry_zone) > 1 else "N/A"
-    targets_str = "\n".join([f"    🎯 TP{i+1}: `{t:.4f}`" for i, t in enumerate(targets)]) if targets else ""
-    rr_str = f"📊 R/R (to TP1): `1:{rr_ratio:.2f}`" if rr_ratio else ""
-    supports_str = "\n".join([f"    - `{s:.4f}`" for s in supports]) if supports else "Not Available"
-    resistances_str = "\n".join([f"    - `{r:.4f}`" for r in resistances]) if resistances else "Not Available"
-    
-    tehran_tz = pytz.timezone("Asia/Tehran")
-    timestamp_str = ""
-    if issued_at_utc_str:
-        try:
-            utc_dt = datetime.fromisoformat(issued_at_utc_str.replace('Z', '+00:00'))
-            jalali_dt = jdatetime.fromgregorian(datetime=utc_dt.astimezone(tehran_tz))
-            timestamp_str = f"⏰ {jalali_dt.strftime('%Y/%m/%d, %H:%M:%S')}"
-        except Exception: pass
-
-    valid_until_str = ""
-    if valid_until_utc_str:
-        try:
-            utc_valid_dt = datetime.fromisoformat(valid_until_utc_str.replace('Z', '+00:00'))
-            jalali_valid_dt = jdatetime.fromgregorian(datetime=utc_valid_dt.astimezone(tehran_tz))
-            valid_until_str = f"⏳ Valid Until: {jalali_valid_dt.strftime('%Y/%m/%d, %H:%M')}"
-        except Exception: pass
-
-    explanation_section = ""
-    if "skipped" not in ai_explanation:
-        explanation_section = f"🤖 **AI Analysis:**\n_{ai_explanation}_"
-    elif confirmations:
-        explanation_section = f"⚙️ **System Reasons:**\n_{', '.join(confirmations)}_"
-
-    # --- ساختار نهایی پیام ---
-    return (
-        f"🔥 **AiSignalPro - NEW SIGNAL** 🔥\n\n"
-        f"🪙 **{symbol}/USDT** | `{timeframe}`\n"
-        f"📊 Signal: *{signal_header}*\n"
-        f"♟️ Strategy: _{strategy_name}_\n\n"
-        f"🎯 System Confidence: *{sys_confidence:.1f}%* | 🧠 AI Score: *{ai_confidence:.1f}%*\n"
-        f"{rr_str}\n"
-        f"----------------------------------------\n"
-        f"📈 **Entry Zone:**\n"
-        f"    {entry_range_str}\n\n"
-        f"🎯 **Targets:**\n{targets_str}\n\n"
-        f"🛑 **Stop Loss:**\n"
-        f"    `{stop_loss:.4f}`\n"
-        f"----------------------------------------\n"
-        f"🛡️ **Key Resistance Levels:**\n{resistances_str}\n\n"
-        f"📈 **Key Support Levels:**\n{supports_str}\n\n"
-        f"{explanation_section}\n\n"
-        f"⚠️ *Risk Management: Use 2-3% of your capital.*\n"
-        f"{timestamp_str}\n"
-        f"{valid_until_str}"
-    )
-
-# --- توابع اصلی برای تحلیل و مانیتورینگ ---
-async def analyze_symbol(fetcher: ExchangeFetcher, orchestrator: MasterOrchestrator, symbol: str) -> Optional[dict]:
-    """خط لوله کامل تحلیل برای یک نماد خاص."""
-    logger.info(f"Gathering data for {symbol}...")
-    dataframes = {}
-    tasks = [fetcher.get_first_successful_klines(symbol, tf) for tf in TIME_FRAMES_TO_ANALYZE]
-    results = await asyncio.gather(*tasks, return_exceptions=True)
-    
-    for i, res in enumerate(results):
-        tf = TIME_FRAMES_TO_ANALYZE[i]
-        if isinstance(res, Exception) or not (res and res[0] is not None):
-            logger.warning(f"Could not fetch data for {symbol}@{tf}. Reason: {res}")
-            continue
-        df, source = res
-        dataframes[tf] = df
-        
-    if not dataframes:
-        logger.error(f"Could not fetch any valid kline data for {symbol}.")
-        return None
-        
-    logger.info(f"Analyzing collected data for {symbol}...")
-    final_result = await orchestrator.get_final_signal(dataframes, symbol)
-    
-    adapter = SignalAdapter(final_result)
-    signal_object = adapter.generate_final_signal()
-    if signal_object:
-        signal_object['full_analysis_details'] = final_result.get('full_analysis_details', {})
-        signal_object['winning_strategy'] = final_result.get('winning_strategy', {})
-    return signal_object
-
-async def monitor_loop():
-    """حلقه اصلی مانیتورینگ که به صورت ۲۴/۷ اجرا می‌شود."""
-    engine_config = EngineConfig()
-    orchestrator = MasterOrchestrator(config=engine_config)
-    telegram = TelegramHandler()
-    signal_cache = SignalCache(SIGNAL_CACHE_TTL_SECONDS)
-    fetcher = ExchangeFetcher()
-    
-    logger.info("Live Monitoring Worker (v3.3 - Flawless Edition) started.")
+async def analyze_and_alert(fetcher: ExchangeFetcher, orchestrator: MasterOrchestrator, telegram: TelegramHandler, cache: SignalCache, symbol: str, timeframe: str):
+    """خط لوله کامل تحلیل و ارسال هشدار برای یک ترکیب نماد/تایم‌فریم."""
     try:
-        await telegram.send_message_async("✅ *ربات AiSignalPro (نسخه نهایی و بی‌نقص) با موفقیت فعال شد.*")
-    except Exception as e:
-        logger.error(f"Failed to send initial Telegram message: {e}")
-    
-    while True:
-        try:
-            logger.info("--- Starting New Monitoring Cycle ---")
-            for symbol in SYMBOLS_TO_MONITOR:
-                signal_obj = await analyze_symbol(fetcher, orchestrator, symbol)
-                if signal_obj:
-                    if not signal_cache.is_duplicate(symbol, signal_obj["signal_type"]):
-                        signal_cache.store(symbol, signal_obj["signal_type"])
-                        message = format_legendary_message(signal_obj)
-                        await telegram.send_message_async(message)
-                        logger.info(f"LEGENDARY ALERT SENT for {symbol}: {signal_obj['signal_type']}")
-                    else:
-                        logger.info(f"Duplicate signal for {symbol}. Skipping.")
-                else:
-                    logger.info(f"No actionable signal for {symbol}.")
-                await asyncio.sleep(10)
-            
-            logger.info(f"Cycle finished. Waiting for {POLL_INTERVAL_SECONDS} seconds.")
-            await asyncio.sleep(POLL_INTERVAL_SECONDS)
-        except Exception as e:
-            logger.critical(f"A critical error occurred in the main monitoring loop: {e}", exc_info=True)
-            await asyncio.sleep(60)
+        logging.info(f"Fetching data for {symbol} on {timeframe}...")
+        df, source = await fetcher.get_first_successful_klines(symbol, timeframe, limit=200)
 
-# --- نقطه شروع اجرای اسکریپت ---
+        if df is None or df.empty:
+            logging.warning(f"Could not fetch data for {symbol} on {timeframe}.")
+            return
+
+        logging.info(f"Data fetched from {source}. Running full pipeline for {symbol} on {timeframe}...")
+        final_signal_package = orchestrator.run_full_pipeline(df, symbol, timeframe)
+
+        if final_signal_package:
+            base_signal = final_signal_package.get("base_signal", {})
+            direction = base_signal.get("direction")
+
+            if cache.is_duplicate(symbol, timeframe, direction):
+                return
+
+            adapter = SignalAdapter(strategy_signal=base_signal, symbol=symbol, timeframe=timeframe)
+            adapter.set_ai_confirmation(final_signal_package.get("ai_confirmation", {}))
+            message = adapter.to_telegram_message()
+            
+            logging.info(f"🚀🚀 SIGNAL DETECTED! Preparing to send alert for {symbol} {timeframe} {direction} 🚀🚀")
+            success = await telegram.send_message_async(message)
+            if success:
+                cache.store_signal(symbol, timeframe, direction)
+    
+    except Exception as e:
+        logging.error(f"An error occurred during analysis for {symbol} {timeframe}: {e}", exc_info=True)
+
+async def main_loop():
+    """قلب تپنده و حلقه اصلی ربات."""
+    fetcher = ExchangeFetcher()
+    orchestrator = MasterOrchestrator()
+    telegram = TelegramHandler()
+    signal_cache = SignalCache(ttl_map=SIGNAL_CACHE_TTL_MAP)
+
+    logging.info("======================================================")
+    logging.info(f"  AiSignalPro Live Monitoring Worker has started!")
+    logging.info(f"  Version: 17.1 (Modular, Concurrent, Dynamic Cache)")
+    logging.info(f"  Monitoring: {SYMBOLS_TO_MONITOR}")
+    logging.info(f"  Timeframes: {TIMEFRAMES_TO_ANALYZE}")
+    logging.info("======================================================")
+    await telegram.send_message_async("✅ *AiSignalPro Bot (v17.1) is now LIVE!*")
+
+    while True:
+        logging.info("--- Starting new full monitoring cycle ---")
+        tasks = [
+            analyze_and_alert(fetcher, orchestrator, telegram, signal_cache, symbol, timeframe)
+            for symbol in SYMBOLS_TO_MONITOR
+            for timeframe in TIMEFRAMES_TO_ANALYZE
+        ]
+        await asyncio.gather(*tasks)
+        logging.info(f"--- Full cycle finished. Sleeping for {POLL_INTERVAL_SECONDS} seconds... ---")
+        await asyncio.sleep(POLL_INTERVAL_SECONDS)
+
+    await fetcher.close()
+
 if __name__ == "__main__":
     try:
-        asyncio.run(monitor_loop())
+        asyncio.run(main_loop())
     except KeyboardInterrupt:
-        logger.info("Monitoring worker stopped by user.")
-    finally:
-        logger.info("Monitoring worker shut down.")
+        logging.info("Bot stopped by user.")
+    except Exception as e:
+        logging.critical(f"A fatal error occurred in the main runner: {e}", exc_info=True)
