@@ -1,4 +1,4 @@
-# engines/indicator_analyzer.py (نسخه نهایی با پشتیبانی از SuperTrend)
+# engines/indicator_analyzer.py (نسخه نهایی با پشتیبانی از OBV)
 
 import pandas as pd
 import logging
@@ -7,7 +7,7 @@ from typing import Dict, Any, Type, List
 # --- ۱. ایمپورت کلاس جدید ---
 from .indicators import (
     BaseIndicator, RsiIndicator, MacdIndicator, BollingerIndicator, 
-    IchimokuIndicator, AdxIndicator, SuperTrendIndicator
+    IchimokuIndicator, AdxIndicator, SuperTrendIndicator, ObvIndicator
 )
 
 logger = logging.getLogger(__name__)
@@ -25,6 +25,7 @@ class IndicatorAnalyzer:
             'ichimoku': IchimokuIndicator,
             'adx': AdxIndicator,
             'supertrend': SuperTrendIndicator,
+            'obv': ObvIndicator,
         }
         
         self.calculated_indicators: List[str] = []
@@ -37,8 +38,9 @@ class IndicatorAnalyzer:
             'bollinger': {'period': 20, 'std_dev': 2, 'enabled': True},
             'ichimoku': {'tenkan_period': 9, 'kijun_period': 26, 'senkou_b_period': 52, 'enabled': True},
             'adx': {'period': 14, 'enabled': True},
-            # --- ۳. افزودن کانفیگ پیش‌فرض ---
             'supertrend': {'period': 10, 'multiplier': 3.0, 'enabled': True},
+            # --- ۳. افزودن کانفیگ پیش‌فرض ---
+            'obv': {'ma_period': 20, 'enabled': True},
         }
 
     # متدهای calculate_all و get_analysis_summary بدون هیچ تغییری باقی می‌مانند
@@ -59,7 +61,6 @@ class IndicatorAnalyzer:
                 else:
                     logger.warning(f"Indicator class for '{name}' not found in _indicator_classes.")
         return self.df
-
 
     def get_analysis_summary(self) -> Dict[str, Any]:
         # ... (کد بدون تغییر)
