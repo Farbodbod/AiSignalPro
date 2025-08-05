@@ -1,23 +1,23 @@
-# core/utils.py (نسخه نهایی و کامل)
+# core/utils.py (نسخه نهایی 1.1 - سازگار با NumPy 2.0)
 
 import numpy as np
-import pandas as pd # <-- اضافه کردن import پانداز برای pd.isna
+import pandas as pd
 
 def convert_numpy_types(obj):
     """
-    یک تابع کمکی قوی برای تبدیل انواع داده NumPy به انواع داده استاندارد پایتون
-    تا در هنگام تبدیل به JSON با خطا مواجه نشویم.
+    تابع کمکی قوی برای تبدیل انواع داده NumPy به انواع داده استاندارد پایتون.
+    سازگار با NumPy 2.0 و بالاتر.
     """
     if isinstance(obj, dict):
         return {key: convert_numpy_types(value) for key, value in obj.items()}
     elif isinstance(obj, list):
         return [convert_numpy_types(element) for element in obj]
-    elif isinstance(obj, (np.int_, np.intc, np.intp, np.int8,
-                          np.int16, np.int32, np.int64, np.uint8,
-                          np.uint16, np.uint32, np.uint64)):
+    # --- ✨ اصلاح کلیدی: استفاده از نام‌های جدید NumPy ---
+    elif isinstance(obj, (np.integer)): # پوشش تمام انواع int
         return int(obj)
-    elif isinstance(obj, (np.float_, np.float16, np.float32, np.float64)):
+    elif isinstance(obj, (np.floating)): # پوشش تمام انواع float
         return float(obj)
+    # --- پایان اصلاح ---
     elif isinstance(obj, (np.ndarray,)):
         return obj.tolist()
     elif isinstance(obj, np.bool_):
