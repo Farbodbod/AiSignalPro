@@ -1,6 +1,7 @@
-# core/utils.py (جدید یا جایگزین شود)
+# core/utils.py (نسخه نهایی و کامل)
 
 import numpy as np
+import pandas as pd # <-- اضافه کردن import پانداز برای pd.isna
 
 def convert_numpy_types(obj):
     """
@@ -24,4 +25,3 @@ def convert_numpy_types(obj):
     elif pd.isna(obj):
         return None
     return obj
-
