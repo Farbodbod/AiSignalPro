@@ -1,10 +1,6 @@
-# nixpacks.toml (نسخه نهایی، ساده‌شده و صحیح)
+# nixpacks.toml (نسخه نهایی با استفاده از پکیج منیجر Nix)
 
 [phases.setup]
-# ما فقط فاز setup را برای نصب پیش‌نیازهای سیستمی خود سفارشی می‌کنیم.
-aptPkgs = ["wget", "tar", "build-essential"]
-cmds = [
-    "wget http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz && tar -xzf ta-lib-0.4.0-src.tar.gz && cd ta-lib/ && ./configure --prefix=/usr && make && sudo make install"
-]
-
-# بخش [phases.install] را به طور کامل حذف می‌کنیم تا Nixpacks از رفتار پیش‌فرض و صحیح خود استفاده کند.
+# به جای apt-get و دستورات پیچیده، فقط نام پکیج‌ها را به Nix می‌دهیم.
+# خود Nix بهترین نسخه از ta-lib و ابزارهای لازم مانند pkg-config را پیدا و نصب می‌کند.
+nixPkgs = ["ta-lib", "pkg-config"]
