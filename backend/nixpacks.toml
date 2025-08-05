@@ -1,7 +1,19 @@
-# nixpacks.toml
+# nixpacks.toml (نسخه حرفه‌ای با کامپایل از سورس)
 
 [phases.setup]
-# لیستی از پکیج‌های سیستمی که باید قبل از نصب پایتون، با apt-get نصب شوند.
-# build-essential: ابزارهای لازم برای کامپایل کد (مانند gcc).
-# libta-lib-dev: کتابخانه توسعه‌دهندگان TA-Lib به زبان C.
-aptPkgs = ["build-essential", "libta-lib-dev"]
+# در این مرحله، فقط ابزارهای مورد نیاز برای دانلود و ساخت را نصب می‌کنیم.
+aptPkgs = ["wget", "tar", "build-essential"]
+
+# در این بخش، دستورات خط فرمان را برای ساخت TA-Lib از سورس اجرا می‌کنیم.
+cmds = [
+    "wget http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz",
+    "tar -xzf ta-lib-0.4.0-src.tar.gz",
+    "cd ta-lib/",
+    "./configure --prefix=/usr",
+    "make",
+    "sudo make install"
+]
+
+[phases.install]
+# پس از نصب موفقیت‌آمیز کتابخانه C، حالا می‌توانیم پکیج پایتون را نصب کنیم.
+cmds = ["pip install -r requirements.txt"]
