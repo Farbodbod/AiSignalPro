@@ -1,70 +1,91 @@
-# engines/signal_adapter.py (نسخه کاملاً نهایی و بی‌نقص 2.4)
+# engines/signal_adapter.py (نسخه جدید برای معماری ماژولار)
 
-from typing import Dict, Any, Optional
-from datetime import datetime, timedelta
-import hashlib, logging
+import logging
+from typing import Dict, Any
+from datetime import datetime
+import pytz
+from jdatetime import datetime as jdatetime
 
 logger = logging.getLogger(__name__)
 
 class SignalAdapter:
-    def __init__(self, analytics_output: Dict[str, Any]):
-        self.output = analytics_output or {}
-        self.ai_confirmation = self.output.get("gemini_confirmation", {})
+    """
+    این کلاس یک سیگنال خام تولید شده توسط یک استراتژی را دریافت کرده
+    و آن را به فرمت‌های مختلف خروجی (مانند پیام تلگرام) تبدیل می‌کند.
+    """
+    def __init__(self, strategy_signal: Dict[str, Any], symbol: str, timeframe: str):
+        self.signal = strategy_signal
+        self.symbol = symbol
+        self.timeframe = timeframe
+        self.ai_confirmation = {} # این فیلد بعداً توسط MasterOrchestrator پر می‌شود
 
-    def _calculate_valid_until(self, timeframe: str) -> str:
-        now = datetime.utcnow()
+    def set_ai_confirmation(self, ai_data: Dict[str, Any]):
+        """برای افزودن تحلیل Gemini به سیگنال."""
+        self.ai_confirmation = ai_data
+
+    def _get_signal_emoji_and_text(self) -> (str, str):
+        direction = self.signal.get('direction', 'HOLD')
+        if direction == 'BUY':
+            return "🟢", "LONG"
+        elif direction == 'SELL':
+            return "🔴", "SHORT"
+        return "⚪️", "NEUTRAL"
+
+    def _format_targets(self) -> str:
+        targets = self.signal.get('targets', [])
+        if not targets: return "N/A"
+        return "\n".join([f"    🎯 TP{i+1}: `{t:,.4f}`" for i, t in enumerate(targets)])
+
+    def _format_confirmations(self) -> str:
+        confirmations = self.signal.get('confirmations', {})
+        if not confirmations: return "• _Based on strategy rules._"
+        
+        lines = []
+        for key, value in confirmations.items():
+            # فرمت‌بندی کلید برای خوانایی (مثال: adx_strength -> ADX Strength)
+            formatted_key = key.replace('_', ' ').title()
+            lines.append(f"• _{formatted_key}:_ {value}")
+        return "\n".join(lines)
+
+    def _get_timestamp(self) -> str:
+        """زمان فعلی را به فرمت تهران و شمسی برمی‌گرداند."""
         try:
-            if 'm' in timeframe:
-                valid_until = now + timedelta(minutes=int(timeframe.replace('m', '')) * 6)
-            elif 'h' in timeframe:
-                valid_until = now + timedelta(hours=int(timeframe.replace('h', '')) * 4)
-            else:
-                valid_until = now + timedelta(hours=4)
-            return valid_until.replace(microsecond=0).isoformat() + "Z"
-        except (ValueError, TypeError):
-            return (now + timedelta(hours=4)).replace(microsecond=0).isoformat() + "Z"
-    
-    def generate_final_signal(self) -> Optional[Dict[str, Any]]:
-        rule_based_signal = self.output.get("final_signal", "HOLD")
-        ai_signal = str(self.ai_confirmation.get("signal", "HOLD")).upper()
-        is_contradictory = (rule_based_signal == "BUY" and ai_signal == "SELL") or \
-                          (rule_based_signal == "SELL" and ai_signal == "BUY")
+            utc_dt = datetime.utcnow()
+            tehran_tz = pytz.timezone("Asia/Tehran")
+            tehran_dt = utc_dt.astimezone(tehran_tz)
+            jalali_dt = jdatetime.fromgregorian(datetime=tehran_dt)
+            return f"⏰ {jalali_dt.strftime('%Y/%m/%d, %H:%M:%S')}"
+        except Exception:
+            return ""
 
-        if rule_based_signal == "HOLD" or is_contradictory:
-            if is_contradictory:
-                logger.info(f"Signal for {self.output.get('symbol')} VETOED by AI.")
-            return None
+    def to_telegram_message(self) -> str:
+        """سیگنال را به یک پیام تلگرام کامل و حرفه‌ای تبدیل می‌کند."""
+        emoji, direction_text = self._get_signal_emoji_and_text()
+        strategy_name = self.signal.get('strategy_name', 'N/A')
+        entry_price = self.signal.get('entry_price', 0.0)
+        stop_loss = self.signal.get('stop_loss', 0.0)
+        rr_ratio = self.signal.get('risk_reward_ratio', 0.0)
         
-        strategy = self.output.get("winning_strategy")
-        if not strategy:
-            return None
-        
-        symbol = self.output.get("symbol")
-        timeframe = strategy.get("timeframe")
-        entry_price = strategy.get("entry_price")
-        
-        if not all([symbol, timeframe, entry_price]):
-            return None
-            
-        signal_id = hashlib.md5(f"{symbol}_{timeframe}_{rule_based_signal}_{entry_price}".encode()).hexdigest()
-        
-        # سقف امتیاز را روی ۳۵ در نظر می‌گیریم تا مقادیر واقعی‌تری داشته باشیم
-        confidence = min(round((strategy.get('weighted_score', 0) / 35.0) * 100, 1), 100)
-        
-        return {
-            "signal_id": signal_id,
-            "symbol": symbol,
-            "timeframe": timeframe,
-            "signal_type": rule_based_signal,
-            "current_price": entry_price,
-            "entry_zone": strategy.get("entry_zone", []), 
-            "targets": strategy.get("targets", []),
-            "stop_loss": strategy.get("stop_loss"), 
-            "risk_reward_ratio": strategy.get("risk_reward_ratio"),
-            "strategy_name": strategy.get("strategy_name", "Unknown"),
-            "valid_until": self._calculate_valid_until(timeframe),
-            "system_confidence_percent": confidence,
-            "ai_confidence_percent": self.ai_confirmation.get("confidence", 0),
-            "explanation_fa": self.ai_confirmation.get("explanation_fa", "N/A"),
-            "issued_at": datetime.utcnow().replace(microsecond=0).isoformat() + "Z",
-        }
+        ai_score = self.ai_confirmation.get('confidence', 0)
+        ai_explanation = self.ai_confirmation.get('explanation_fa', "AI analysis not performed.")
+
+        message = (
+            f"🔥 **AiSignalPro - NEW SIGNAL** 🔥\n\n"
+            f"🪙 **{self.symbol}** | `{self.timeframe}`\n"
+            f"📊 Signal: *{emoji} {direction_text}*\n"
+            f"♟️ Strategy: `{strategy_name}`\n\n"
+            f"🧠 AI Confidence: *{ai_score:.1f}%*\n"
+            f"📊 R/R (to TP1): *1:{rr_ratio:.2f}*\n"
+            f"----------------------------------------\n"
+            f"📈 **Entry Price:**\n"
+            f"    `{entry_price:,.4f}`\n\n"
+            f"🎯 **Targets:**\n{self._format_targets()}\n\n"
+            f"🛑 **Stop Loss:**\n"
+            f"    `{stop_loss:,.4f}`\n"
+            f"----------------------------------------\n"
+            f"💡 **System Reasons:**\n{self._format_confirmations()}\n\n"
+            f"🤖 **AI Analysis:**\n_{ai_explanation}_\n\n"
+            f"⚠️ *Risk Management: Use 2-3% of your capital.*\n"
+            f"{self._get_timestamp()}"
+        )
+        return message
