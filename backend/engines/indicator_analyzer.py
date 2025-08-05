@@ -1,15 +1,15 @@
-# engines/indicator_analyzer.py (کامل با DivergenceIndicator)
+# engines/indicator_analyzer.py
 
 import pandas as pd
 import logging
 from typing import Dict, Any, Type, List
 
-# ایمپورت تمام کلاس‌های اندیکاتور
 from .indicators import (
     BaseIndicator, RsiIndicator, MacdIndicator, BollingerIndicator, 
     IchimokuIndicator, AdxIndicator, SuperTrendIndicator, ObvIndicator,
     StochasticIndicator, CciIndicator, MfiIndicator, AtrIndicator,
-    PatternIndicator, DivergenceIndicator
+    PatternIndicator, DivergenceIndicator, PivotPointIndicator, 
+    StructureIndicator, WhaleIndicator # <--- کلاس جدید
 )
 
 logger = logging.getLogger(__name__)
@@ -18,28 +18,17 @@ class IndicatorAnalyzer:
     def __init__(self, df: pd.DataFrame, config: Dict[str, Any] = None):
         self.df = df
         self.config = config if config is not None else self._get_default_config()
-        
-        # دیکشنری کامل کلاس‌های اندیکاتور
         self._indicator_classes: Dict[str, Type[BaseIndicator]] = {
-            'rsi': RsiIndicator,
-            'macd': MacdIndicator,
-            'bollinger': BollingerIndicator,
-            'ichimoku': IchimokuIndicator,
-            'adx': AdxIndicator,
-            'supertrend': SuperTrendIndicator,
-            'obv': ObvIndicator,
-            'stochastic': StochasticIndicator,
-            'cci': CciIndicator,
-            'mfi': MfiIndicator,
-            'atr': AtrIndicator,
-            'patterns': PatternIndicator,
-            'divergence': DivergenceIndicator,
+            'rsi': RsiIndicator, 'macd': MacdIndicator, 'bollinger': BollingerIndicator,
+            'ichimoku': IchimokuIndicator, 'adx': AdxIndicator, 'supertrend': SuperTrendIndicator,
+            'obv': ObvIndicator, 'stochastic': StochasticIndicator, 'cci': CciIndicator,
+            'mfi': MfiIndicator, 'atr': AtrIndicator, 'patterns': PatternIndicator,
+            'divergence': DivergenceIndicator, 'pivots': PivotPointIndicator,
+            'structure': StructureIndicator, 'whales': WhaleIndicator, # <--- ماژول جدید
         }
-        
         self.calculated_indicators: List[str] = []
 
     def _get_default_config(self) -> Dict[str, Any]:
-        """تنظیمات پیش‌فرض برای تمام اندیکاتورها را برمی‌گرداند."""
         return {
             'rsi': {'period': 14, 'enabled': True},
             'macd': {'fast_period': 12, 'slow_period': 26, 'signal_period': 9, 'enabled': True},
@@ -54,9 +43,13 @@ class IndicatorAnalyzer:
             'atr': {'period': 14, 'enabled': True},
             'patterns': {'enabled': True},
             'divergence': {'period': 14, 'lookback': 30, 'enabled': True},
+            'pivots': {'method': 'standard', 'enabled': True},
+            'structure': {'sensitivity': 7, 'enabled': True},
+            'whales': {'period': 20, 'spike_multiplier': 3.5, 'enabled': True}, # <--- کانفیگ جدید
         }
 
     def calculate_all(self) -> pd.DataFrame:
+        # ... (کد این متد بدون تغییر باقی می‌ماند)
         logger.info("Starting calculation for all enabled indicators based on config.")
         for name, params in self.config.items():
             if params.get('enabled', False):
@@ -76,17 +69,12 @@ class IndicatorAnalyzer:
         return self.df
 
     def get_analysis_summary(self) -> Dict[str, Any]:
+        # ... (کد این متد بدون تغییر باقی می‌ماند)
         logger.info("Generating analysis summary from calculated indicators.")
         summary: Dict[str, Any] = {}
         if not self.df.empty:
             last_price_row = self.df.iloc[-1]
-            summary['price_data'] = {
-                'open': last_price_row.get('open'),
-                'high': last_price_row.get('high'),
-                'low': last_price_row.get('low'),
-                'close': last_price_row.get('close'),
-                'volume': last_price_row.get('volume'),
-            }
+            summary['price_data'] = { 'open': last_price_row.get('open'), 'high': last_price_row.get('high'), 'low': last_price_row.get('low'), 'close': last_price_row.get('close'), 'volume': last_price_row.get('volume'), }
         for name in self.calculated_indicators:
             indicator_class = self._indicator_classes.get(name)
             if indicator_class:
