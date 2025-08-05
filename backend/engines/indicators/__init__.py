@@ -1,4 +1,4 @@
-# engines/indicators/__init__.py (کامل با DivergenceIndicator)
+# engines/indicators/__init__.py (کامل و نهایی با تمام تحلیلگرها)
 
 from .base import BaseIndicator
 from .rsi import RsiIndicator
@@ -14,3 +14,6 @@ from .mfi import MfiIndicator
 from .atr import AtrIndicator
 from .pattern_indicator import PatternIndicator
 from .divergence_indicator import DivergenceIndicator
+from .pivot_indicator import PivotPointIndicator
+from .structure_indicator import StructureIndicator
+from .whale_indicator import WhaleIndicator
