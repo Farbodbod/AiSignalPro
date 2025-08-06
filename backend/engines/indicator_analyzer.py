@@ -1,4 +1,4 @@
-# engines/indicator_analyzer.py
+# engines/indicator_analyzer.py (نسخه نهایی با رفع باگ نمونه‌سازی)
 
 import pandas as pd
 import logging
@@ -9,7 +9,7 @@ from .indicators import (
     IchimokuIndicator, AdxIndicator, SuperTrendIndicator, ObvIndicator,
     StochasticIndicator, CciIndicator, MfiIndicator, AtrIndicator,
     PatternIndicator, DivergenceIndicator, PivotPointIndicator, 
-    StructureIndicator, WhaleIndicator # <--- کلاس جدید
+    StructureIndicator, WhaleIndicator
 )
 
 logger = logging.getLogger(__name__)
@@ -24,11 +24,13 @@ class IndicatorAnalyzer:
             'obv': ObvIndicator, 'stochastic': StochasticIndicator, 'cci': CciIndicator,
             'mfi': MfiIndicator, 'atr': AtrIndicator, 'patterns': PatternIndicator,
             'divergence': DivergenceIndicator, 'pivots': PivotPointIndicator,
-            'structure': StructureIndicator, 'whales': WhaleIndicator, # <--- ماژول جدید
+            'structure': StructureIndicator, 'whales': WhaleIndicator,
         }
-        self.calculated_indicators: List[str] = []
+        # --- ✨ تغییر کلیدی: اضافه کردن دیکشنری برای نگهداری نمونه‌ها ---
+        self._indicator_instances: Dict[str, BaseIndicator] = {}
 
     def _get_default_config(self) -> Dict[str, Any]:
+        # ... (این متد کامل و بدون تغییر است)
         return {
             'rsi': {'period': 14, 'enabled': True},
             'macd': {'fast_period': 12, 'slow_period': 26, 'signal_period': 9, 'enabled': True},
@@ -45,12 +47,11 @@ class IndicatorAnalyzer:
             'divergence': {'period': 14, 'lookback': 30, 'enabled': True},
             'pivots': {'method': 'standard', 'enabled': True},
             'structure': {'sensitivity': 7, 'enabled': True},
-            'whales': {'period': 20, 'spike_multiplier': 3.5, 'enabled': True}, # <--- کانفیگ جدید
+            'whales': {'period': 20, 'spike_multiplier': 3.5, 'enabled': True},
         }
 
     def calculate_all(self) -> pd.DataFrame:
-        # ... (کد این متد بدون تغییر باقی می‌ماند)
-        logger.info("Starting calculation for all enabled indicators based on config.")
+        logger.info("Starting calculation for all enabled indicators.")
         for name, params in self.config.items():
             if params.get('enabled', False):
                 indicator_class = self._indicator_classes.get(name)
@@ -58,32 +59,26 @@ class IndicatorAnalyzer:
                     try:
                         init_params = params.copy()
                         init_params.pop('enabled', None)
-                        indicator_instance = indicator_class(self.df, **init_params)
-                        self.df = indicator_instance.calculate()
-                        self.calculated_indicators.append(name)
-                        logger.debug(f"Successfully calculated indicator: {name}")
+                        # --- ✨ تغییر کلیدی: ساخت و نگهداری نمونه ---
+                        instance = indicator_class(self.df, **init_params)
+                        self.df = instance.calculate()
+                        self._indicator_instances[name] = instance
                     except Exception as e:
                         logger.error(f"Failed to calculate indicator '{name}': {e}", exc_info=True)
-                else:
-                    logger.warning(f"Indicator class for '{name}' not found in _indicator_classes.")
         return self.df
 
     def get_analysis_summary(self) -> Dict[str, Any]:
-        # ... (کد این متد بدون تغییر باقی می‌ماند)
         logger.info("Generating analysis summary from calculated indicators.")
         summary: Dict[str, Any] = {}
         if not self.df.empty:
             last_price_row = self.df.iloc[-1]
             summary['price_data'] = { 'open': last_price_row.get('open'), 'high': last_price_row.get('high'), 'low': last_price_row.get('low'), 'close': last_price_row.get('close'), 'volume': last_price_row.get('volume'), }
-        for name in self.calculated_indicators:
-            indicator_class = self._indicator_classes.get(name)
-            if indicator_class:
-                try:
-                    init_params = self.config.get(name, {}).copy()
-                    init_params.pop('enabled', None)
-                    indicator_instance = indicator_class(self.df, **init_params)
-                    summary[name] = indicator_instance.analyze()
-                except Exception as e:
-                    logger.error(f"Failed to analyze indicator '{name}': {e}", exc_info=True)
-                    summary[name] = {"error": str(e)}
+        
+        for name, instance in self._indicator_instances.items():
+            try:
+                # --- ✨ تغییر کلیدی: استفاده از نمونه موجود ---
+                summary[name] = instance.analyze()
+            except Exception as e:
+                logger.error(f"Failed to analyze indicator '{name}': {e}", exc_info=True)
+                summary[name] = {"error": str(e)}
         return summary
