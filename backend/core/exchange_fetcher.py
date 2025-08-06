@@ -1,4 +1,4 @@
-# core/exchange_fetcher.py (نسخه 4.0 - کاملاً هماهنگ و کامل)
+# core/exchange_fetcher.py (نسخه 4.1 - هماهنگ شده با live_monitor_worker)
 
 import asyncio
 import os
@@ -20,11 +20,11 @@ SYMBOL_MAP = {'BTC': {'base': 'BTC', 'quote': 'USDT'}, 'ETH': {'base': 'ETH', 'q
 
 class ExchangeFetcher:
     def __init__(self, cache_ttl: int = 60):
-        headers = {'User-Agent': 'AiSignalPro/4.0.0', 'Accept': 'application/json'}
+        headers = {'User-Agent': 'AiSignalPro/4.1.0', 'Accept': 'application/json'}
         self.client = httpx.AsyncClient(headers=headers, timeout=20, follow_redirects=True)
         self.cache = {}
         self.cache_ttl = cache_ttl
-        logging.info("ExchangeFetcher (Fully Synced Edition v4.0) initialized.")
+        logging.info("ExchangeFetcher (Fully Synced Edition v4.1) initialized.")
 
     def _get_cache_key(self, prefix: str, exchange: str, symbol: str, timeframe: Optional[str] = None) -> str:
         key = f"{prefix}:{exchange}:{symbol}"
@@ -35,7 +35,12 @@ class ExchangeFetcher:
         if s not in SYMBOL_MAP: return None
         c = EXCHANGE_CONFIG.get(e)
         if not c: return None
-        return c['symbol_template'].format(base=SYMBOL_MAP[s]['base'], quote=SYMBOL_MAP[s]['quote']).upper()
+        base_symbol = SYMBOL_MAP[s]['base']
+        quote_symbol = SYMBOL_MAP[s]['quote']
+        # Handle cases where symbol might be 'BTC/USDT'
+        if '/' in s:
+            base_symbol, quote_symbol = s.split('/')
+        return c['symbol_template'].format(base=base_symbol, quote=quote_symbol).upper()
 
     def _format_timeframe(self, t: str, e: str) -> Optional[str]:
         c = EXCHANGE_CONFIG.get(e)
@@ -64,11 +69,12 @@ class ExchangeFetcher:
         return normalized_data
 
     async def get_klines_from_one_exchange(self, exchange: str, symbol: str, timeframe: str, limit: int = 200) -> Optional[List[Dict]]:
+        # This function already correctly handles the 'limit' parameter. No changes needed here.
         cache_key = self._get_cache_key("kline", exchange, symbol, timeframe)
         if cache_key in self.cache and (time.time() - self.cache[cache_key]['timestamp']) < self.cache_ttl: return self.cache[cache_key]['data']
         
         config = EXCHANGE_CONFIG.get(exchange)
-        formatted_symbol = self._format_symbol(symbol, exchange)
+        formatted_symbol = self._format_symbol(symbol.split('/')[0], exchange) # Handle "BTC/USDT" format
         formatted_timeframe = self._format_timeframe(timeframe, exchange)
 
         if not all([config, formatted_symbol, formatted_timeframe]): return None
@@ -84,17 +90,24 @@ class ExchangeFetcher:
             kline_list = raw_data.get('data') if isinstance(raw_data, dict) and 'data' in raw_data else raw_data
             if isinstance(kline_list, list):
                 normalized_data = self._normalize_kline_data(kline_list, exchange)
-                if normalized_data: self.cache[cache_key] = {'timestamp': time.time(), 'data': normalized_data}; return normalized_data
+                if normalized_data: 
+                    self.cache[cache_key] = {'timestamp': time.time(), 'data': normalized_data}
+                    return normalized_data
         
         logger.warning(f"Final attempt failed for klines from {exchange} on {symbol}@{timeframe}.")
         return None
         
-    async def get_first_successful_klines(self, symbol: str, timeframe:str) -> Optional[Tuple[pd.DataFrame, str]]:
+    # --- تابع اصلاح شده در اینجا قرار دارد ---
+    async def get_first_successful_klines(self, symbol: str, timeframe: str, limit: int = 200) -> Optional[Tuple[pd.DataFrame, str]]:
         exchanges = ['mexc', 'kucoin', 'okx']
         
         async def fetch_and_tag(exchange: str):
-            result = await self.get_klines_from_one_exchange(exchange, symbol, timeframe)
-            if result: return exchange, pd.DataFrame(result)
+            # ✨ تغییر کلیدی: پاس دادن پارامتر limit به تابع داخلی ✨
+            result = await self.get_klines_from_one_exchange(exchange, symbol, timeframe, limit=limit)
+            if result: 
+                df = pd.DataFrame(result)
+                df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
+                return exchange, df
             return None
 
         tasks = [asyncio.create_task(fetch_and_tag(ex)) for ex in exchanges]
@@ -106,7 +119,7 @@ class ExchangeFetcher:
                     for task in tasks:
                         if not task.done(): task.cancel()
                     source_exchange, df = result_tuple
-                    logger.info(f"Klines acquired from '{source_exchange}' for {symbol}@{timeframe}.")
+                    logger.info(f"Klines acquired from '{source_exchange}' for {symbol}@{timeframe} with limit {limit}.")
                     return df, source_exchange
         except asyncio.CancelledError:
              logging.info(f"Kline fetch tasks for {symbol} cancelled as a successful one was completed.")
@@ -117,11 +130,13 @@ class ExchangeFetcher:
         return None, None
         
     async def get_ticker_from_one_exchange(self, exchange: str, symbol: str) -> Optional[Dict]:
+        # This function remains unchanged.
         cache_key = self._get_cache_key("ticker", exchange, symbol)
         if cache_key in self.cache and (time.time() - self.cache[cache_key]['timestamp']) < 15:
             return self.cache[cache_key]['data']
         
-        config = EXCHANGE_CONFIG.get(exchange); formatted_symbol = self._format_symbol(symbol, exchange)
+        config = EXCHANGE_CONFIG.get(exchange)
+        formatted_symbol = self._format_symbol(symbol.split('/')[0], exchange)
         if not all([config, formatted_symbol, 'ticker_endpoint' in config]): return None
 
         url = config['base_url'] + config['ticker_endpoint']
@@ -144,7 +159,8 @@ class ExchangeFetcher:
                 
                 if price > 0:
                     result = {'price': price, 'change_24h': change, 'source': exchange, 'symbol': symbol}
-                    self.cache[cache_key] = {'timestamp': time.time(), 'data': result}; return result
+                    self.cache[cache_key] = {'timestamp': time.time(), 'data': result}
+                    return result
             except (ValueError, TypeError, IndexError, KeyError) as e:
                  logging.warning(f"Ticker data normalization failed for {exchange} on {symbol}: {e}")
 
@@ -152,12 +168,12 @@ class ExchangeFetcher:
         return None
 
     async def get_first_successful_ticker(self, symbol: str) -> Optional[Dict]:
+        # This function remains unchanged.
         tasks = [asyncio.create_task(self.get_ticker_from_one_exchange(ex, symbol)) for ex in ['kucoin', 'okx', 'mexc']]
         for task in asyncio.as_completed(tasks):
             try:
                 result = await task
                 if result:
-                    # Cancel remaining tasks
                     for t in tasks:
                         if not t.done(): t.cancel()
                     return result
