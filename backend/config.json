@@ -1,0 +1,61 @@
+{
+  "general": {
+    "gemini_cooldown_seconds": 300,
+    "min_confluence_for_super_signal": 3,
+    "min_risk_reward_ratio": 1.2
+  },
+  "strategy_priority": [
+    "SuperSignal Confluence",
+    "ConfluenceSniper",
+    "DivergenceSniperPro",
+    "WhaleReversal",
+    "VolumeCatalystPro",
+    "BreakoutHunter",
+    "IchimokuHybridPro",
+    "ChandelierTrendRider",
+    "TrendRiderPro",
+    "KeltnerMomentumBreakout",
+    "PivotConfluenceSniper",
+    "VwapReversionPro"
+  ],
+  "indicators": {
+    "rsi": {"enabled": true, "period": 14},
+    "macd": {"enabled": true, "fast_period": 12, "slow_period": 26, "signal_period": 9},
+    "bollinger": {"enabled": true, "period": 20, "std_dev": 2},
+    "ichimoku": {"enabled": true},
+    "adx": {"enabled": true, "period": 14},
+    "supertrend": {"enabled": true, "period": 10, "multiplier": 3.0},
+    "stochastic": {"enabled": true, "k_period": 14, "d_period": 3},
+    "cci": {"enabled": true, "period": 20},
+    "atr": {"enabled": true, "period": 14},
+    "patterns": {"enabled": true},
+    "divergence": {"enabled": true, "zigzag_deviation": 5.0},
+    "pivots": {"enabled": true, "method": "standard"},
+    "structure": {"enabled": true, "zigzag_deviation": 5.0},
+    "whales": {"enabled": true, "spike_multiplier": 3.5},
+    "ema_cross": {"enabled": true, "short_period": 9, "long_period": 21},
+    "vwap_bands": {"enabled": true, "std_dev_multiplier": 2.0},
+    "chandelier_exit": {"enabled": true, "atr_period": 22, "atr_multiplier": 3.0},
+    "donchian_channel": {"enabled": true, "period": 20},
+    "fast_ma": {"enabled": true, "period": 50, "ma_type": "DEMA"},
+    "williams_r": {"enabled": true, "period": 14},
+    "keltner_channel": {"enabled": true, "ema_period": 20, "atr_multiplier": 2.0},
+    "zigzag": {"enabled": true, "deviation": 5.0},
+    "fibonacci": {"enabled": true, "zigzag_deviation": 5.0}
+  },
+  "strategies": {
+    "TrendRiderPro": {"enabled": true, "entry_trigger_type": "supertrend", "min_adx_strength": 25},
+    "MeanReversionStrategy": {"enabled": false}, "VwapReversionPro": {"enabled": true, "rsi_oversold": 30, "rsi_overbought": 70},
+    "DivergenceSniperPro": {"enabled": true},
+    "PivotReversalStrategy": {"enabled": false}, "PivotConfluenceSniper": {"enabled": true, "confluence_proximity_percent": 0.003},
+    "VolumeCatalystStrategy": {"enabled": false}, "VolumeCatalystPro": {"enabled": true, "cci_threshold": 100, "min_volume_spike_factor": 2.0},
+    "IchimokuProStrategy": {"enabled": false}, "IchimokuHybridPro": {"enabled": true, "min_score_to_signal": 6, "min_adx_strength": 23},
+    "EmaCrossoverStrategy": {"enabled": true, "min_adx_strength": 25},
+    "BreakoutStrategy": {"enabled": true, "min_volume_spike_factor": 2.0},
+    "ChandelierTrendStrategy": {"enabled": true, "min_adx_strength": 25},
+    "VolumeReversalStrategy": {"enabled": true, "proximity_percent": 0.005},
+    "VwapReversionStrategy": {"enabled": true, "rsi_oversold": 35, "rsi_overbought": 65},
+    "KeltnerBreakoutStrategy": {"enabled": true, "min_adx_strength": 25, "cci_threshold": 100},
+    "FibStructureStrategy": {"enabled": true, "confluence_proximity_percent": 0.003}
+  }
+}
