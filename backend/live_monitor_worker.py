@@ -1,7 +1,7 @@
-# engines/live_monitor_worker.py (v17.3 - با لاگ‌های تمیز)
+# engines/live_monitor_worker.py (v17.3.2 - Centralized Logging)
 
 import asyncio
-import logging
+import logging # <-- فقط ایمپورت باقی می‌ماند
 import os
 import django
 import time
@@ -23,11 +23,7 @@ SIGNAL_CACHE_TTL_MAP = {
     '15m': 3 * 3600, '1h': 6 * 3600, '4h': 12 * 3600, 'default': 4 * 3600
 }
 
-# --- ✨ تغییر کلیدی: افزودن فیلتر برای تمیز کردن لاگ‌ها ---
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - [%(module)s:%(funcName)s] - %(message)s')
-# هشدارهای مربوط به pandas-ta را نادیده می‌گیریم تا لاگ‌ها شلوغ نشوند
-logging.getLogger("pandas_ta").setLevel(logging.ERROR)
-
+# --- ✨ دو خط تنظیمات لاگ از اینجا حذف شد زیرا اکنون در settings.py قرار دارد ---
 
 class SignalCache:
     def __init__(self, ttl_map: Dict[str, int]):
@@ -48,7 +44,6 @@ class SignalCache:
 
 async def analyze_and_alert(fetcher: ExchangeFetcher, orchestrator: MasterOrchestrator, telegram: TelegramHandler, cache: SignalCache, symbol: str, timeframe: str):
     try:
-        # ... (بقیه این تابع بدون تغییر است) ...
         logging.info(f"Fetching data for {symbol} on {timeframe}...")
         df, source = await fetcher.get_first_successful_klines(symbol, timeframe, limit=200)
         if df is None or df.empty:
@@ -71,16 +66,15 @@ async def analyze_and_alert(fetcher: ExchangeFetcher, orchestrator: MasterOrches
         logging.error(f"An error occurred during analysis for {symbol} {timeframe}: {e}", exc_info=True)
 
 async def main_loop():
-    # ... (این تابع بدون تغییر است) ...
     fetcher = ExchangeFetcher()
     orchestrator = MasterOrchestrator()
     telegram = TelegramHandler()
     signal_cache = SignalCache(ttl_map=SIGNAL_CACHE_TTL_MAP)
     logging.info("======================================================")
-    logging.info(f"  AiSignalPro Live Monitoring Worker (Clean Logs) has started!")
-    logging.info(f"  Version: 17.3.1")
+    logging.info(f"  AiSignalPro Live Monitoring Worker (Central Log) has started!")
+    logging.info(f"  Version: 17.3.2")
     logging.info("======================================================")
-    await telegram.send_message_async("✅ *AiSignalPro Bot (v17.3.1 - Clean Logs) is now LIVE!*")
+    await telegram.send_message_async("✅ *AiSignalPro Bot (v17.3.2 - Central Log) is now LIVE!*")
     while True:
         logging.info("--- Starting new full monitoring cycle ---")
         tasks = [
