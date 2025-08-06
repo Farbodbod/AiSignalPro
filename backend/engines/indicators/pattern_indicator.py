@@ -1,15 +1,16 @@
-# engines/indicators/pattern_indicator.py (نسخه نهایی با قابلیت سکوت هشدار)
 import pandas as pd
 import pandas_ta as ta
 import logging
-import warnings # <-- ایمپورت کتابخانه هشدار
+import warnings
 from .base import BaseIndicator
 
 logger = logging.getLogger(__name__)
 
 class PatternIndicator(BaseIndicator):
     """
-    این ماژول، الگوهای شمعی را با استفاده از pandas-ta شناسایی کرده و هشدارهای داخلی آن را سرکوب می‌کند.
+    ✨ UPGRADE v2.0 ✨
+    - Constructor standardized to use **kwargs.
+    - Ensures compatibility with the project's standard structure.
     """
     def __init__(self, df: pd.DataFrame, **kwargs):
         super().__init__(df, **kwargs)
@@ -17,28 +18,26 @@ class PatternIndicator(BaseIndicator):
 
     def calculate(self) -> pd.DataFrame:
         try:
-            # --- ✨ تغییر کلیدی: سرکوب موقت هشدارها ---
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
-                # اجرای متد شناسایی الگو در این محیط امن و بدون هشدار
                 patterns_df = self.df.ta.cdl_pattern(name="all")
-            # --- پایان تغییر کلیدی ---
-
-            last_candle_patterns = patterns_df.iloc[-1]
-            found_patterns = last_candle_patterns[last_candle_patterns != 0]
-
-            if not found_patterns.empty:
-                pattern_names = [col.replace('CDL_', '') for col in found_patterns.index]
-                self.df.loc[self.df.index[-1], self.pattern_col] = ", ".join(pattern_names)
-            else:
-                self.df.loc[self.df.index[-1], self.pattern_col] = "None"
-        except Exception as e:
-            logger.error(f"Error calculating candlestick patterns with pandas-ta: {e}")
+            
+            # Use a more robust way to assign patterns
             self.df[self.pattern_col] = "None"
+            if patterns_df is not None and not patterns_df.empty:
+                # Find all patterns for the last candle
+                last_candle_patterns = patterns_df.iloc[-1]
+                found_patterns = last_candle_patterns[last_candle_patterns != 0]
+                if not found_patterns.empty:
+                    pattern_names = [col.replace('CDL_', '') for col in found_patterns.index]
+                    self.df.loc[self.df.index[-1], self.pattern_col] = ", ".join(pattern_names)
+        except Exception as e:
+            logger.error(f"Error calculating candlestick patterns: {e}")
+            self.df[self.pattern_col] = "Error"
         return self.df
 
     def analyze(self) -> dict:
         last_patterns_str = self.df.iloc[-1].get(self.pattern_col, "None")
-        if last_patterns_str == "None" or pd.isna(last_patterns_str):
+        if last_patterns_str in ["None", "Error"] or pd.isna(last_patterns_str):
             return {"patterns": []}
         return {"patterns": [p.strip() for p in last_patterns_str.split(',')]}
