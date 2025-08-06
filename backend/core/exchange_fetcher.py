@@ -1,5 +1,3 @@
-# core/exchange_fetcher.py (نسخه 4.1 - هماهنگ شده با live_monitor_worker)
-
 import asyncio
 import os
 import time
@@ -37,9 +35,7 @@ class ExchangeFetcher:
         if not c: return None
         base_symbol = SYMBOL_MAP[s]['base']
         quote_symbol = SYMBOL_MAP[s]['quote']
-        # Handle cases where symbol might be 'BTC/USDT'
-        if '/' in s:
-            base_symbol, quote_symbol = s.split('/')
+        if '/' in s: base_symbol, quote_symbol = s.split('/')
         return c['symbol_template'].format(base=base_symbol, quote=quote_symbol).upper()
 
     def _format_timeframe(self, t: str, e: str) -> Optional[str]:
@@ -69,12 +65,11 @@ class ExchangeFetcher:
         return normalized_data
 
     async def get_klines_from_one_exchange(self, exchange: str, symbol: str, timeframe: str, limit: int = 200) -> Optional[List[Dict]]:
-        # This function already correctly handles the 'limit' parameter. No changes needed here.
         cache_key = self._get_cache_key("kline", exchange, symbol, timeframe)
         if cache_key in self.cache and (time.time() - self.cache[cache_key]['timestamp']) < self.cache_ttl: return self.cache[cache_key]['data']
         
         config = EXCHANGE_CONFIG.get(exchange)
-        formatted_symbol = self._format_symbol(symbol.split('/')[0], exchange) # Handle "BTC/USDT" format
+        formatted_symbol = self._format_symbol(symbol.split('/')[0], exchange)
         formatted_timeframe = self._format_timeframe(timeframe, exchange)
 
         if not all([config, formatted_symbol, formatted_timeframe]): return None
@@ -97,16 +92,22 @@ class ExchangeFetcher:
         logger.warning(f"Final attempt failed for klines from {exchange} on {symbol}@{timeframe}.")
         return None
         
-    # --- تابع اصلاح شده در اینجا قرار دارد ---
     async def get_first_successful_klines(self, symbol: str, timeframe: str, limit: int = 200) -> Optional[Tuple[pd.DataFrame, str]]:
         exchanges = ['mexc', 'kucoin', 'okx']
         
         async def fetch_and_tag(exchange: str):
-            # ✨ تغییر کلیدی: پاس دادن پارامتر limit به تابع داخلی ✨
             result = await self.get_klines_from_one_exchange(exchange, symbol, timeframe, limit=limit)
             if result: 
                 df = pd.DataFrame(result)
+                
+                # ✨ --- ارتقای ظریف و دقیق در اینجا اعمال می‌شود --- ✨
+                # ۱. ستون timestamp به فرمت تاریخ تبدیل می‌شود (این خط از قبل در کد شما بود و عالی است)
                 df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
+                
+                # ۲. ستون timestamp به عنوان ایندکس دیتافریم تنظیم می‌شود (این تنها خط اضافه شده است)
+                df.set_index('timestamp', inplace=True)
+                # ✨ --- پایان ارتقا --- ✨
+
                 return exchange, df
             return None
 
@@ -130,37 +131,23 @@ class ExchangeFetcher:
         return None, None
         
     async def get_ticker_from_one_exchange(self, exchange: str, symbol: str) -> Optional[Dict]:
-        # This function remains unchanged.
         cache_key = self._get_cache_key("ticker", exchange, symbol)
         if cache_key in self.cache and (time.time() - self.cache[cache_key]['timestamp']) < 15:
             return self.cache[cache_key]['data']
         
-        config = EXCHANGE_CONFIG.get(exchange)
-        formatted_symbol = self._format_symbol(symbol.split('/')[0], exchange)
+        config = EXCHANGE_CONFIG.get(exchange); formatted_symbol = self._format_symbol(symbol.split('/')[0], exchange)
         if not all([config, formatted_symbol, 'ticker_endpoint' in config]): return None
 
-        url = config['base_url'] + config['ticker_endpoint']
-        params = {'instId': formatted_symbol} if exchange == 'okx' else {'symbol': formatted_symbol}
+        url = config['base_url'] + config['ticker_endpoint']; params = {'instId': formatted_symbol} if exchange == 'okx' else {'symbol': formatted_symbol}
         
         raw_data = await self._safe_async_request('GET', url, params=params, exchange_name=exchange)
         if raw_data:
             price, change = 0.0, 0.0
             try:
-                if exchange == 'mexc':
-                    data = raw_data[0] if isinstance(raw_data, list) and raw_data else raw_data
-                    price = float(data.get('lastPrice', 0)); change = float(data.get('priceChangePercent', 0)) * 100
-                elif exchange == 'kucoin' and raw_data.get('data'):
-                    data = raw_data['data']; price = float(data.get('last', 0)); change = float(data.get('changeRate', 0)) * 100
-                elif exchange == 'okx' and raw_data.get('data'):
-                    data = raw_data['data'][0]; price = float(data.get('last', 0))
-                    open_price_24h = float(data.get('open24h', 0))
-                    if open_price_24h > 0: change = ((price - open_price_24h) / open_price_24h) * 100
-                    else: change = 0.0
-                
-                if price > 0:
-                    result = {'price': price, 'change_24h': change, 'source': exchange, 'symbol': symbol}
-                    self.cache[cache_key] = {'timestamp': time.time(), 'data': result}
-                    return result
+                if exchange == 'mexc': data = raw_data[0] if isinstance(raw_data, list) and raw_data else raw_data; price = float(data.get('lastPrice', 0)); change = float(data.get('priceChangePercent', 0)) * 100
+                elif exchange == 'kucoin' and raw_data.get('data'): data = raw_data['data']; price = float(data.get('last', 0)); change = float(data.get('changeRate', 0)) * 100
+                elif exchange == 'okx' and raw_data.get('data'): data = raw_data['data'][0]; price = float(data.get('last', 0)); open_price_24h = float(data.get('open24h', 0)); change = ((price - open_price_24h) / open_price_24h) * 100 if open_price_24h > 0 else 0.0
+                if price > 0: result = {'price': price, 'change_24h': change, 'source': exchange, 'symbol': symbol}; self.cache[cache_key] = {'timestamp': time.time(), 'data': result}; return result
             except (ValueError, TypeError, IndexError, KeyError) as e:
                  logging.warning(f"Ticker data normalization failed for {exchange} on {symbol}: {e}")
 
@@ -168,7 +155,6 @@ class ExchangeFetcher:
         return None
 
     async def get_first_successful_ticker(self, symbol: str) -> Optional[Dict]:
-        # This function remains unchanged.
         tasks = [asyncio.create_task(self.get_ticker_from_one_exchange(ex, symbol)) for ex in ['kucoin', 'okx', 'mexc']]
         for task in asyncio.as_completed(tasks):
             try:
@@ -184,3 +170,4 @@ class ExchangeFetcher:
 
     async def close(self):
         await self.client.aclose()
+
