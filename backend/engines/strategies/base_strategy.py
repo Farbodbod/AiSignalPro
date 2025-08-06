@@ -1,6 +1,7 @@
-# engines/strategies/base_strategy.py (v2.1 - MTF Aware)
+# engines/strategies/base_strategy.py (v2.2 - با فیلتر کندل استیک جهانی)
+
 from abc import ABC, abstractmethod
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 
 class BaseStrategy(ABC):
     def __init__(self, analysis_summary: Dict[str, Any], config: Dict[str, Any] = None, htf_analysis: Optional[Dict[str, Any]] = None):
@@ -9,9 +10,35 @@ class BaseStrategy(ABC):
         self.htf_analysis = htf_analysis
         self.strategy_name = self.__class__.__name__
 
-    @abstractmethod
-    def check_signal(self) -> Optional[Dict[str, Any]]: pass
+        # --- ✨ ارتقای جدید: تعریف لیست الگوهای کندلی کلیدی ---
+        self.BULLISH_REVERSAL_PATTERNS = ['HAMMER', 'INVERTEDHAMMER', 'MORNINGSTAR', 'BULLISHENGULFING', 'PIERCING', 'MORNINGDOJISTAR', '3WHITESOLDIERS']
+        self.BEARISH_REVERSAL_PATTERNS = ['SHOOTINGSTAR', 'EVENINGSTAR', 'BEARISHENGULFING', 'DARKCLOUDCOVER', 'EVENINGDOJISTAR', 'HANGINGMAN', '3BLACKCROWS']
 
+    def _get_candlestick_confirmation(self, direction: str) -> Optional[str]:
+        """
+        یک فیلتر جهانی که بررسی می‌کند آیا یک الگوی کندلی بازگشتی هم‌جهت با سیگنال وجود دارد یا خیر.
+        
+        Returns:
+            نام اولین الگوی تاییدکننده، یا None در صورت عدم وجود.
+        """
+        patterns_data = self.analysis.get('patterns', {})
+        found_patterns = patterns_data.get('patterns', [])
+        if not found_patterns:
+            return None
+
+        target_patterns = self.BULLISH_REVERSAL_PATTERNS if direction == "BUY" else self.BEARISH_REVERSAL_PATTERNS
+
+        for pattern in found_patterns:
+            if pattern.upper() in target_patterns:
+                return pattern # اولین الگوی هم‌جهت را برمی‌گردانیم
+        
+        return None
+
+    @abstractmethod
+    def check_signal(self) -> Optional[Dict[str, Any]]:
+        pass
+
+    # ... (متد _calculate_smart_risk_management بدون تغییر باقی می‌ماند)
     def _calculate_smart_risk_management(self, entry_price: float, direction: str, stop_loss: float) -> Dict[str, Any]:
         if entry_price == stop_loss or stop_loss == 0: return {}
         risk_amount = abs(entry_price - stop_loss)
