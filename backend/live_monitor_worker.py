@@ -1,12 +1,18 @@
-# engines/live_monitor_worker.py (v17.3.2 - Centralized Logging)
-
+# engines/live_monitor_worker.py (نسخه نهایی با فیلتر لاگ قطعی)
 import asyncio
-import logging # <-- فقط ایمپورت باقی می‌ماند
+import logging
 import os
 import django
 import time
 from typing import Dict, Tuple
 
+# --- ✨ اصلاحیه کلیدی: تنظیم فیلتر لاگ قبل از هر کاری ---
+# این تنظیمات پایه را قبل از اینکه جنگو کنترل لاگ را به دست بگیرد، اعمال می‌کنیم.
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - [%(module)s:%(funcName)s] - %(message)s')
+# هشدارهای مربوط به pandas-ta را نادیده می‌گیریم تا لاگ‌ها شلوغ نشوند
+logging.getLogger("pandas_ta").setLevel(logging.ERROR)
+
+# --- راه‌اندازی جنگو پس از تنظیم لاگ ---
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'trading_app.settings')
 django.setup()
 
@@ -22,8 +28,6 @@ POLL_INTERVAL_SECONDS = 900
 SIGNAL_CACHE_TTL_MAP = {
     '15m': 3 * 3600, '1h': 6 * 3600, '4h': 12 * 3600, 'default': 4 * 3600
 }
-
-# --- ✨ دو خط تنظیمات لاگ از اینجا حذف شد زیرا اکنون در settings.py قرار دارد ---
 
 class SignalCache:
     def __init__(self, ttl_map: Dict[str, int]):
@@ -71,10 +75,10 @@ async def main_loop():
     telegram = TelegramHandler()
     signal_cache = SignalCache(ttl_map=SIGNAL_CACHE_TTL_MAP)
     logging.info("======================================================")
-    logging.info(f"  AiSignalPro Live Monitoring Worker (Central Log) has started!")
+    logging.info(f"  AiSignalPro Live Monitoring Worker (Clean Logs) has started!")
     logging.info(f"  Version: 17.3.2")
     logging.info("======================================================")
-    await telegram.send_message_async("✅ *AiSignalPro Bot (v17.3.2 - Central Log) is now LIVE!*")
+    await telegram.send_message_async("✅ *AiSignalPro Bot (v17.3.2 - Clean Logs) is now LIVE!*")
     while True:
         logging.info("--- Starting new full monitoring cycle ---")
         tasks = [
