@@ -1,4 +1,4 @@
-# engines/live_monitor_worker.py (v17.2 - با لاگ‌های تمیز)
+# engines/live_monitor_worker.py (نسخه نهایی 17.3 - کاملاً پایدار)
 
 import asyncio
 import logging
@@ -7,6 +7,7 @@ import django
 import time
 from typing import Dict, Tuple
 
+# --- راه‌اندازی اولیه و ضروری Django ---
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'trading_app.settings')
 django.setup()
 
@@ -15,20 +16,24 @@ from engines.master_orchestrator import MasterOrchestrator
 from engines.signal_adapter import SignalAdapter
 from engines.telegram_handler import TelegramHandler
 
+# --- تنظیمات اصلی ربات ---
 SYMBOLS_TO_MONITOR = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'XRP/USDT', 'DOGE/USDT']
 TIMEFRAMES_TO_ANALYZE = ['15m', '1h', '4h']
-POLL_INTERVAL_SECONDS = 900
+POLL_INTERVAL_SECONDS = 900  # 15 دقیقه
 
+# --- زمان کش داینامیک بر اساس تایم‌فریم (بر حسب ثانیه) ---
 SIGNAL_CACHE_TTL_MAP = {
     '15m': 3 * 3600, '1h': 6 * 3600, '4h': 12 * 3600, 'default': 4 * 3600
 }
 
-# --- ✨ تغییر کلیدی: افزودن فیلتر برای تمیز کردن لاگ‌ها ---
+# --- تنظیمات لاگ‌گیری حرفه‌ای ---
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - [%(module)s:%(funcName)s] - %(message)s')
+# فیلتر کردن هشدارهای کم‌اهمیت pandas-ta برای جلوگیری از شلوغی لاگ
 logging.getLogger("pandas_ta").setLevel(logging.ERROR)
 
 
 class SignalCache:
+    """کلاس پیشرفته برای جلوگیری از ارسال سیگنال‌های تکراری با TTL داینامیک."""
     def __init__(self, ttl_map: Dict[str, int]):
         self._cache: Dict[Tuple[str, str, str], float] = {}
         self.ttl_map = ttl_map
@@ -42,9 +47,14 @@ class SignalCache:
         return False
 
     def store_signal(self, symbol: str, timeframe: str, direction: str):
+        """سیگنال جدید را در کش ذخیره می‌کند."""
+        # --- ✨ اصلاحیه کلیدی باگ: تعریف متغیر key ---
+        key = (symbol, timeframe, direction)
         self._cache[key] = time.time()
 
+
 async def analyze_and_alert(fetcher: ExchangeFetcher, orchestrator: MasterOrchestrator, telegram: TelegramHandler, cache: SignalCache, symbol: str, timeframe: str):
+    """خط لوله کامل تحلیل و ارسال هشدار برای یک ترکیب نماد/تایم‌فریم."""
     try:
         logging.info(f"Fetching data for {symbol} on {timeframe}...")
         df, source = await fetcher.get_first_successful_klines(symbol, timeframe, limit=200)
@@ -62,7 +72,7 @@ async def analyze_and_alert(fetcher: ExchangeFetcher, orchestrator: MasterOrches
 
             if cache.is_duplicate(symbol, timeframe, direction):
                 return
-            
+
             adapter = SignalAdapter(signal_package=final_signal_package)
             message = adapter.to_telegram_message()
             
@@ -75,6 +85,7 @@ async def analyze_and_alert(fetcher: ExchangeFetcher, orchestrator: MasterOrches
         logging.error(f"An error occurred during analysis for {symbol} {timeframe}: {e}", exc_info=True)
 
 async def main_loop():
+    """قلب تپنده و حلقه اصلی ربات."""
     fetcher = ExchangeFetcher()
     orchestrator = MasterOrchestrator()
     telegram = TelegramHandler()
@@ -82,9 +93,9 @@ async def main_loop():
 
     logging.info("======================================================")
     logging.info(f"  AiSignalPro Live Monitoring Worker has started!")
-    logging.info(f"  Version: 17.3 (Quality Control Edition)")
+    logging.info(f"  Version: 17.3 (Stable)")
     logging.info("======================================================")
-    await telegram.send_message_async("✅ *AiSignalPro Bot (v17.3) is now LIVE!*")
+    await telegram.send_message_async("✅ *AiSignalPro Bot (v17.3 - Stable) is now LIVE!*")
 
     while True:
         logging.info("--- Starting new full monitoring cycle ---")
@@ -106,4 +117,3 @@ if __name__ == "__main__":
         logging.info("Bot stopped by user.")
     except Exception as e:
         logging.critical(f"A fatal error occurred in the main runner: {e}", exc_info=True)
-
