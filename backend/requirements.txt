@@ -22,4 +22,5 @@ djangorestframework
 numpy==1.26.4
 pandas==2.2.2
 pandas-ta==0.3.14b0
+TA-Lib
 #final deploy trigger v3.0
