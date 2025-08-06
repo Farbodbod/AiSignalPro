@@ -8,3 +8,4 @@ from .ichimoku_pro import IchimokuProStrategy
 
 # --- استراتژی‌های جدید اضافه شده ---
 from .ema_crossover import EmaCrossoverStrategy
+from .breakout import BreakoutStrategy
