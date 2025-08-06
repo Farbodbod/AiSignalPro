@@ -1,12 +1,15 @@
-# trading_app/urls.py (نسخه نهایی و بدون لینک تست)
+# trading_app/urls.py (نسخه نهایی و تمیز شده)
 
+from django.contrib import admin
 from django.urls import path
-from core import views
+from core import views  # ما فقط از فایل views استفاده می‌کنیم
 
 urlpatterns = [
-    path('api/status/', views.system_status_view, name='system-status'),
-    path('api/market-overview/', views.market_overview_view, name='market-overview'),
-    path('api/get-composite-signal/', views.get_composite_signal_view, name='composite-signal'),
-    path('api/trades/open/', views.list_open_trades_view, name='list-open-trades'),
-    path('api/price-ticker/', views.price_ticker_view, name='price-ticker'),
+    path('admin/', admin.site.urls),
+    
+    # --- این تنها آدرس API فعال و مورد نیاز ماست ---
+    # این همان لینکی است که داشبورد شما در آینده از آن برای دریافت سیگنال استفاده خواهد کرد.
+    path('api/get-composite-signal/', views.get_composite_signal_view, name='get-composite-signal'),
+
+    # آدرس مربوط به system_status_view که وجود نداشت، حذف شده است.
 ]
