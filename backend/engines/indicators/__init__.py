@@ -1,5 +1,4 @@
 # engines/indicators/__init__.py (کامل و نهایی با تمام تحلیلگرها + تحلیلگرهای جدید)
-
 from .base import BaseIndicator
 from .rsi import RsiIndicator
 from .macd import MacdIndicator
@@ -27,3 +26,4 @@ from .fast_ma import FastMAIndicator
 from .williams_r import WilliamsRIndicator
 from .keltner_channel import KeltnerChannelIndicator
 from .zigzag import ZigzagIndicator
+from .fibonacci import FibonacciIndicator
