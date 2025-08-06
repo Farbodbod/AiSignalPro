@@ -12,3 +12,4 @@ from .breakout import BreakoutStrategy
 from .chandelier_trend import ChandelierTrendStrategy
 from .volume_reversal import VolumeReversalStrategy
 from .vwap_reversion import VwapReversionStrategy
+from .keltner_breakout import KeltnerBreakoutStrategy
