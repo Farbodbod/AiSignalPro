@@ -26,3 +26,4 @@ from .donchian_channel import DonchianChannelIndicator
 from .fast_ma import FastMAIndicator
 from .williams_r import WilliamsRIndicator
 from .keltner_channel import KeltnerChannelIndicator
+from .zigzag import ZigzagIndicator
