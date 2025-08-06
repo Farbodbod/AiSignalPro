@@ -1,4 +1,4 @@
-# engines/signal_adapter.py (نسخه 2.0 - کامل و پیشرفته)
+# engines/signal_adapter.py (نسخه 2.1 - اصلاح پیام AI)
 
 import logging
 from typing import Dict, Any
@@ -18,62 +18,39 @@ class SignalAdapter:
         self.full_analysis = signal_package.get("full_analysis", {})
 
     def _get_system_confidence(self) -> float:
-        priority_map = {
-            "SuperSignal Confluence": 99.0,
-            "DivergenceSniper": 95.0,
-            "VolumeCatalyst": 90.0,
-            "IchimokuPro": 88.0,
-            "TrendRider": 85.0,
-            "PivotSniper": 82.0,
-            "MeanReversionStrategy": 78.0 # نام کلاس قدیمی
-        }
-        # handle both old and new class names for MeanReversion
+        # ... (کد این متد از پاسخ قبلی کامل است)
+        priority_map = {"SuperSignal Confluence": 99.0, "DivergenceSniper": 95.0, "VolumeCatalyst": 90.0, "IchimokuPro": 88.0, "TrendRider": 85.0, "PivotReversalStrategy": 82.0, "MeanReversionStrategy": 78.0}
         strategy_name = self.signal.get('strategy_name', '')
-        if strategy_name == 'MeanReversionPro':
-             return 78.0
+        if strategy_name == 'MeanReversionPro': return 78.0
         return priority_map.get(strategy_name, 75.0)
 
-
     def _get_valid_until(self) -> str:
-        ttl_map = {'15m': 4, '1h': 8, '4h': 24, '1d': 72}
-        hours_to_add = ttl_map.get(self.timeframe, 4)
-        valid_until_utc = datetime.utcnow() + timedelta(hours=hours_to_add)
-        tehran_tz = pytz.timezone("Asia/Tehran")
-        tehran_dt = valid_until_utc.astimezone(tehran_tz)
-        jalali_dt = jdatetime.fromgregorian(datetime=tehran_dt)
-        return f"⏳ Valid Until: {jalali_dt.strftime('%Y/%m/%d, %H:%M')}"
+        # ... (کد این متد از پاسخ قبلی کامل است)
+        ttl_map = {'15m': 4, '1h': 8, '4h': 24, '1d': 72}; hours_to_add = ttl_map.get(self.timeframe, 4); valid_until_utc = datetime.utcnow() + timedelta(hours=hours_to_add); tehran_tz = pytz.timezone("Asia/Tehran"); tehran_dt = valid_until_utc.astimezone(tehran_tz); jalali_dt = jdatetime.fromgregorian(datetime=tehran_dt); return f"⏳ Valid Until: {jalali_dt.strftime('%Y/%m/%d, %H:%M')}"
 
     def _get_signal_summary(self) -> str:
-        direction = self.signal.get('direction', 'HOLD')
-        strategy = self.signal.get('strategy_name', '')
-        if "Divergence" in strategy or "Reversion" in strategy or "Sniper" in strategy:
-            return f"High-Probability {direction} Reversal Signal"
-        elif "Trend" in strategy or "Breakout" in strategy or "Catalyst" in strategy or "Ichimoku" in strategy:
-            return f"Strong {direction} Continuation Signal"
-        elif "Confluence" in strategy:
-            return f"MAXIMUM CONVICTION {direction} SIGNAL"
+        # ... (کد این متد از پاسخ قبلی کامل است)
+        direction = self.signal.get('direction', 'HOLD'); strategy = self.signal.get('strategy_name', '')
+        if "Divergence" in strategy or "Reversion" in strategy or "Sniper" in strategy: return f"High-Probability {direction} Reversal Signal"
+        elif "Trend" in strategy or "Breakout" in strategy or "Catalyst" in strategy or "Ichimoku" in strategy: return f"Strong {direction} Continuation Signal"
+        elif "Confluence" in strategy: return f"MAXIMUM CONVICTION {direction} SIGNAL"
         return f"System Signal: {direction}"
 
     def _get_signal_emoji_and_text(self) -> (str, str):
-        direction = self.signal.get('direction', 'HOLD')
+        direction = self.signal.get('direction', 'HOLD');
         if direction == 'BUY': return "🟢", "LONG"
         elif direction == 'SELL': return "🔴", "SHORT"
         return "⚪️", "NEUTRAL"
 
     def _format_targets(self) -> str:
-        targets = self.signal.get('targets', [])
+        targets = self.signal.get('targets', []);
         if not targets: return "  (Calculated based on R/R)"
         return "\n".join([f"    🎯 TP{i+1}: `{t:,.4f}`" for i, t in enumerate(targets)])
 
     def _get_timestamp(self) -> str:
         try:
-            utc_dt = datetime.utcnow()
-            tehran_tz = pytz.timezone("Asia/Tehran")
-            tehran_dt = utc_dt.astimezone(tehran_tz)
-            jalali_dt = jdatetime.fromgregorian(datetime=tehran_dt)
-            return f"⏰ {jalali_dt.strftime('%Y/%m/%d, %H:%M:%S')}"
-        except Exception:
-            return ""
+            utc_dt = datetime.utcnow(); tehran_tz = pytz.timezone("Asia/Tehran"); tehran_dt = utc_dt.astimezone(tehran_tz); jalali_dt = jdatetime.fromgregorian(datetime=tehran_dt); return f"⏰ {jalali_dt.strftime('%Y/%m/%d, %H:%M:%S')}"
+        except Exception: return ""
 
     def to_telegram_message(self) -> str:
         emoji, direction_text = self._get_signal_emoji_and_text()
@@ -86,9 +63,11 @@ class SignalAdapter:
         valid_until_str = self._get_valid_until()
         signal_summary = self._get_signal_summary()
         
+        # --- ✨ تغییر کلیدی: استفاده از پیام صحیح برای Cooldown ---
+        ai_explanation = self.ai_confirmation.get('explanation_fa', "AI analysis was not performed.")
+
         key_levels = self.full_analysis.get("structure", {}).get("key_levels", {})
-        supports = key_levels.get('supports', [])
-        resistances = key_levels.get('resistances', [])
+        supports = key_levels.get('supports', []); resistances = key_levels.get('resistances', [])
         supports_str = "\n".join([f"    - `{s:,.4f}`" for s in supports[:5]]) if supports else "Not Available"
         resistances_str = "\n".join([f"    - `{r:,.4f}`" for r in resistances[:5]]) if resistances else "Not Available"
 
@@ -109,7 +88,7 @@ class SignalAdapter:
             f"🛡️ **Resistance Levels:**\n{resistances_str}\n"
             f"----------------------------------------\n"
             f"💡 **Signal Conclusion:**\n_{signal_summary}_\n\n"
-            f"🤖 **AI Analysis:**\n_{self.ai_confirmation.get('explanation_fa', 'N/A')}_\n\n"
+            f"🤖 **AI Analysis:**\n_{ai_explanation}_\n\n"
             f"⚠️ *Risk Management: Use 2-3% of your capital.*\n"
             f"{self._get_timestamp()}\n"
             f"{valid_until_str}"
