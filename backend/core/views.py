@@ -1,10 +1,10 @@
-# core/views.py (نسخه جدید هماهنگ با معماری ماژولار)
+# core/views.py (نسخه نهایی هماهنگ با MasterOrchestrator v17+)
 
 import logging
 from django.http import JsonResponse
 from rest_framework.decorators import api_view
 from core.exchange_fetcher import ExchangeFetcher
-from engines.master_orchestrator import MasterOrchestrator # <-- استفاده از ارکستریتور جدید
+from engines.master_orchestrator import MasterOrchestrator
 import asyncio
 
 logger = logging.getLogger(__name__)
@@ -12,34 +12,37 @@ logger = logging.getLogger(__name__)
 @api_view(['GET'])
 def get_composite_signal_view(request):
     """
-    یک نقطه پایانی API برای دریافت تحلیل جامع و سیگنال‌های معاملاتی.
+    نقطه پایانی API برای دریافت تحلیل جامع و سیگنال‌های معاملاتی.
     """
     symbol = request.GET.get('symbol', 'BTC/USDT')
     timeframe = request.GET.get('timeframe', '1h')
     
     try:
-        # دریافت داده‌های جدید از صرافی
         fetcher = ExchangeFetcher()
-        # اجرای تابع async در یک محیط sync (جنگو)
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        df = loop.run_until_complete(fetcher.get_first_successful_klines(symbol, timeframe))
-        loop.run_until_complete(fetcher.close())
+        # اجرای توابع async در یک محیط sync (جنگو)
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+        
+        # ما به ۲۰۰ کندل برای تحلیل کامل نیاز داریم
+        df_tuple = loop.run_until_complete(fetcher.get_first_successful_klines(symbol, timeframe, limit=200))
 
-        if df is None or df[0] is None:
-            return JsonResponse({"status": "NO_DATA", "message": "Could not fetch market data."}, status=404)
+        if df_tuple is None or df_tuple[0] is None:
+            return JsonResponse({"status": "NO_DATA", "message": f"Could not fetch market data for {symbol}."}, status=404)
         
-        dataframe = df[0]
+        dataframe, source = df_tuple
         
-        # ساخت نمونه از ارکستریتور جدید و اجرای تحلیل
         orchestrator = MasterOrchestrator()
-        signals = orchestrator.run_analysis_for_symbol(dataframe)
+        
+        # --- ✨ اصلاحیه کلیدی: استفاده از نام متد جدید و پاس دادن پارامترهای کامل ---
+        final_signal_package = orchestrator.run_full_pipeline(dataframe, symbol, timeframe)
 
-        if signals:
-            # اگر سیگنالی پیدا شد، اولین سیگنال را برمی‌گردانیم
-            return JsonResponse({"status": "SUCCESS", "signal": signals[0]}, status=200)
+        if final_signal_package:
+            # اگر سیگنالی پیدا شد، کل پکیج را برمی‌گردانیم
+            return JsonResponse({"status": "SUCCESS", "signal_package": final_signal_package}, status=200)
         else:
-            # اگر هیچ استراتژی سیگنالی تولید نکرد
             return JsonResponse({"status": "NEUTRAL", "message": "Market conditions do not meet any strategy criteria."}, status=200)
 
     except Exception as e:
