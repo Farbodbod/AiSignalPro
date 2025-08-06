@@ -1,16 +1,25 @@
-# Dockerfile (نسخه نهایی و تمیز برای Procfile)
+# Dockerfile نهایی برای Railway با پشتیبانی از TA-Lib
 
-# ۱. انتخاب سیستم‌عامل پایه
 FROM python:3.11-slim-bullseye
 
-# ۲. تنظیم پوشه کاری
+# نصب پیش‌نیازهای سیستمی برای کامپایل TA-Lib
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    wget \
+    curl \
+    git \
+    libtool \
+    automake \
+    autoconf \
+    libffi-dev \
+    libssl-dev \
+    libta-lib0 \
+    libta-lib0-dev \
+    && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
-# ۳. کپی کردن فایل نیازمندی‌ها و نصب پکیج‌های پایتون
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# ۴. کپی کردن تمام کدهای پروژه
 COPY . .
-
-# دستور CMD حذف شد، زیرا Procfile اکنون مسئولیت اجرای فرآیندها را بر عهده دارد.
