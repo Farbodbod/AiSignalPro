@@ -1,4 +1,4 @@
-# trading_app/settings.py (نسخه نهایی با تنظیمات قطعی CORS)
+# trading_app/settings.py
 
 import os
 from pathlib import Path
@@ -6,7 +6,7 @@ import dj_database_url
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', 'django-insecure-dev-key-placeholder')
-DEBUG = os.getenv('DJANGO_DEBUG', 'True') != 'True'
+DEBUG = os.getenv('DJANGO_DEBUG', 'True') != 'False' # Corrected logic for production
 ALLOWED_HOSTS = ['*']
 
 INSTALLED_APPS = [
@@ -17,6 +17,7 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'corsheaders',
+    'rest_framework', # Added for API views
     'core',
 ]
 
@@ -53,7 +54,7 @@ TEMPLATES = [
 ]
 
 if 'DATABASE_URL' in os.environ:
-    DATABASES = {'default': dj_database_url.config(conn_max_age=600, ssl_require=True)}
+    DATABASES = {'default': dj_database_url.config(conn_max_age=600, ssl_require=False)} # SSL require might vary based on DB provider
 else:
     DATABASES = {'default': {'ENGINE': 'django.db.backends.sqlite3', 'NAME': BASE_DIR / 'db.sqlite3'}}
 
@@ -74,12 +75,42 @@ STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-
-# --- ✨ تنظیمات نهایی و قطعی CORS ✨ ---
-# با این تنظیم، به هر دامنه‌ای اجازه دسترسی می‌دهیم که برای این پروژه مشکلی ایجاد نمی‌کند.
 CORS_ALLOW_ALL_ORIGINS = True
+CSRF_TRUSTED_ORIGINS = ["https://*.railway.app", "https://*.vercel.app"]
 
-CSRF_TRUSTED_ORIGINS = [
-    "https://*.railway.app",
-    "https://*.vercel.app",
-]
+
+# ==============================================================================
+# LOGGING CONFIGURATION (نسخه حرفه‌ای برای محیط پروداکشن)
+# ==============================================================================
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'verbose': {
+            'format': '%(asctime)s - %(levelname)s - [%(name)s:%(funcName)s] - %(message)s'
+        },
+    },
+    'handlers': {
+        'console': {
+            'level': 'INFO',
+            'class': 'logging.StreamHandler',
+            'formatter': 'verbose',
+        },
+    },
+    'loggers': {
+        '': { # Root logger
+            'handlers': ['console'],
+            'level': 'INFO',
+        },
+        'pandas_ta': { # Logger for pandas_ta library
+            'handlers': ['console'],
+            'level': 'ERROR', # Only show ERROR level messages and higher
+            'propagate': False,
+        },
+        'django': {
+            'handlers': ['console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+    }
+}
