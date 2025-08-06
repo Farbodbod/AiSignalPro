@@ -1,4 +1,4 @@
-# engines/indicators/__init__.py (کامل و نهایی با تمام تحلیلگرها + تحلیلگر جدید)
+# engines/indicators/__init__.py (کامل و نهایی با تمام تحلیلگرها + تحلیلگرهای جدید)
 
 from .base import BaseIndicator
 from .rsi import RsiIndicator
@@ -17,5 +17,8 @@ from .divergence_indicator import DivergenceIndicator
 from .pivot_indicator import PivotPointIndicator
 from .structure_indicator import StructureIndicator
 from .whale_indicator import WhaleIndicator
-# --- اندیکاتور جدید اضافه شده ---
+
+# --- اندیکاتورهای جدید اضافه شده ---
 from .ema_cross import EMACrossIndicator
+from .vwap_bands import VwapBandsIndicator
+from .chandelier_exit import ChandelierExitIndicator
