@@ -1,2 +1,2 @@
-web: uvicorn trading_app.asgi:application --host 0.0.0.0 --port $PORT --log-level info
-worker: python -u live_monitor_worker.py
+web: gunicorn trading_app.wsgi
+worker: python -m engines.live_monitor_worker
