@@ -1,10 +1,5 @@
 # engines/live_monitor_worker.py (v18.0 - Multi-Timeframe Enabled)
-
-import asyncio
-import logging
-import os
-import django
-import time
+import asyncio, logging, os, django, time
 from typing import Dict, Tuple
 
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'trading_app.settings')
@@ -15,8 +10,6 @@ from engines.master_orchestrator import MasterOrchestrator
 from engines.signal_adapter import SignalAdapter
 from engines.telegram_handler import TelegramHandler
 
-# --- تنظیمات اصلی و قابل تغییر ربات ---
-# ✨ تغییر کلیدی: تعریف زوج‌های تحلیلی (تایم‌فریم اصلی، تایم‌فریم تایید)
 ANALYSIS_PAIRS = [('15m', '1h'), ('1h', '4h')]
 SYMBOLS_TO_MONITOR = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'XRP/USDT', 'DOGE/USDT']
 POLL_INTERVAL_SECONDS = 900
@@ -25,23 +18,16 @@ SIGNAL_CACHE_TTL_MAP = {'15m': 3*3600, '1h': 6*3600, '4h': 12*3600, 'default': 4
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - [%(module)s:%(funcName)s] - %(message)s')
 
 class SignalCache:
-    def __init__(self, ttl_map: Dict[str, int]):
-        self._cache: Dict[Tuple[str, str, str], float] = {}
-        self.ttl_map = ttl_map
-
+    def __init__(self, ttl_map: Dict[str, int]): self._cache: Dict[Tuple[str, str, str], float] = {}; self.ttl_map = ttl_map
     def is_duplicate(self, symbol: str, timeframe: str, direction: str) -> bool:
-        key = (symbol, timeframe, direction)
-        ttl = self.ttl_map.get(timeframe, self.ttl_map['default'])
+        key = (symbol, timeframe, direction); ttl = self.ttl_map.get(timeframe, self.ttl_map['default'])
         if key in self._cache and (time.time() - self._cache[key]) < ttl:
             logging.info(f"Duplicate signal {key} found. Cooldown active for {((self._cache[key] + ttl) - time.time()) / 60:.1f} min.")
             return True
         return False
+    def store_signal(self, symbol: str, timeframe: str, direction: str): self._cache[(symbol, timeframe, direction)] = time.time()
 
-    def store_signal(self, symbol: str, timeframe: str, direction: str):
-        self._cache[(symbol, timeframe, direction)] = time.time()
-
-async def analyze_pair_and_alert(fetcher: ExchangeFetcher, orchestrator: MasterOrchestrator, telegram: TelegramHandler, cache: SignalCache, symbol: str, ltf: str, htf: str):
-    """یک زوج تایم‌فریم را برای یک نماد تحلیل کرده و در صورت وجود سیگنال، هشدار ارسال می‌کند."""
+async def analyze_pair_and_alert(fetcher, orchestrator, telegram, cache, symbol, ltf, htf):
     try:
         logging.info(f"Fetching data for MTF analysis: {symbol} on {ltf} (confirmation from {htf})")
         ltf_task = fetcher.get_first_successful_klines(symbol, ltf, limit=200)
@@ -59,31 +45,18 @@ async def analyze_pair_and_alert(fetcher: ExchangeFetcher, orchestrator: MasterO
         final_signal_package = orchestrator.run_full_pipeline(df_ltf, ltf, df_htf, htf, symbol)
 
         if final_signal_package:
-            base_signal = final_signal_package.get("base_signal", {})
-            direction = base_signal.get("direction")
-            if cache.is_duplicate(symbol, ltf, direction):
-                return
-            
-            adapter = SignalAdapter(signal_package=final_signal_package)
-            message = adapter.to_telegram_message()
-            
+            base_signal = final_signal_package.get("base_signal", {}); direction = base_signal.get("direction")
+            if cache.is_duplicate(symbol, ltf, direction): return
+            adapter = SignalAdapter(signal_package=final_signal_package); message = adapter.to_telegram_message()
             logging.info(f"🚀🚀 MTF SIGNAL DETECTED! Preparing alert for {symbol} {ltf}/{htf} 🚀🚀")
             success = await telegram.send_message_async(message)
-            if success:
-                cache.store_signal(symbol, ltf, direction)
+            if success: cache.store_signal(symbol, ltf, direction)
     except Exception as e:
         logging.error(f"Error during MTF analysis for {symbol} {ltf}/{htf}: {e}", exc_info=True)
 
 async def main_loop():
-    fetcher = ExchangeFetcher()
-    orchestrator = MasterOrchestrator()
-    telegram = TelegramHandler()
+    fetcher = ExchangeFetcher(); orchestrator = MasterOrchestrator(); telegram = TelegramHandler()
     signal_cache = SignalCache(ttl_map=SIGNAL_CACHE_TTL_MAP)
-    
-    logging.info("======================================================")
-    logging.info(f"  AiSignalPro Live Monitoring Worker (MTF Edition) has started!")
-    logging.info(f"  Version: 18.0")
-    logging.info("======================================================")
     await telegram.send_message_async("✅ *AiSignalPro Bot (v18.0 - MTF Enabled) is now LIVE!*")
     
     while True:
@@ -98,7 +71,5 @@ async def main_loop():
         await asyncio.sleep(POLL_INTERVAL_SECONDS)
 
 if __name__ == "__main__":
-    try:
-        asyncio.run(main_loop())
-    except KeyboardInterrupt:
-        logging.info("Bot stopped by user.")
+    try: asyncio.run(main_loop())
+    except KeyboardInterrupt: logging.info("Bot stopped by user.")
