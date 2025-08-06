@@ -22,3 +22,4 @@ from .whale_indicator import WhaleIndicator
 from .ema_cross import EMACrossIndicator
 from .vwap_bands import VwapBandsIndicator
 from .chandelier_exit import ChandelierExitIndicator
+from .donchian_channel import DonchianChannelIndicator
