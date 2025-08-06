@@ -2,29 +2,25 @@
 import pandas as pd
 import pandas_ta as ta
 import logging
-import warnings # <-- ایمپورت جدید
+import warnings # <-- ایمپورت کتابخانه هشدار
 from .base import BaseIndicator
 
 logger = logging.getLogger(__name__)
 
 class PatternIndicator(BaseIndicator):
     """
-    این ماژول، الگوهای شمعی را با استفاده از کتابخانه مدرن pandas-ta شناسایی می‌کند.
-    این نسخه شامل منطقی برای جلوگیری از چاپ هشدارهای اضافی در لاگ است.
+    این ماژول، الگوهای شمعی را با استفاده از pandas-ta شناسایی کرده و هشدارهای داخلی آن را سرکوب می‌کند.
     """
     def __init__(self, df: pd.DataFrame, **kwargs):
         super().__init__(df, **kwargs)
         self.pattern_col = 'identified_pattern'
 
     def calculate(self) -> pd.DataFrame:
-        """
-        از قابلیت شناسایی الگوی pandas-ta برای یافتن تمام الگوهای موجود استفاده می‌کند.
-        """
         try:
-            # --- ✨ تغییر کلیدی: ساکت کردن موقت هشدارها ---
+            # --- ✨ تغییر کلیدی: سرکوب موقت هشدارها ---
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
-                # اجرای متد .cdl_pattern() از pandas-ta در این محیط امن
+                # اجرای متد شناسایی الگو در این محیط امن و بدون هشدار
                 patterns_df = self.df.ta.cdl_pattern(name="all")
             # --- پایان تغییر کلیدی ---
 
@@ -42,11 +38,7 @@ class PatternIndicator(BaseIndicator):
         return self.df
 
     def analyze(self) -> dict:
-        """
-        نام الگوی(های) شناسایی شده در آخرین کندل را به صورت یک لیست برمی‌گرداند.
-        """
         last_patterns_str = self.df.iloc[-1].get(self.pattern_col, "None")
         if last_patterns_str == "None" or pd.isna(last_patterns_str):
             return {"patterns": []}
         return {"patterns": [p.strip() for p in last_patterns_str.split(',')]}
-
