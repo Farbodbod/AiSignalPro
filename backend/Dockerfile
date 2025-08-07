@@ -1,48 +1,52 @@
-# استفاده از نسخه پایدار Python 3.10
-FROM python:3.10-slim-bullseye
+# پایه: python رسمی
+FROM python:3.10-slim
 
-# نصب ابزارهای موردنیاز برای کامپایل TA-Lib و سایر پکیج‌ها
+# نصب ابزارهای ضروری
 RUN apt-get update && apt-get install -y \
     build-essential \
     wget \
     curl \
-    git \
-    libtool \
-    automake \
-    autoconf \
+    gcc \
+    make \
     libffi-dev \
     libssl-dev \
-    gcc \
-    g++ \
+    libxml2-dev \
+    libxslt1-dev \
+    zlib1g-dev \
+    libbz2-dev \
+    libreadline-dev \
+    libsqlite3-dev \
+    libncurses5-dev \
+    libncursesw5-dev \
+    xz-utils \
+    tk-dev \
+    liblzma-dev \
+    libgdbm-dev \
+    libnss3-dev \
+    libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
-# دانلود و نصب نسخه C از TA-Lib
+# نصب سورس C مربوط به TA-Lib (نسخه 0.4.0)
 RUN wget http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz && \
-    tar -xzf ta-lib-0.4.0-src.tar.gz && \
+    tar -xvzf ta-lib-0.4.0-src.tar.gz && \
     cd ta-lib && \
     ./configure --prefix=/usr && \
     make && \
     make install && \
-    cd .. && rm -rf ta-lib ta-lib-0.4.0-src.tar.gz
+    cd .. && \
+    rm -rf ta-lib ta-lib-0.4.0-src.tar.gz
 
-# اضافه کردن مسیر shared libs برای TA-Lib
-ENV LD_LIBRARY_PATH=/usr/lib
+# تنظیم مسیرهای مربوط به TA-Lib
+ENV LD_LIBRARY_PATH="/usr/lib:$LD_LIBRARY_PATH"
+ENV CPATH="/usr/include:$CPATH"
 
-# تنظیم دایرکتوری کاری پروژه
+# کپی فایل‌های پروژه
 WORKDIR /app
+COPY . /app
 
-# کپی فایل نیازمندی‌ها
-COPY requirements.txt .
+# نصب وابستگی‌های پایتون
+RUN pip install --upgrade pip
+RUN pip install -r requirements.txt
 
-# نصب پکیج‌های پایتون
-RUN pip install --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
-
-# کپی کل پروژه
-COPY . .
-
-# باز کردن پورت 8000 برای uvicorn
-EXPOSE 8000
-
-# اجرای پروژه با uvicorn
-CMD ["uvicorn", "core.asgi:application", "--host", "0.0.0.0", "--port", "8000"]
+# اجرای اپلیکیشن
+CMD ["python", "main.py"]
