@@ -1,6 +1,7 @@
+# استفاده از ایمیج سبک پایتون
 FROM python:3.11-slim-bullseye
 
-# نصب پیش‌نیازهای ساخت
+# نصب ابزارهای مورد نیاز برای کامپایل TA-Lib
 RUN apt-get update && apt-get install -y \
     build-essential \
     wget \
@@ -13,20 +14,27 @@ RUN apt-get update && apt-get install -y \
     libssl-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# دانلود و نصب کتابخانه‌ی اصلی TA-Lib (نسخه C)
+# دانلود و کامپایل نسخه‌ی C از TA-Lib
 RUN wget http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz && \
-    tar -xzvf ta-lib-0.4.0-src.tar.gz && \
+    tar -xzf ta-lib-0.4.0-src.tar.gz && \
     cd ta-lib && \
     ./configure --prefix=/usr && \
     make && \
     make install && \
     cd .. && rm -rf ta-lib ta-lib-0.4.0-src.tar.gz
 
-# ادامه نصب پایتون و پروژه
+# تنظیم مسیر کاری پروژه
 WORKDIR /app
 
+# کپی فایل نیازمندی‌ها
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
 
+# آپدیت pip و نصب پکیج‌های پایتون
+RUN pip install --upgrade pip && pip install --no-cache-dir -r requirements.txt
+
+# کپی کل پروژه به داخل کانتینر
 COPY . .
-#انجام باید بشه
+
+# اگر از Procfile استفاده می‌کنی، نیازی به CMD نیست
+# در غیر اینصورت، می‌تونی این خط رو فعال کنی:
+# CMD ["python", "manage.py", "runserver", "0.0.0.0:8000"]
