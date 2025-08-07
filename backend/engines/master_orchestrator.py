@@ -82,35 +82,54 @@ class MasterOrchestrator:
 
     def _get_ai_confirmation(self, signal: Dict[str, Any], symbol: str, timeframe: str) -> Optional[Dict[str, Any]]:
         """
-        یک سیگنال را برای تایید نهایی به Gemini AI ارسال می‌کند.
+        ✨ UPGRADE v2.0 - Expert Analyst Prompt ✨
+        یک سیگنال را برای تایید نهایی به Gemini AI با یک پرامپت پیشرفته ارسال می‌کند.
         """
         cooldown = self.config.get("general", {}).get('gemini_cooldown_seconds', 300)
         if (time.time() - self.last_gemini_call_time) < cooldown:
             logger.info("Gemini call skipped due to cooldown.")
             return {"signal": "N/A", "confidence": 0, "explanation_fa": "AI analysis skipped due to cooldown."}
 
+        # آماده‌سازی داده‌ها برای پرامپت
         prompt_context = {
-            "symbol": symbol,
-            "timeframe": timeframe,
-            "signal_details": {k: v for k, v in signal.items() if k != 'confirmations'},
+            "signal_details": {k: v for k, v in signal.items() if k not in ['confirmations', 'strategy_name']},
+            "system_strategy": signal.get('strategy_name'),
             "system_reasons": signal.get('confirmations')
         }
-        prompt = (f"Analyze this trading signal for {symbol} on the {timeframe} timeframe. Based ONLY on the provided data, respond ONLY in JSON with three keys: 'signal' (Your confirmation: 'BUY', 'SELL', or 'HOLD'), 'confidence_percent' (A number from 1 to 100), and 'explanation_fa' (A very concise, one-sentence explanation in Persian).\n\nData: {json.dumps(prompt_context, indent=2)}")
+        
+        # ساخت پرامپت جدید و حرفه‌ای
+        json_data = json.dumps(prompt_context, indent=2, ensure_ascii=False)
+        prompt_template = f"""
+شما یک تحلیلگر ارشد و معامله‌گر کوانت (Quantitative Trader) با سال‌ها تجربه در بازارهای ارز دیجیتال هستید. شما به تحلیل‌های مبتنی بر داده، ساختار بازار و مدیریت ریسک تسلط کامل دارید.
+
+سیستم معاملاتی الگوریتمی ما یک سیگنال اولیه برای {symbol} در تایم فریم {timeframe} صادر کرده است. وظیفه شما این است که مانند یک مدیر ریسک یا یک تحلیلگر دوم، این سیگنال را به صورت مستقل و نقادانه ارزیابی کنید. ما تمام داده‌های تکنیکالی که منجر به این سیگنال شده‌اند را در اختیار شما قرار می‌دهیم.
+
+**وظایف شما:**
+۱. **ارزیابی همه‌جانبه:** تمام داده‌ها را بررسی کنید. به دنبال **تلاقی (Confluence)** بین دلایل مختلف بگردید. آیا دلایل سیستم با هم همخوانی دارند؟ آیا نقاط ضعفی در این سیگنال می‌بینید؟ (مثلاً واگرایی ضعیف، حجم کم در شکست، یا نزدیکی به یک سطح قوی مخالف).
+
+۲. **تصمیم‌گیری نهایی، توضیح کارشناسی و امتیازدهی:** بر اساس تحلیل خود، یک پاسخ **فقط در فرمت JSON** با سه کلید زیر ارائه دهید:
+   - `signal`: تصمیم نهایی شما: 'BUY' (تایید سیگنال خرید)، 'SELL' (تایید سیگنال فروش)، یا 'HOLD' (رد کردن سیگنال به دلیل ریسک بالا یا شواهد ناکافی).
+   - `confidence_percent`: یک امتیاز اطمینان عددی بین ۱ تا ۱۰۰ به تصمیم خود اختصاص دهید. این امتیاز باید منعکس‌کننده میزان همسویی و قدرت داده‌های تکنیکال باشد.
+   - `explanation_fa`: یک توضیح مختصر اما بسیار حرفه‌ای (۲ تا ۳ جمله) به زبان فارسی. در این توضیح، **صرفاً دلایل سیستم را تکرار نکنید،** بلکه **نتیجه‌گیری و تحلیل خودتان** را بیان کنید. برای مثال: 'با توجه به تلاقی مقاومت ساختاری و اشباع خرید در چندین اسیلاتور، پتانسیل بازگشت نزولی بسیار بالاست و سیگنال فروش تایید می‌شود.'
+
+**داده‌های تحلیل:**
+{json_data}
+"""
         
         self.last_gemini_call_time = time.time()
-        ai_response = self.gemini_handler.query(prompt)
+        ai_response = self.gemini_handler.query(prompt_template)
 
+        # اگر AI سیگنال را وتو کند (HOLD)، ما کل سیگنال را نادیده می‌گیریم
         if ai_response.get('signal') == 'HOLD':
-            logger.warning(f"AI VETOED the signal for {symbol}. System signal was {signal['direction']}.")
-            return None # بازگرداندن None به معنی وتو شدن سیگنال است
-
+            logger.warning(f"AI VETOED the signal for {symbol}. System signal was {signal['direction']}. Reason: {ai_response.get('explanation_fa')}")
+            return None 
+        
         return ai_response
 
     def run_full_pipeline(self, df: pd.DataFrame, symbol: str, timeframe: str) -> Optional[Dict[str, Any]]:
         """
         خط لوله کامل تحلیل را اجرا می‌کند: از محاسبه اندیکاتورها تا اجرای استراتژی‌ها و تایید AI.
         """
-        # پاس دادن کانفیگ اندیکاتورها به موتور تحلیلگر
         analyzer = IndicatorAnalyzer(df, config=self.config.get('indicators', {}))
         analyzer.calculate_all()
         analysis_summary = analyzer.get_analysis_summary()
@@ -125,7 +144,6 @@ class MasterOrchestrator:
                 instance = sc(analysis_summary, strategy_config, htf_analysis=None) # TODO: Pass HTF analysis
                 signal = instance.check_signal()
                 if signal:
-                    # نام استراتژی را از داخل خود نمونه می‌خوانیم تا نام‌های ارتقا یافته صحیح ثبت شوند
                     signal['strategy_name'] = instance.strategy_name
                     valid_signals.append(signal)
 
