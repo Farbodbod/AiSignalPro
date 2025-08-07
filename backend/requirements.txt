@@ -11,7 +11,6 @@ shap
 ta
 django-cors-headers
 python-dotenv
-numpy
 scipy
 google-generativeai
 tenacity
