@@ -1,6 +1,6 @@
 # ۱. انتخاب سیستم‌عامل پایه
 # استفاده از یک ایمیج پایه پایتون 3.11 سبک و مدرن.
-# 'slim-bookworm' بر اساس دبیان 12 است که برای پایتون 3.11 مناسب است. [1]
+# 'slim-bookworm' بر اساس دبیان 12 است که برای پایتون 3.11 مناسب است.
 FROM python:3.11-slim-bookworm
 
 # تنظیم متغیرهای محیطی برای عملیات apt-get غیرتعاملی و خروجی بافر نشده پایتون
@@ -8,64 +8,31 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 
-# ۲. نصب ابزارهای ساخت و وابستگی‌های سطح سیستم برای کتابخانه C TA-Lib.
-#    این گام حیاتی برای فعال کردن کامپایل کتابخانه C است.
-#    'build-essential' ابزارهایی مانند gcc، make و سایر ابزارهای توسعه اصلی را فراهم می کند. [3, 4, 5]
-#    'wget' و 'tar' برای دانلود و استخراج آرشیو کد منبع TA-Lib لازم هستند.
-#    'python3-dev' فایل های هدر لازم برای افزونه های C پایتون را فراهم می کند. [3, 4]
-#    'pkg-config', 'libssl-dev', 'libffi-dev' وابستگی های رایج برای پکیج های پایتون و کامپایل C هستند.
-#    '--no-install-recommends' به حفظ حداقل حجم ایمیج داکر کمک می کند.
+# ۲. نصب ابزارهای سیستمی ضروری (فقط برای سایر وابستگی‌ها، نه TA-Lib)
+#    'build-essential' و 'python3-dev' ممکن است برای سایر پکیج‌های C-extension در requirements.txt لازم باشند.
 #    'rm -rf /var/lib/apt/lists/*' لیست های بسته apt را پاک می کند تا حجم ایمیج را بیشتر کاهش دهد.
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         build-essential \
-        wget \
-        tar \
         python3-dev \
         pkg-config \
         libssl-dev \
         libffi-dev && \
     rm -rf /var/lib/apt/lists/*
 
-# ۳. دانلود، کامپایل و نصب کتابخانه C TA-Lib از کد منبع.
-#    این مرحله اصلی برای در دسترس قرار دادن قابلیت های اصلی TA-Lib است.
-#    ما به طور موقت دایرکتوری کاری را برای این فرآیند به /usr/local/src تغییر می دهیم.
-WORKDIR /usr/local/src
-#    'wget' کد منبع C TA-Lib نسخه 0.6.4 را دانلود می کند (آخرین نسخه پایدار). [6, 7, 8]
-#    'tar -xzf' آرشیو منبع فشرده را استخراج می کند.
-#    'cd ta-lib-0.6.4' وارد دایرکتوری استخراج شده می شود.
-#    './configure --prefix=/usr' سیستم ساخت را برای نصب کتابخانه در /usr پیکربندی می کند.
-#    'make' کد منبع را کامپایل می کند.
-#    'make install' فایل های کتابخانه کامپایل شده را در سیستم نصب می کند.
-#    'ldconfig' کش کتابخانه مشترک سیستم را به روز می کند. این برای جلوگیری از
-#    خطاهای 'ImportError: libta_lib.so.0: cannot open shared object file' در زمان اجرا حیاتی است. [9, 4, 5]
-#    'rm -rf /usr/local/src/ta-lib*' منبع دانلود شده و مصنوعات ساخت را پاک می کند تا ایمیج نهایی سبک بماند.
-RUN wget https://github.com/TA-Lib/ta-lib/releases/download/v0.6.4/ta-lib-0.6.4-src.tar.gz -O ta-lib-0.6.4-src.tar.gz && \
-    tar -xzf ta-lib-0.6.4-src.tar.gz && \
-    cd ta-lib-0.6.4 && \
-  ./configure --prefix=/usr && \
-    make && \
-    make install && \
-    ldconfig && \
-    rm -rf /usr/local/src/ta-lib*
-
-# ۴. تنظیم متغیرهای محیطی برای کمک به پوشش پایتون برای یافتن کتابخانه C.
-#    این مرحله حیاتی است و باید قبل از نصب پکیج های پایتون انجام شود. [3, 9, 10]
-ENV TA_INCLUDE_PATH="/usr/include" \
-    TA_LIBRARY_PATH="/usr/lib"
-
-# ۵. تنظیم دایرکتوری کاری برای برنامه شما در داخل کانتینر.
+# ۳. تنظیم دایرکتوری کاری برای برنامه شما در داخل کانتینر.
 WORKDIR /app
 
-# ۶. کپی کردن فایل requirements.txt و نصب وابستگی های پایتون.
+# ۴. کپی کردن فایل requirements.txt و نصب وابستگی های پایتون.
+#    TA-Lib اکنون به عنوان یک پکیج از پیش کامپایل شده نصب خواهد شد.
 COPY requirements.txt.
 RUN pip install --no-cache-dir -r requirements.txt
 
-# ۷. کپی کردن بقیه کد برنامه شما به داخل کانتینر.
+# ۵. کپی کردن بقیه کد برنامه شما به داخل کانتینر.
 COPY..
 
-# ۸. پورت مورد نظر برنامه شما را آشکار می کند (اگر یک برنامه وب است).
+# ۶. پورت مورد نظر برنامه شما را آشکار می کند (اگر یک برنامه وب است).
 EXPOSE 8000
 
-# ۹. تعریف دستور برای اجرای برنامه شما هنگام شروع کانتینر.
+# ۷. تعریف دستور برای اجرای برنامه شما هنگام شروع کانتینر.
 CMD ["python", "your_app_entrypoint.py"]
