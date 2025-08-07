@@ -1,32 +1,25 @@
-# Django & ASGI
 django
 gunicorn
-uvicorn
-djangorestframework
-django-cors-headers
-whitenoise
-
-# Database
 dj-database-url
 psycopg2-binary
-
-# AI/ML
+whitenoise
+requests
 openai
 scikit-learn
 xgboost
 shap
-google-generativeai
-
-# Utilities
-requests
+ta
+django-cors-headers
 python-dotenv
+numpy
+scipy
+google-generativeai
 tenacity
 jdatetime
 pytz
-
-# Technical Analysis
-numpy==1.24.4
-scipy
+uvicorn
+djangorestframework
+numpy==1.26.4
 pandas==2.2.2
 pandas-ta==0.3.14b0
-ta
+#final deploy trigger v3.0
