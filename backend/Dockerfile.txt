@@ -1,21 +1,19 @@
 # ۱. انتخاب سیستم‌عامل پایه
-# استفاده از یک ایمیج پایه پایتون سبک و پایدار.
-# پایتون 3.10 تعادل خوبی بین ویژگی های جدید و پایداری ارائه می دهد.
-# '-slim-bullseye' بر اساس دبیان 11 است و apt را برای بسته های سیستمی فراهم می کند.
-# اگر همچنان با پایتون 3.11 مشکل دارید، می توانید به جای آن از 'python:3.11-slim-bullseye' استفاده کنید،
-# اما باید مطمئن شوید که TA-Lib 0.6.x را در requirements.txt استفاده می کنید.
-FROM python:3.10-slim-bullseye
+# استفاده از یک ایمیج پایه پایتون 3.11 سبک و مدرن.
+# 'slim-bookworm' بر اساس دبیان 12 است که برای پایتون 3.11 مناسب است. [1]
+FROM python:3.11-slim-bookworm
 
-# تنظیم متغیرهای محیطی برای عملیات apt-get غیرتعاملی
+# تنظیم متغیرهای محیطی برای عملیات apt-get غیرتعاملی و خروجی بافر نشده پایتون
 ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
 
 # ۲. نصب ابزارهای ساخت و وابستگی‌های سطح سیستم برای کتابخانه C TA-Lib.
-#    این اولین گام حیاتی برای فعال کردن کامپایل کتابخانه C است.
-#    'build-essential' ابزارهایی مانند gcc، make و سایر ابزارهای توسعه اصلی را فراهم می کند. [1, 2, 3]
-#    'wget' و 'tar' برای دانلود و استخراج آرشیو کد منبع TA-Lib لازم هستند. [1, 2]
-#    'gcc' به صراحت به عنوان کامپایلر C گنجانده شده است. [1, 3]
-#    'python3-dev' فایل های هدر لازم برای افزونه های C پایتون را فراهم می کند،
-#    که هنگام ساخت پوشش پایتون TA-Lib مورد نیاز هستند. [1, 3]
+#    این گام حیاتی برای فعال کردن کامپایل کتابخانه C است.
+#    'build-essential' ابزارهایی مانند gcc، make و سایر ابزارهای توسعه اصلی را فراهم می کند. [3, 4, 5]
+#    'wget' و 'tar' برای دانلود و استخراج آرشیو کد منبع TA-Lib لازم هستند.
+#    'python3-dev' فایل های هدر لازم برای افزونه های C پایتون را فراهم می کند. [3, 4]
+#    'pkg-config', 'libssl-dev', 'libffi-dev' وابستگی های رایج برای پکیج های پایتون و کامپایل C هستند.
 #    '--no-install-recommends' به حفظ حداقل حجم ایمیج داکر کمک می کند.
 #    'rm -rf /var/lib/apt/lists/*' لیست های بسته apt را پاک می کند تا حجم ایمیج را بیشتر کاهش دهد.
 RUN apt-get update && \
@@ -23,39 +21,38 @@ RUN apt-get update && \
         build-essential \
         wget \
         tar \
-        gcc \
-        python3-dev && \
+        python3-dev \
+        pkg-config \
+        libssl-dev \
+        libffi-dev && \
     rm -rf /var/lib/apt/lists/*
 
 # ۳. دانلود، کامپایل و نصب کتابخانه C TA-Lib از کد منبع.
 #    این مرحله اصلی برای در دسترس قرار دادن قابلیت های اصلی TA-Lib است.
-#    ما به طور موقت دایرکتوری کاری را برای این فرآیند به /tmp تغییر می دهیم.
-WORKDIR /tmp
-#    'wget' کد منبع C TA-Lib را دانلود می کند. نسخه 0.4.0 در اینجا به دلیل سازگاری گسترده
-#    و اشاره مکرر در راهنماهای نصب موفق [4, 1, 2] انتخاب شده است.
+#    ما به طور موقت دایرکتوری کاری را برای این فرآیند به /usr/local/src تغییر می دهیم.
+WORKDIR /usr/local/src
+#    'wget' کد منبع C TA-Lib نسخه 0.6.4 را دانلود می کند (آخرین نسخه پایدار). [6, 7, 8]
 #    'tar -xzf' آرشیو منبع فشرده را استخراج می کند.
-#    'cd ta-lib' وارد دایرکتوری منبع استخراج شده می شود.
-#    './configure --prefix=/usr/local' سیستم ساخت را برای نصب کتابخانه در /usr/local پیکربندی می کند،
-#    یک مکان استاندارد سراسری سیستم، که آن را قابل کشف می کند. [4, 1, 2]
-#    'make' کد منبع را کامپایل می کند. [4, 1, 2]
-#    'make install' فایل های کتابخانه کامپایل شده را در سیستم نصب می کند. [4, 1, 2]
+#    'cd ta-lib-0.6.4' وارد دایرکتوری استخراج شده می شود.
+#    './configure --prefix=/usr' سیستم ساخت را برای نصب کتابخانه در /usr پیکربندی می کند.
+#    'make' کد منبع را کامپایل می کند.
+#    'make install' فایل های کتابخانه کامپایل شده را در سیستم نصب می کند.
 #    'ldconfig' کش کتابخانه مشترک سیستم را به روز می کند. این برای جلوگیری از
-#    خطاهای 'ImportError: libta_lib.so.0: cannot open shared object file' در زمان اجرا حیاتی است. [1, 2, 5]
-#    'rm -rf /tmp/ta-lib*' منبع دانلود شده و مصنوعات ساخت را پاک می کند تا ایمیج نهایی سبک بماند.
-RUN wget http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz && \
-    tar -xzf ta-lib-0.4.0-src.tar.gz && \
-    cd ta-lib && \
- ./configure --prefix=/usr/local && \
+#    خطاهای 'ImportError: libta_lib.so.0: cannot open shared object file' در زمان اجرا حیاتی است. [9, 4, 5]
+#    'rm -rf /usr/local/src/ta-lib*' منبع دانلود شده و مصنوعات ساخت را پاک می کند تا ایمیج نهایی سبک بماند.
+RUN wget https://github.com/TA-Lib/ta-lib/releases/download/v0.6.4/ta-lib-0.6.4-src.tar.gz -O ta-lib-0.6.4-src.tar.gz && \
+    tar -xzf ta-lib-0.6.4-src.tar.gz && \
+    cd ta-lib-0.6.4 && \
+  ./configure --prefix=/usr && \
     make && \
     make install && \
     ldconfig && \
-    rm -rf /tmp/ta-lib*
+    rm -rf /usr/local/src/ta-lib*
 
 # ۴. تنظیم متغیرهای محیطی برای کمک به پوشش پایتون برای یافتن کتابخانه C.
-#    این مرحله حیاتی است و باید قبل از نصب پکیج های پایتون انجام شود. [4, 1, 6, 2, 7]
-ENV TA_INCLUDE_PATH="/usr/local/include" \
-    TA_LIBRARY_PATH="/usr/local/lib" \
-    LD_LIBRARY_PATH="/usr/local/lib:${LD_LIBRARY_PATH}"
+#    این مرحله حیاتی است و باید قبل از نصب پکیج های پایتون انجام شود. [3, 9, 10]
+ENV TA_INCLUDE_PATH="/usr/include" \
+    TA_LIBRARY_PATH="/usr/lib"
 
 # ۵. تنظیم دایرکتوری کاری برای برنامه شما در داخل کانتینر.
 WORKDIR /app
