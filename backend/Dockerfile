@@ -23,18 +23,20 @@ RUN wget http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz && \
     make install && \
     cd .. && rm -rf ta-lib ta-lib-0.4.0-src.tar.gz
 
+# اضافه کردن کتابخانه به متغیرهای محیطی برای linker
+ENV LD_LIBRARY_PATH="/usr/lib:$LD_LIBRARY_PATH"
+
 # تنظیم مسیر کاری پروژه
 WORKDIR /app
 
 # کپی فایل نیازمندی‌ها
 COPY requirements.txt .
 
-# آپدیت pip و نصب پکیج‌های پایتون
+# نصب پکیج‌های پایتون
 RUN pip install --upgrade pip && pip install --no-cache-dir -r requirements.txt
 
 # کپی کل پروژه به داخل کانتینر
 COPY . .
 
-# اگر از Procfile استفاده می‌کنی، نیازی به CMD نیست
-# در غیر اینصورت، می‌تونی این خط رو فعال کنی:
+# اجرای اپلیکیشن (در صورت نیاز)
 # CMD ["python", "manage.py", "runserver", "0.0.0.0:8000"]
