@@ -1,12 +1,10 @@
-# trading_app/settings.py
-
 import os
 from pathlib import Path
 import dj_database_url
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', 'django-insecure-dev-key-placeholder')
-DEBUG = os.getenv('DJANGO_DEBUG', 'True') != 'False' # Corrected logic for production
+DEBUG = os.getenv('DJANGO_DEBUG', 'True') != 'False'
 ALLOWED_HOSTS = ['*']
 
 INSTALLED_APPS = [
@@ -17,7 +15,7 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'corsheaders',
-    'rest_framework', # Added for API views
+    'rest_framework',
     'core',
 ]
 
@@ -53,10 +51,20 @@ TEMPLATES = [
     },
 ]
 
-if 'DATABASE_URL' in os.environ:
-    DATABASES = {'default': dj_database_url.config(conn_max_age=600, ssl_require=False)} # SSL require might vary based on DB provider
-else:
-    DATABASES = {'default': {'ENGINE': 'django.db.backends.sqlite3', 'NAME': BASE_DIR / 'db.sqlite3'}}
+# ==============================================================================
+# ✨ DATABASE CONFIGURATION (نسخه ارتقا یافته و ضد خطا) ✨
+# ==============================================================================
+# این کد به صورت هوشمند از متغیر محیطی DATABASE_URL استفاده می‌کند.
+# اگر این متغیر وجود نداشته باشد یا خالی باشد، به صورت خودکار از sqlite3 استفاده می‌کند.
+DATABASES = {
+    'default': dj_database_url.config(
+        conn_max_age=600,
+        ssl_require=False, # در Railway معمولاً به SSL نیاز نیست
+        default=f"sqlite:///{BASE_DIR / 'db.sqlite3'}"
+    )
+}
+# ==============================================================================
+
 
 AUTH_PASSWORD_VALIDATORS = [
     {'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator'},
