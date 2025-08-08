@@ -4,8 +4,8 @@ import os
 import django
 import time
 import json
-from typing import Dict, Tuple, List, Optional
-from asgiref.sync import sync_to_async # ✨ ۱. ایمپورت جدید و ضروری
+from typing import Dict, Tuple, List, Optional, Any # <-- ✨ اصلاحیه: Any به اینجا اضافه شد
+from asgiref.sync import sync_to_async
 
 # --- تنظیمات پایه لاگ ---
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - [%(module)s:%(funcName)s] - %(message)s')
@@ -21,7 +21,7 @@ from core.exchange_fetcher import ExchangeFetcher
 from engines.master_orchestrator import MasterOrchestrator
 from engines.signal_adapter import SignalAdapter
 from engines.telegram_handler import TelegramHandler
-from core.models import AnalysisSnapshot # ✨ ۲. ایمپورت مدل دیتابیس جدید
+from core.models import AnalysisSnapshot
 
 # --- پارامترهای اصلی مانیتورینگ ---
 SYMBOLS_TO_MONITOR = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'XRP/USDT', 'DOGE/USDT']
@@ -34,33 +34,30 @@ SIGNAL_CACHE_TTL_MAP = {
 }
 
 class SignalCache:
-    # ... (کلاس SignalCache بدون تغییر باقی می‌ماند) ...
-    def __init__(self, ttl_map: Dict[str, int]): self._cache: Dict[Tuple[str, str, str], float] = {}; self.ttl_map = ttl_map
+    def __init__(self, ttl_map: Dict[str, int]):
+        self._cache: Dict[Tuple[str, str, str], float] = {}
+        self.ttl_map = ttl_map
+
     def is_duplicate(self, symbol: str, timeframe: str, direction: str) -> bool:
-        key = (symbol, timeframe, direction); ttl = self.ttl_map.get(timeframe, self.ttl_map['default'])
+        key = (symbol, timeframe, direction)
+        ttl = self.ttl_map.get(timeframe, self.ttl_map['default'])
         if key in self._cache and (time.time() - self._cache[key]) < ttl:
             remaining_time = ((self._cache[key] + ttl) - time.time()) / 60
             logger.info(f"Duplicate signal {key} found. Cooldown active for {remaining_time:.1f} more minutes.")
             return True
         return False
+
     def store_signal(self, symbol: str, timeframe: str, direction: str):
-        key = (symbol, timeframe, direction); self._cache[key] = time.time()
+        key = (symbol, timeframe, direction)
+        self._cache[key] = time.time()
         logger.info(f"Signal {key} stored in cache.")
 
-
-# ✨ ۳. تابع جدید برای ذخیره داده در دیتابیس به صورت Async-Safe
 @sync_to_async
 def save_analysis_snapshot(symbol: str, timeframe: str, package: Dict[str, Any]):
-    """
-    نتیجه تحلیل را در مدل AnalysisSnapshot در دیتابیس ذخیره یا آپدیت می‌کند.
-    """
     try:
         status = package.get("status", "NEUTRAL")
         full_analysis = package.get("full_analysis", {})
-        # اگر سیگنال موفقیت آمیز باشد، کل پکیج را ذخیره می‌کنیم
         signal_data = package if status == "SUCCESS" else None
-
-        # استفاده از update_or_create برای سادگی و کارایی
         snapshot, created = AnalysisSnapshot.objects.update_or_create(
             symbol=symbol,
             timeframe=timeframe,
@@ -77,7 +74,6 @@ def save_analysis_snapshot(symbol: str, timeframe: str, package: Dict[str, Any])
     except Exception as e:
         logger.error(f"Failed to save AnalysisSnapshot for {symbol} {timeframe}: {e}", exc_info=True)
 
-
 async def analyze_and_alert(fetcher: ExchangeFetcher, orchestrator: MasterOrchestrator, telegram: TelegramHandler, cache: SignalCache, symbol: str, timeframe: str):
     try:
         logger.info(f"Fetching data for {symbol} on {timeframe}...")
@@ -89,11 +85,9 @@ async def analyze_and_alert(fetcher: ExchangeFetcher, orchestrator: MasterOrches
         logger.info(f"Data for {symbol} fetched from {source}. Running full pipeline...")
         final_signal_package = orchestrator.run_full_pipeline(df, symbol, timeframe)
         
-        # ✨ ۴. فراخوانی تابع جدید برای ذخیره نتیجه تحلیل در دیتابیس (همیشه اجرا می‌شود)
         if final_signal_package:
             await save_analysis_snapshot(symbol, timeframe, final_signal_package)
         
-        # ✨ ۵. اصلاح شرط بررسی سیگنال برای هماهنگی با خروجی جدید ارکستراتور
         if final_signal_package and final_signal_package.get("status") == "SUCCESS":
             base_signal = final_signal_package.get("base_signal", {})
             direction = base_signal.get("direction")
@@ -108,7 +102,6 @@ async def analyze_and_alert(fetcher: ExchangeFetcher, orchestrator: MasterOrches
         logger.error(f"An error occurred during analysis for {symbol} {timeframe}: {e}", exc_info=True)
 
 async def main_loop():
-    # ... (تابع main_loop بدون تغییر باقی می‌ماند) ...
     config = {}
     try:
         with open('config.json', 'r', encoding='utf-8') as f:
