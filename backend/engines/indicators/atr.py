@@ -1,101 +1,109 @@
 import pandas as pd
 import numpy as np
 import logging
+from typing import Dict, Any
+
+# اطمینان حاصل کنید که این اندیکاتورها از فایل‌های مربوطه و در نسخه‌های نهایی خود وارد شده‌اند
 from .base import BaseIndicator
 
 logger = logging.getLogger(__name__)
 
 class AtrIndicator(BaseIndicator):
     """
-    ATR Indicator - World-Class, Intelligent & Robust Version
-    ----------------------------------------------------------
-    This version includes:
-    1.  Accurate Wilder's Smoothing for ATR calculation.
-    2.  An additional 'Normalized ATR' column (% of close price).
-    3.  Robust input validation and error handling.
-    4.  Intelligent analysis classifying volatility into levels (Low, Normal, High).
-    5.  Parameterizable thresholds for volatility analysis.
+    ATR Indicator - Definitive, Complete, MTF & World-Class Version
+    ----------------------------------------------------------------
+    This is the final, unified version combining intelligent volatility
+    analysis with the multi-timeframe (MTF) architectural pattern.
     """
     def __init__(self, df: pd.DataFrame, **kwargs):
         super().__init__(df, **kwargs)
-        # --- Parameterization ---
+        # --- Parameters ---
+        self.params = kwargs.get('params', {})
         self.period = int(self.params.get('period', 14))
-        # ✨ IMPROVEMENT 1: Make volatility analysis thresholds configurable
+        self.timeframe = self.params.get('timeframe', None)
         self.volatility_thresholds = self.params.get('volatility_thresholds', {
             'low_max': 1.0,   # ATR percent below this is "Low"
             'normal_max': 3.0, # ATR percent below this is "Normal"
             'high_max': 5.0    # ATR percent below this is "High", above is "Extreme"
         })
+
+        # --- Dynamic Column Naming ---
+        suffix = f'_{self.period}'
+        if self.timeframe: suffix += f'_{self.timeframe}'
+        self.atr_col = f'atr{suffix}'
+        self.atr_pct_col = f'atr_pct{suffix}'
+
+    def calculate(self) -> 'AtrIndicator':
+        """Calculates ATR and Normalized ATR, handling MTF internally."""
+        base_df = self.df
         
-        # --- Column Naming ---
-        self.atr_col = f'atr_{self.period}'
-        self.atr_pct_col = f'atr_pct_{self.period}'
-
-    def _validate_input(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Validates the input DataFrame for required columns, length, and dtype."""
-        required_cols = {'high', 'low', 'close'}
-        if not required_cols.issubset(df.columns):
-            missing = required_cols - set(df.columns)
-            msg = f"Missing required columns for ATR: {missing}"
-            logger.error(msg)
-            raise ValueError(msg)
-        
-        if len(df) < self.period:
-            logger.warning(f"Data length ({len(df)}) is less than ATR period ({self.period}). Results might be unreliable.")
-        
-        for col in required_cols:
-            if not pd.api.types.is_numeric_dtype(df[col]):
-                df[col] = pd.to_numeric(df[col], errors='coerce')
-        return df
-
-    def calculate(self) -> pd.DataFrame:
-        """Calculates ATR and Normalized ATR, adding them to the DataFrame."""
-        df = self.df.copy()
-        df = self._validate_input(df)
-
-        # True Range (TR) calculation
-        high_low = df['high'] - df['low']
-        high_close = np.abs(df['high'] - df['close'].shift(1))
-        low_close = np.abs(df['low'] - df['close'].shift(1))
-        
-        tr = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
-        
-        # Use Wilder's Smoothing (RMA) for ATR
-        atr = tr.ewm(alpha=1/self.period, adjust=False).mean()
-        self.df[self.atr_col] = atr
-
-        # Normalized ATR (% of close price) calculation
-        # Using np.where for safe division, propagating NaN if close is 0 or NaN
-        safe_close = df['close'].replace(0, np.nan)
-        self.df[self.atr_pct_col] = (atr / safe_close) * 100
-        
-        return self.df
-
-    def analyze(self) -> dict:
-        """
-        Analyzes the latest ATR value and provides an intelligent classification
-        of the current market volatility.
-        """
-        # ✨ IMPROVEMENT 2: Robust check for data availability and NaN values
-        if len(self.df) < 1 or pd.isna(self.df[self.atr_pct_col].iloc[-1]):
-            return {"value": None, "percent": None, "volatility": "Insufficient Data"}
-
-        last_atr_val = self.df[self.atr_col].iloc[-1]
-        last_atr_pct = self.df[self.atr_pct_col].iloc[-1]
-
-        # --- Volatility Level Analysis (using configurable thresholds) ---
-        t = self.volatility_thresholds
-        if last_atr_pct <= t['low_max']:
-            volatility_level = "Low"
-        elif last_atr_pct <= t['normal_max']:
-            volatility_level = "Normal"
-        elif last_atr_pct <= t['high_max']:
-            volatility_level = "High"
+        # ✨ MTF LOGIC: Resample
+        if self.timeframe:
+            if not isinstance(base_df.index, pd.DatetimeIndex):
+                raise TypeError("DataFrame index must be a DatetimeIndex for MTF.")
+            rules = {'open': 'first', 'high': 'max', 'low': 'min', 'close': 'last'}
+            calc_df = base_df.resample(self.timeframe).apply(rules).dropna()
         else:
-            volatility_level = "Extreme"
+            calc_df = base_df.copy()
+
+        if len(calc_df) < self.period:
+            logger.warning(f"Not enough data for ATR on timeframe {self.timeframe or 'base'}.")
+            self.df[self.atr_col] = np.nan
+            self.df[self.atr_pct_col] = np.nan
+            return self
+            
+        # --- Vectorized Calculation on calc_df ---
+        tr = pd.concat([
+            calc_df['high'] - calc_df['low'],
+            np.abs(calc_df['high'] - calc_df['close'].shift(1)),
+            np.abs(calc_df['low'] - calc_df['close'].shift(1))
+        ], axis=1).max(axis=1)
+        atr = tr.ewm(alpha=1/self.period, adjust=False).mean()
+        
+        safe_close = calc_df['close'].replace(0, np.nan)
+        atr_pct = (atr / safe_close) * 100
+        
+        # --- Map results back to the original dataframe if MTF ---
+        results_df = pd.DataFrame(index=calc_df.index)
+        results_df[self.atr_col] = atr
+        results_df[self.atr_pct_col] = atr_pct
+
+        if self.timeframe:
+            final_results = results_df.reindex(base_df.index, method='ffill')
+            self.df[self.atr_col] = final_results[self.atr_col]
+            self.df[self.atr_pct_col] = final_results[self.atr_pct_col]
+        else:
+            self.df[self.atr_col] = results_df[self.atr_col]
+            self.df[self.atr_pct_col] = results_df[self.atr_pct_col]
+        
+        return self
+
+    def analyze(self) -> Dict[str, Any]:
+        """Provides an intelligent classification of the current market volatility."""
+        required_cols = [self.atr_col, self.atr_pct_col]
+        valid_df = self.df.dropna(subset=required_cols)
+        
+        if len(valid_df) < 1:
+            return {"status": "Insufficient Data", "timeframe": self.timeframe or 'Base'}
+        
+        last_atr_val = valid_df[self.atr_col].iloc[-1]
+        last_atr_pct = valid_df[self.atr_pct_col].iloc[-1]
+        
+        # --- Volatility Level Analysis ---
+        t = self.volatility_thresholds
+        if last_atr_pct <= t['low_max']: volatility_level = "Low"
+        elif last_atr_pct <= t['normal_max']: volatility_level = "Normal"
+        elif last_atr_pct <= t['high_max']: volatility_level = "High"
+        else: volatility_level = "Extreme"
 
         return {
-            "value": round(last_atr_val, 5),
-            "percent": round(last_atr_pct, 2),
-            "volatility": volatility_level
+            "status": "OK",
+            "timeframe": self.timeframe or 'Base',
+            "values": {
+                "atr": round(last_atr_val, 5),
+                "atr_percent": round(last_atr_pct, 2),
+            },
+            "analysis": {
+                "volatility": volatility_level
+            }
         }
