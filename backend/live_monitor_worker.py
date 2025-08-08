@@ -4,8 +4,17 @@ import os
 import django
 import time
 import json
-from typing import Dict, Tuple, List, Optional, Any # <-- ✨ اصلاحیه: Any به اینجا اضافه شد
+from typing import Dict, Tuple, List, Optional, Any
 from asgiref.sync import sync_to_async
+
+# ✨ --- کد دیباگ برای بررسی متغیرهای محیطی --- ✨
+# این بخش به ما نشان می‌دهد که برنامه در سرور Railway چه متغیرهایی را می‌بیند.
+print("--- AiSignalPro Worker Debug ---")
+db_url_from_env = os.environ.get('DATABASE_URL')
+print(f"DATABASE_URL value seen by the app: {db_url_from_env}")
+print("--- End of Debug Section ---")
+# ✨ --- پایان کد دیباگ --- ✨
+
 
 # --- تنظیمات پایه لاگ ---
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - [%(module)s:%(funcName)s] - %(message)s')
