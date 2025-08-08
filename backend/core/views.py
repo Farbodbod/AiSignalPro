@@ -1,48 +1,46 @@
 import logging
 from django.http import JsonResponse
 from rest_framework.decorators import api_view
-from core.exchange_fetcher import ExchangeFetcher
-from engines.master_orchestrator import MasterOrchestrator
-import asyncio
-import json
+from core.models import AnalysisSnapshot # ✨ ۱. ایمپورت مدل جدید
 
 logger = logging.getLogger(__name__)
 
-def load_config():
-    try:
-        with open('config.json', 'r', encoding='utf-8') as f:
-            return json.load(f)
-    except Exception as e:
-        logger.error(f"Could not load config.json: {e}")
-        return {}
-
 @api_view(['GET'])
 def get_composite_signal_view(request):
+    """
+    ✨ UPGRADE v19.0 - World-Class Architecture ✨
+    این نقطه پایانی API دیگر تحلیل زنده انجام نمی‌دهد.
+    این متد آخرین تحلیل ذخیره شده توسط ورکر را از دیتابیس می‌خواند.
+    این روش فوق‌العاده سریع، بهینه و مقیاس‌پذیر است.
+    """
     symbol = request.GET.get('symbol', 'BTC/USDT')
     timeframe = request.GET.get('timeframe', '1h')
     
     try:
-        fetcher = ExchangeFetcher()
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            loop = asyncio.new_event_loop(); asyncio.set_event_loop(loop)
-        
-        df_tuple = loop.run_until_complete(fetcher.get_first_successful_klines(symbol, timeframe, limit=300))
+        # ✨ ۲. کوئری ساده و سریع به دیتابیس
+        # ما به دنبال آخرین رکورد برای جفت‌ارز و تایم‌فریم مشخص شده می‌گردیم.
+        snapshot = AnalysisSnapshot.objects.filter(symbol=symbol, timeframe=timeframe).first()
 
-        if df_tuple is None or df_tuple[0] is None:
-            return JsonResponse({"status": "NO_DATA", "message": f"Could not fetch market data for {symbol}."}, status=404)
-        
-        dataframe, source = df_tuple
-        
-        config = load_config()
-        orchestrator = MasterOrchestrator(config=config)
-        
-        # ✨ ارتقای کلیدی: ارکستراتور همیشه یک پکیج کامل برمی‌گرداند
-        final_package = orchestrator.run_full_pipeline(dataframe, symbol, timeframe)
-
-        # ما فقط نتیجه را مستقیماً به کاربر نمایش می‌دهیم
-        return JsonResponse(final_package, status=200)
+        # ۳. بررسی نتیجه کوئری
+        if snapshot:
+            # اگر رکوردی پیدا شد
+            if snapshot.status == "SUCCESS":
+                # اگر وضعیت موفقیت‌آمیز بود، پکیج کامل سیگنال را برمی‌گردانیم
+                # این پکیج شامل full_analysis نیز هست
+                return JsonResponse(snapshot.signal_package, status=200)
+            else: # اگر وضعیت NEUTRAL بود
+                # یک پاسخ خنثی به همراه تحلیل کامل برمی‌گردانیم
+                return JsonResponse({
+                    "status": "NEUTRAL",
+                    "message": "Market conditions did not meet any strategy criteria at last check.",
+                    "full_analysis": snapshot.full_analysis
+                }, status=200)
+        else:
+            # اگر هنوز هیچ رکوردی توسط ورکر برای این جفت‌ارز ذخیره نشده باشد
+            return JsonResponse({
+                "status": "NOT_FOUND",
+                "message": "No analysis snapshot is available yet for this symbol/timeframe. Please wait for the next worker cycle."
+            }, status=404)
 
     except Exception as e:
         logger.critical(f"CRITICAL ERROR in get_composite_signal_view for {symbol}: {e}", exc_info=True)
