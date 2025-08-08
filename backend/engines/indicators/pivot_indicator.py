@@ -6,8 +6,9 @@ logger = logging.getLogger(__name__)
 
 class PivotPointIndicator(BaseIndicator):
     """
-    ✨ UPGRADE v2.0 ✨
-    - Constructor standardized to use **kwargs.
+    ✨ UPGRADE v2.1 - Sanity Check ✨
+    - Constructor standardized.
+    - Added a sanity check to prevent illogical level calculation.
     """
     def __init__(self, df: pd.DataFrame, **kwargs):
         super().__init__(df, **kwargs)
@@ -19,6 +20,13 @@ class PivotPointIndicator(BaseIndicator):
     def calculate(self) -> pd.DataFrame:
         prev_candle = self.df.iloc[-2]
         high = prev_candle['high']; low = prev_candle['low']; close = prev_candle['close']
+        
+        # ✨ اصلاحیه کلیدی: بررسی سلامت داده‌های ورودی
+        if high < low:
+            logger.warning(f"Invalid previous candle data for Pivots: High ({high}) is less than Low ({low}). Skipping calculation.")
+            self.pivots = {} # سطوح را خالی برمی‌گردانیم
+            return self.df
+
         pivot = (high + low + close) / 3
         
         if self.method == 'fibonacci':
@@ -30,10 +38,15 @@ class PivotPointIndicator(BaseIndicator):
         else: # standard
             r1 = (2*pivot) - low; s1 = (2*pivot) - high; r2 = pivot + (high-low); s2 = pivot - (high-low); r3 = high + 2*(pivot-low); s3 = low - 2*(high-pivot)
             self.pivots = {'R3': r3, 'R2': r2, 'R1': r1, 'P': pivot, 'S1': s1, 'S2': s2, 'S3': s3}
+        
+        # گرد کردن تمام مقادیر برای خروجی تمیزتر
+        self.pivots = {k: round(v, 5) for k, v in self.pivots.items()}
         return self.df
 
     def analyze(self) -> dict:
         if not self.pivots: self.calculate()
+        if not self.pivots: return {"levels": {}, "position": "Invalid Data"}
+
         current_price = self.df.iloc[-1]['close']
         position = "Unknown"
         sorted_levels = sorted(self.pivots.items(), key=lambda item: item[1])
