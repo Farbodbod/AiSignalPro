@@ -5,28 +5,28 @@ import django
 import time
 import json
 from typing import Dict, Tuple, List, Optional
+from asgiref.sync import sync_to_async # ✨ ۱. ایمپورت جدید و ضروری
 
-# --- تنظیمات پایه لاگ قبل از هر کاری ---
+# --- تنظیمات پایه لاگ ---
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - [%(module)s:%(funcName)s] - %(message)s')
-# ✨ خط اصلاح شده و اضافه شده در اینجا قرار می‌گیرد
 logger = logging.getLogger(__name__)
-# هشدارهای مربوط به pandas-ta را نادیده می‌گیریم
 logging.getLogger("pandas_ta").setLevel(logging.ERROR)
-
 
 # --- راه‌اندازی جنگو ---
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'trading_app.settings')
 django.setup()
 
+# --- ایمپورت‌های پروژه ---
 from core.exchange_fetcher import ExchangeFetcher
 from engines.master_orchestrator import MasterOrchestrator
 from engines.signal_adapter import SignalAdapter
 from engines.telegram_handler import TelegramHandler
+from core.models import AnalysisSnapshot # ✨ ۲. ایمپورت مدل دیتابیس جدید
 
 # --- پارامترهای اصلی مانیتورینگ ---
 SYMBOLS_TO_MONITOR = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'XRP/USDT', 'DOGE/USDT']
 TIMEFRAMES_TO_ANALYZE = ['15m', '1h', '4h']
-POLL_INTERVAL_SECONDS = 900 # 15 دقیقه
+POLL_INTERVAL_SECONDS = 900
 
 # --- تنظیمات کش سیگنال ---
 SIGNAL_CACHE_TTL_MAP = {
@@ -34,23 +34,49 @@ SIGNAL_CACHE_TTL_MAP = {
 }
 
 class SignalCache:
-    def __init__(self, ttl_map: Dict[str, int]):
-        self._cache: Dict[Tuple[str, str, str], float] = {}
-        self.ttl_map = ttl_map
-
+    # ... (کلاس SignalCache بدون تغییر باقی می‌ماند) ...
+    def __init__(self, ttl_map: Dict[str, int]): self._cache: Dict[Tuple[str, str, str], float] = {}; self.ttl_map = ttl_map
     def is_duplicate(self, symbol: str, timeframe: str, direction: str) -> bool:
-        key = (symbol, timeframe, direction)
-        ttl = self.ttl_map.get(timeframe, self.ttl_map['default'])
+        key = (symbol, timeframe, direction); ttl = self.ttl_map.get(timeframe, self.ttl_map['default'])
         if key in self._cache and (time.time() - self._cache[key]) < ttl:
             remaining_time = ((self._cache[key] + ttl) - time.time()) / 60
             logger.info(f"Duplicate signal {key} found. Cooldown active for {remaining_time:.1f} more minutes.")
             return True
         return False
-
     def store_signal(self, symbol: str, timeframe: str, direction: str):
-        key = (symbol, timeframe, direction)
-        self._cache[key] = time.time()
+        key = (symbol, timeframe, direction); self._cache[key] = time.time()
         logger.info(f"Signal {key} stored in cache.")
+
+
+# ✨ ۳. تابع جدید برای ذخیره داده در دیتابیس به صورت Async-Safe
+@sync_to_async
+def save_analysis_snapshot(symbol: str, timeframe: str, package: Dict[str, Any]):
+    """
+    نتیجه تحلیل را در مدل AnalysisSnapshot در دیتابیس ذخیره یا آپدیت می‌کند.
+    """
+    try:
+        status = package.get("status", "NEUTRAL")
+        full_analysis = package.get("full_analysis", {})
+        # اگر سیگنال موفقیت آمیز باشد، کل پکیج را ذخیره می‌کنیم
+        signal_data = package if status == "SUCCESS" else None
+
+        # استفاده از update_or_create برای سادگی و کارایی
+        snapshot, created = AnalysisSnapshot.objects.update_or_create(
+            symbol=symbol,
+            timeframe=timeframe,
+            defaults={
+                'status': status,
+                'full_analysis': full_analysis,
+                'signal_package': signal_data
+            }
+        )
+        if created:
+            logger.info(f"Created new AnalysisSnapshot for {symbol} {timeframe}.")
+        else:
+            logger.info(f"Updated AnalysisSnapshot for {symbol} {timeframe}.")
+    except Exception as e:
+        logger.error(f"Failed to save AnalysisSnapshot for {symbol} {timeframe}: {e}", exc_info=True)
+
 
 async def analyze_and_alert(fetcher: ExchangeFetcher, orchestrator: MasterOrchestrator, telegram: TelegramHandler, cache: SignalCache, symbol: str, timeframe: str):
     try:
@@ -63,7 +89,12 @@ async def analyze_and_alert(fetcher: ExchangeFetcher, orchestrator: MasterOrches
         logger.info(f"Data for {symbol} fetched from {source}. Running full pipeline...")
         final_signal_package = orchestrator.run_full_pipeline(df, symbol, timeframe)
         
+        # ✨ ۴. فراخوانی تابع جدید برای ذخیره نتیجه تحلیل در دیتابیس (همیشه اجرا می‌شود)
         if final_signal_package:
+            await save_analysis_snapshot(symbol, timeframe, final_signal_package)
+        
+        # ✨ ۵. اصلاح شرط بررسی سیگنال برای هماهنگی با خروجی جدید ارکستراتور
+        if final_signal_package and final_signal_package.get("status") == "SUCCESS":
             base_signal = final_signal_package.get("base_signal", {})
             direction = base_signal.get("direction")
             if direction and not cache.is_duplicate(symbol, timeframe, direction):
@@ -77,36 +108,22 @@ async def analyze_and_alert(fetcher: ExchangeFetcher, orchestrator: MasterOrches
         logger.error(f"An error occurred during analysis for {symbol} {timeframe}: {e}", exc_info=True)
 
 async def main_loop():
+    # ... (تابع main_loop بدون تغییر باقی می‌ماند) ...
     config = {}
     try:
         with open('config.json', 'r', encoding='utf-8') as f:
             config = json.load(f)
         logger.info("Configuration file 'config.json' loaded successfully.")
     except FileNotFoundError:
-        logger.error("FATAL: 'config.json' not found. The application will not run correctly.")
-        return
+        logger.error("FATAL: 'config.json' not found. The application will not run correctly."); return
     except json.JSONDecodeError:
-        logger.error("FATAL: 'config.json' is not a valid JSON file.")
-        return
-
-    fetcher = ExchangeFetcher()
-    orchestrator = MasterOrchestrator(config=config)
-    telegram = TelegramHandler()
-    signal_cache = SignalCache(ttl_map=SIGNAL_CACHE_TTL_MAP)
-    
-    version = orchestrator.ENGINE_VERSION
-    logger.info("======================================================")
-    logger.info(f"  AiSignalPro Live Monitoring Worker (v{version}) has started!")
-    logger.info("======================================================")
-    await telegram.send_message_async(f"✅ *AiSignalPro Bot (v{version} - Fully Integrated) is now LIVE!*")
-    
+        logger.error("FATAL: 'config.json' is not a valid JSON file."); return
+    fetcher = ExchangeFetcher(); orchestrator = MasterOrchestrator(config=config); telegram = TelegramHandler(); signal_cache = SignalCache(ttl_map=SIGNAL_CACHE_TTL_MAP); version = orchestrator.ENGINE_VERSION
+    logger.info("======================================================"); logger.info(f"  AiSignalPro Live Monitoring Worker (v{version}) has started!"); logger.info("======================================================")
+    await telegram.send_message_async(f"✅ *AiSignalPro Bot (v{version} - DB Integrated) is now LIVE!*")
     while True:
         logger.info("--- Starting new full monitoring cycle ---")
-        tasks = [
-            analyze_and_alert(fetcher, orchestrator, telegram, signal_cache, symbol, timeframe)
-            for symbol in SYMBOLS_TO_MONITOR
-            for timeframe in TIMEFRAMES_TO_ANALYZE
-        ]
+        tasks = [analyze_and_alert(fetcher, orchestrator, telegram, signal_cache, symbol, timeframe) for symbol in SYMBOLS_TO_MONITOR for timeframe in TIMEFRAMES_TO_ANALYZE]
         await asyncio.gather(*tasks)
         logger.info(f"--- Full cycle finished. Sleeping for {POLL_INTERVAL_SECONDS} seconds... ---")
         await asyncio.sleep(POLL_INTERVAL_SECONDS)
@@ -118,4 +135,3 @@ if __name__ == "__main__":
         logger.info("Bot stopped by user.")
     except Exception as e:
         logger.critical(f"A fatal error occurred in the main runner: {e}", exc_info=True)
-
