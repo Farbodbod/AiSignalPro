@@ -6,48 +6,26 @@ from typing import Dict, Any, List, Type, Optional
 
 from .indicator_analyzer import IndicatorAnalyzer
 from .gemini_handler import GeminiHandler
-# ✨ ۱. ایمپورت کردن تمام استراتژی‌های جدید و ارتقا یافته از __init__.py پوشه strategies
 from .strategies import *
 
 logger = logging.getLogger(__name__)
 
 class MasterOrchestrator:
-    """
-    ✨ UPGRADE v18.1 - JSON Config Ready ✨
-    مغز متفکر و هماهنگ‌کننده اصلی پروژه AiSignalPro.
-    این کلاس تمام تحلیلگرها و استراتژی‌ها را بر اساس یک فایل کانفیگ مرکزی
-    مدیریت و اجرا می‌کند.
-    """
     def __init__(self, config: Dict[str, Any]):
         self.config = config
-        
-        # لیست کامل و جامع از تمام استراتژی‌های پروژه برای اجرا
         self._strategy_classes: List[Type[BaseStrategy]] = [
-            # استراتژی‌های قدیمی که ارتقا دادیم
-            TrendRiderStrategy, 
-            MeanReversionStrategy, 
-            DivergenceSniperStrategy, 
-            PivotReversalStrategy, 
-            VolumeCatalystStrategy, 
-            IchimokuProStrategy,
-            # استراتژی‌های جدیدی که ساختیم
-            EmaCrossoverStrategy, 
-            BreakoutStrategy, 
-            ChandelierTrendStrategy,
-            VolumeReversalStrategy, 
-            VwapReversionStrategy, 
-            KeltnerBreakoutStrategy,
+            TrendRiderStrategy, MeanReversionStrategy, DivergenceSniperStrategy, 
+            PivotReversalStrategy, VolumeCatalystStrategy, IchimokuProStrategy,
+            EmaCrossoverStrategy, BreakoutStrategy, ChandelierTrendStrategy,
+            VolumeReversalStrategy, VwapReversionStrategy, KeltnerBreakoutStrategy,
             FibStructureStrategy
         ]
         self.gemini_handler = GeminiHandler()
         self.last_gemini_call_time = 0
-        self.ENGINE_VERSION = "18.1.0"
-        logger.info(f"MasterOrchestrator v{self.ENGINE_VERSION} (JSON Config Ready) initialized.")
+        self.ENGINE_VERSION = "18.2.0"
+        logger.info(f"MasterOrchestrator v{self.ENGINE_VERSION} (Full Analysis Output) initialized.")
 
     def _find_super_signal(self, signals: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
-        """
-        در میان سیگنال‌های معتبر، به دنبال تلاقی (Confluence) برای یافتن "سوپر سیگنال" می‌گردد.
-        """
         min_confluence = self.config.get("general", {}).get("min_confluence_for_super_signal", 3)
         buy_signals = [s for s in signals if s['direction'] == 'BUY']
         sell_signals = [s for s in signals if s['direction'] == 'SELL']
@@ -81,23 +59,17 @@ class MasterOrchestrator:
         return super_signal
 
     def _get_ai_confirmation(self, signal: Dict[str, Any], symbol: str, timeframe: str) -> Optional[Dict[str, Any]]:
-        """
-        ✨ UPGRADE v2.0 - Expert Analyst Prompt ✨
-        یک سیگنال را برای تایید نهایی به Gemini AI با یک پرامپت پیشرفته ارسال می‌کند.
-        """
         cooldown = self.config.get("general", {}).get('gemini_cooldown_seconds', 300)
         if (time.time() - self.last_gemini_call_time) < cooldown:
             logger.info("Gemini call skipped due to cooldown.")
             return {"signal": "N/A", "confidence": 0, "explanation_fa": "AI analysis skipped due to cooldown."}
 
-        # آماده‌سازی داده‌ها برای پرامپت
         prompt_context = {
             "signal_details": {k: v for k, v in signal.items() if k not in ['confirmations', 'strategy_name']},
             "system_strategy": signal.get('strategy_name'),
             "system_reasons": signal.get('confirmations')
         }
         
-        # ساخت پرامپت جدید و حرفه‌ای
         json_data = json.dumps(prompt_context, indent=2, ensure_ascii=False)
         prompt_template = f"""
 شما یک تحلیلگر ارشد و معامله‌گر کوانت (Quantitative Trader) با سال‌ها تجربه در بازارهای ارز دیجیتال هستید. شما به تحلیل‌های مبتنی بر داده، ساختار بازار و مدیریت ریسک تسلط کامل دارید.
@@ -119,17 +91,13 @@ class MasterOrchestrator:
         self.last_gemini_call_time = time.time()
         ai_response = self.gemini_handler.query(prompt_template)
 
-        # اگر AI سیگنال را وتو کند (HOLD)، ما کل سیگنال را نادیده می‌گیریم
         if ai_response.get('signal') == 'HOLD':
             logger.warning(f"AI VETOED the signal for {symbol}. System signal was {signal['direction']}. Reason: {ai_response.get('explanation_fa')}")
             return None 
         
         return ai_response
 
-    def run_full_pipeline(self, df: pd.DataFrame, symbol: str, timeframe: str) -> Optional[Dict[str, Any]]:
-        """
-        خط لوله کامل تحلیل را اجرا می‌کند: از محاسبه اندیکاتورها تا اجرای استراتژی‌ها و تایید AI.
-        """
+    def run_full_pipeline(self, df: pd.DataFrame, symbol: str, timeframe: str) -> Dict[str, Any]:
         analyzer = IndicatorAnalyzer(df, config=self.config.get('indicators', {}))
         analyzer.calculate_all()
         analysis_summary = analyzer.get_analysis_summary()
@@ -139,9 +107,8 @@ class MasterOrchestrator:
         for sc in self._strategy_classes:
             strategy_name_key = sc.__name__
             strategy_config = strategy_configs.get(strategy_name_key, {})
-            
             if strategy_config.get('enabled', True):
-                instance = sc(analysis_summary, strategy_config, htf_analysis=None) # TODO: Pass HTF analysis
+                instance = sc(analysis_summary, strategy_config, htf_analysis=None)
                 signal = instance.check_signal()
                 if signal:
                     signal['strategy_name'] = instance.strategy_name
@@ -149,14 +116,14 @@ class MasterOrchestrator:
 
         if not valid_signals:
             logger.info(f"No valid signals found by any strategy for {symbol} {timeframe}.")
-            return None
+            return {"status": "NEUTRAL", "message": "No strategy conditions met.", "full_analysis": analysis_summary}
 
         min_rr = self.config.get("general", {}).get("min_risk_reward_ratio", 1.0)
         qualified_signals = [s for s in valid_signals if s.get('risk_reward_ratio', 0) >= min_rr]
         
         if not qualified_signals:
             logger.info(f"Signals found for {symbol} but failed R/R quality check.")
-            return None
+            return {"status": "NEUTRAL", "message": "Signals found but failed R/R quality check.", "full_analysis": analysis_summary}
         
         best_signal = self._find_super_signal(qualified_signals)
         if not best_signal:
@@ -167,10 +134,11 @@ class MasterOrchestrator:
         logger.info(f"Best qualified signal for {symbol} {timeframe}: {best_signal['strategy_name']} - {best_signal['direction']}")
         
         ai_confirmation = self._get_ai_confirmation(best_signal, symbol, timeframe)
-        if ai_confirmation is None: # اگر AI سیگنال را وتو کند
-            return None
+        if ai_confirmation is None:
+            return {"status": "NEUTRAL", "message": "Signal was vetoed by AI analysis.", "full_analysis": analysis_summary}
 
         return {
+            "status": "SUCCESS",
             "symbol": symbol,
             "timeframe": timeframe,
             "base_signal": best_signal,
