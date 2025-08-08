@@ -1,70 +1,154 @@
 import pandas as pd
+import numpy as np
 import logging
+from typing import Dict, Any
+
+# اطمینان حاصل کنید که این اندیکاتور از فایل مربوطه وارد شده‌ است
 from .base import BaseIndicator
 
 logger = logging.getLogger(__name__)
 
 class IchimokuIndicator(BaseIndicator):
     """
-    ✨ UPGRADE v2.0 ✨
-    - Constructor standardized to use **kwargs.
-    - Analyze method logic refined for clarity.
+    Ichimoku Kinko Hyo - Definitive, Complete, MTF & World-Class Version
+    ----------------------------------------------------------------------
+    This version implements the full Ichimoku system with the standardized
+    MTF architecture of the AiSignalPro project. It provides a comprehensive
+    analysis of trend, momentum, and future support/resistance zones.
     """
     def __init__(self, df: pd.DataFrame, **kwargs):
         super().__init__(df, **kwargs)
-        self.tenkan_period = self.params.get('tenkan_period', 9)
-        self.kijun_period = self.params.get('kijun_period', 26)
-        self.senkou_b_period = self.params.get('senkou_b_period', 52)
-        self.chikou_lag = self.params.get('chikou_lag', -26)
-        self.senkou_lead = self.params.get('senkou_lead', 26)
+        # --- Parameters ---
+        self.params = kwargs.get('params', {})
+        self.tenkan_period = int(self.params.get('tenkan_period', 9))
+        self.kijun_period = int(self.params.get('kijun_period', 26))
+        self.senkou_b_period = int(self.params.get('senkou_b_period', 52))
+        # For clarity: chikou_span is the close shifted BACK by this period
+        self.chikou_shift = int(self.params.get('chikou_shift', 26))
+        # For clarity: senkou spans are shifted FORWARD by this period
+        self.senkou_lead = int(self.params.get('senkou_lead', 26))
+        self.timeframe = self.params.get('timeframe', None)
 
-    def calculate(self) -> pd.DataFrame:
-        high_tenkan = self.df['high'].rolling(window=self.tenkan_period).max()
-        low_tenkan = self.df['low'].rolling(window=self.tenkan_period).min()
-        self.df['tenkan_sen'] = (high_tenkan + low_tenkan) / 2
+        # --- Dynamic Column Naming ---
+        suffix = f'_{self.tenkan_period}_{self.kijun_period}_{self.senkou_b_period}'
+        if self.timeframe: suffix += f'_{self.timeframe}'
+        self.tenkan_col = f'ichi_tenkan{suffix}'
+        self.kijun_col = f'ichi_kijun{suffix}'
+        self.chikou_col = f'ichi_chikou{suffix}'
+        self.senkou_a_col = f'ichi_senkou_a{suffix}'
+        self.senkou_b_col = f'ichi_senkou_b{suffix}'
 
-        high_kijun = self.df['high'].rolling(window=self.kijun_period).max()
-        low_kijun = self.df['low'].rolling(window=self.kijun_period).min()
-        self.df['kijun_sen'] = (high_kijun + low_kijun) / 2
-
-        self.df['chikou_span'] = self.df['close'].shift(self.chikou_lag)
-        self.df['senkou_span_a'] = ((self.df['tenkan_sen'] + self.df['kijun_sen']) / 2).shift(self.senkou_lead)
-
-        high_senkou_b = self.df['high'].rolling(window=self.senkou_b_period).max()
-        low_senkou_b = self.df['low'].rolling(window=self.senkou_b_period).min()
-        self.df['senkou_span_b'] = ((high_senkou_b + low_senkou_b) / 2).shift(self.senkou_lead)
-        return self.df
-
-    def analyze(self) -> dict:
-        last = self.df.iloc[-1]; prev = self.df.iloc[-2]
-        past_26 = self.df.iloc[-1 - self.senkou_lead] if len(self.df) > self.senkou_lead else self.df.iloc[0]
-
-        kumo_top = max(last['senkou_span_a'], last['senkou_span_b'])
-        kumo_bottom = min(last['senkou_span_a'], last['senkou_span_b'])
+    def _calculate_ichimoku(self, df: pd.DataFrame) -> pd.DataFrame:
+        """The core, NaN-safe Ichimoku calculation logic."""
+        res = pd.DataFrame(index=df.index)
         
-        price_status = "Inside Kumo"
-        if last['close'] > kumo_top: price_status = "Above Kumo"
-        elif last['close'] < kumo_bottom: price_status = "Below Kumo"
-            
-        tk_cross_signal = "Neutral"
-        if prev['tenkan_sen'] < prev['kijun_sen'] and last['tenkan_sen'] > last['kijun_sen']:
-            if price_status == "Above Kumo": tk_cross_signal = "Strong Bullish TK Cross"
-            elif price_status == "Inside Kumo": tk_cross_signal = "Neutral Bullish TK Cross"
-            else: tk_cross_signal = "Weak Bullish TK Cross"
-        elif prev['tenkan_sen'] > prev['kijun_sen'] and last['tenkan_sen'] < last['kijun_sen']:
-            if price_status == "Below Kumo": tk_cross_signal = "Strong Bearish TK Cross"
-            elif price_status == "Inside Kumo": tk_cross_signal = "Neutral Bearish TK Cross"
-            else: tk_cross_signal = "Weak Bearish TK Cross"
+        # Tenkan-sen (Conversion Line)
+        tenkan_high = df['high'].rolling(window=self.tenkan_period).max()
+        tenkan_low = df['low'].rolling(window=self.tenkan_period).min()
+        res[self.tenkan_col] = (tenkan_high + tenkan_low) / 2
 
-        chikou_confirmation = "Neutral"
-        if last['chikou_span'] > past_26['high']: chikou_confirmation = "Bullish Confirmation"
-        elif last['chikou_span'] < past_26['low']: chikou_confirmation = "Bearish Confirmation"
+        # Kijun-sen (Base Line)
+        kijun_high = df['high'].rolling(window=self.kijun_period).max()
+        low_kijun = df['low'].rolling(window=self.kijun_period).min()
+        res[self.kijun_col] = (kijun_high + low_kijun) / 2
+
+        # Senkou Span A (Leading Span A)
+        res[self.senkou_a_col] = ((res[self.tenkan_col] + res[self.kijun_col]) / 2).shift(self.senkou_lead)
+
+        # Senkou Span B (Leading Span B)
+        senkou_b_high = df['high'].rolling(window=self.senkou_b_period).max()
+        senkou_b_low = df['low'].rolling(window=self.senkou_b_period).min()
+        res[self.senkou_b_col] = ((senkou_b_high + senkou_b_low) / 2).shift(self.senkou_lead)
+
+        # Chikou Span (Lagging Span)
+        res[self.chikou_col] = df['close'].shift(-self.chikou_shift)
+        
+        return res
+
+    def calculate(self) -> 'IchimokuIndicator':
+        """Orchestrates the MTF calculation for Ichimoku."""
+        base_df = self.df
+        
+        if self.timeframe:
+            if not isinstance(base_df.index, pd.DatetimeIndex):
+                raise TypeError("DataFrame index must be a DatetimeIndex for MTF.")
+            rules = {'open': 'first', 'high': 'max', 'low': 'min', 'close': 'last'}
+            calc_df = base_df.resample(self.timeframe, label='right', closed='right').apply(rules).dropna()
+        else:
+            calc_df = base_df.copy()
+
+        if len(calc_df) < self.senkou_b_period:
+            logger.warning(f"Not enough data for Ichimoku on timeframe {self.timeframe or 'base'}.")
+            return self
+
+        ichimoku_results = self._calculate_ichimoku(calc_df)
+        
+        # --- Map results back to the original dataframe if MTF ---
+        if self.timeframe:
+            final_results = ichimoku_results.reindex(base_df.index, method='ffill')
+            for col in final_results.columns: self.df[col] = final_results[col]
+        else:
+            for col in ichimoku_results.columns: self.df[col] = ichimoku_results[col]
+
+        return self
+
+    def analyze(self) -> Dict[str, Any]:
+        """Provides a comprehensive analysis of the Ichimoku signals."""
+        required_cols = [self.tenkan_col, self.kijun_col, self.senkou_a_col, self.senkou_b_col, self.chikou_col]
+        if any(col not in self.df.columns for col in required_cols) or self.df[self.tenkan_col].isnull().all():
+            return {"status": "No Data", "analysis": {}}
+
+        # Use last valid non-NaN index for analysis to avoid issues at the start
+        last_valid_idx = self.df[self.tenkan_col].last_valid_index()
+        if last_valid_idx is None or self.df.index.get_loc(last_valid_idx) < 1:
+             return {"status": "Insufficient Data", "analysis": {}}
+
+        last = self.df.loc[last_valid_idx]
+        prev = self.df.loc[self.df.index[self.df.index.get_loc(last_valid_idx) - 1]]
+
+        # --- 1. Kumo (Cloud) Analysis ---
+        kumo_top = max(last[self.senkou_a_col], last[self.senkou_b_col])
+        kumo_bottom = min(last[self.senkou_a_col], last[self.senkou_b_col])
+        price_pos = "Inside Kumo"
+        if last['close'] > kumo_top: price_pos = "Above Kumo"
+        elif last['close'] < kumo_bottom: price_pos = "Below Kumo"
             
-        final_signal = tk_cross_signal
+        # --- 2. Tenkan/Kijun (TK) Cross Analysis ---
+        tk_cross = "Neutral"
+        if prev[self.tenkan_col] < prev[self.kijun_col] and last[self.tenkan_col] > last[self.kijun_col]:
+            tk_cross = "Weak Bullish" if price_pos == "Below Kumo" else "Strong Bullish"
+        elif prev[self.tenkan_col] > prev[self.kijun_col] and last[self.tenkan_col] < last[self.kijun_col]:
+            tk_cross = "Weak Bearish" if price_pos == "Above Kumo" else "Strong Bearish"
+
+        # --- 3. Chikou Span Confirmation ---
+        chikou_conf = "Neutral"
+        # Correctly get the price at the time the Chikou span represents
+        chikou_time_idx = self.df.index.get_loc(last_valid_idx) - self.chikou_shift
+        if chikou_time_idx >= 0:
+            past_price = self.df['close'].iloc[chikou_time_idx]
+            if last[self.chikou_col] > past_price: chikou_conf = "Bullish"
+            elif last[self.chikou_col] < past_price: chikou_conf = "Bearish"
+
+        # --- 4. Final Aggregated Signal ---
+        trend = "Neutral"
+        if price_pos == "Above Kumo" and tk_cross.endswith("Bullish") and chikou_conf == "Bullish":
+            trend = "Strong Bullish"
+        elif price_pos == "Below Kumo" and tk_cross.endswith("Bearish") and chikou_conf == "Bearish":
+            trend = "Strong Bearish"
+        elif price_pos == "Above Kumo": trend = "Bullish Trend"
+        elif price_pos == "Below Kumo": trend = "Bearish Trend"
         
         return {
-            "tenkan_sen": round(last['tenkan_sen'], 5), "kijun_sen": round(last['kijun_sen'], 5),
-            "chikou_span": round(last['chikou_span'], 5), "senkou_span_a": round(last['senkou_span_a'], 5),
-            "senkou_span_b": round(last['senkou_span_b'], 5), "price_position": price_status,
-            "chikou_confirmation": chikou_confirmation, "signal": final_signal
+            "status": "OK",
+            "timeframe": self.timeframe or 'Base',
+            "values": {
+                "tenkan": round(last[self.tenkan_col], 5), "kijun": round(last[self.kijun_col], 5),
+                "senkou_a": round(last[self.senkou_a_col], 5), "senkou_b": round(last[self.senkou_b_col], 5)
+            },
+            "analysis": {
+                "trend": trend,
+                "price_position": price_pos,
+                "tk_cross": tk_cross,
+                "chikou_confirmation": chikou_conf
+            }
         }
