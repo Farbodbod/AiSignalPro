@@ -27,6 +27,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 # ۵. کپی کردن تمام کدهای پروژه
 COPY . .
 
+# Grant execution permissions to the start script
+RUN chmod +x /app/start_worker.sh
+
 # ۶. پورت مورد نظر را آشکار می‌کند (برای سرویس وب)
 EXPOSE 8000
 
