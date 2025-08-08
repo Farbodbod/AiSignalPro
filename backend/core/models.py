@@ -111,3 +111,35 @@ class Trade(models.Model):
 
     def __str__(self):
         return f"Trade on {self.symbol} | Entry: {self.entry_price} | Status: {self.get_status_display()}"
+# (کلاس‌های Signal و Trade شما در بالای این کد قرار دارند)
+
+# ...
+
+# مدل جدید برای معماری "کلاس جهانی"
+class AnalysisSnapshot(models.Model):
+    """
+    این مدل، آخرین "عکس فوری" از تحلیل کامل بازار برای یک جفت‌ارز و تایم‌فریم مشخص را ذخیره می‌کند.
+    ورکر این جدول را آپدیت می‌کند و API فقط از این جدول می‌خواند.
+    """
+    # فیلدهای کلیدی برای شناسایی رکورد
+    symbol = models.CharField(max_length=20, db_index=True, help_text="e.g., BTC/USDT")
+    timeframe = models.CharField(max_length=5, db_index=True, help_text="e.g., 1h")
+
+    # داده‌های اصلی
+    status = models.CharField(max_length=10, help_text="SUCCESS or NEUTRAL")
+    full_analysis = models.JSONField(default=dict, help_text="The full analysis summary from IndicatorAnalyzer")
+    signal_package = models.JSONField(default=dict, null=True, blank=True, help_text="The complete signal package if status is SUCCESS")
+    
+    # فیلدهای مدیریتی
+    last_updated = models.DateTimeField(auto_now=True, db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = _("Analysis Snapshot")
+        verbose_name_plural = _("Analysis Snapshots")
+        # این خط تضمین می‌کند که برای هر جفت‌ارز/تایم‌فریم فقط یک رکورد وجود داشته باشد
+        unique_together = ('symbol', 'timeframe')
+        ordering = ['-last_updated']
+
+    def __str__(self):
+        return f"Snapshot for {self.symbol} [{self.timeframe}] at {self.last_updated.strftime('%Y-%m-%d %H:%M')}"
