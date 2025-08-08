@@ -1,10 +1,9 @@
 #!/bin/sh
 
-# این اسکریپت تضمین می‌کند که دیتابیس قبل از شروع به کار ورکر، آماده است.
+# مرحله ۱: منتظر می‌مانیم تا دیتابیس کاملاً آماده شود.
+echo "--- [Worker] Waiting for database to be ready... ---"
+python manage.py wait_for_db
 
-echo "--- [Worker] Running Django migrations before starting... ---"
-python manage.py migrate --no-input
-
-echo "--- [Worker] Migrations complete. Starting Live Monitor Worker... ---"
-# دستور exec فرآیند فعلی را با فرآیند پایتون جایگزین می‌کند که بهینه‌تر است
+# مرحله ۲: پس از آماده شدن دیتابیس، برنامه اصلی را اجرا می‌کنیم.
+echo "--- [Worker] Database is ready. Starting Live Monitor Worker... ---"
 exec python -u live_monitor_worker.py
