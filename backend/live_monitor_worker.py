@@ -29,7 +29,7 @@ SYMBOLS_TO_MONITOR = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'XRP/USDT', 'DOGE/USDT
 TIMEFRAMES_TO_ANALYZE = ['15m', '1h', '4h']
 POLL_INTERVAL_SECONDS = 900
 
-# --- تنظیمات کش سیگنال (برای جلوگیری از ارسال تکراری در تلگرام) ---
+# --- تنظیمات کش سیگنال ---
 SIGNAL_CACHE_TTL_MAP = {
     '15m': 3 * 3600, '1h': 6 * 3600, '4h': 12 * 3600, 'default': 4 * 3600
 }
@@ -55,21 +55,19 @@ class SignalCache:
 
 def sanitize_for_json(data: Any) -> Any:
     """
-    یک تابع بازگشتی که تمام مقادیر NaN و inf را با None جایگزین می‌کند تا داده‌ها برای ذخیره در JSONField آماده شوند.
+    یک تابع بازگشتی که تمام مقادیر NaN و inf را با None جایگزین می‌کند.
     """
     if isinstance(data, dict):
         return {k: sanitize_for_json(v) for k, v in data.items()}
     elif isinstance(data, list):
         return [sanitize_for_json(i) for i in data]
+    # ✨ اصلاحیه کلیدی: چک کردن همزمان برای NaN و inf
     elif isinstance(data, float) and (math.isnan(data) or math.isinf(data)):
         return None
     return data
 
 @sync_to_async
 def save_analysis_snapshot(symbol: str, timeframe: str, package: Dict[str, Any]):
-    """
-    نتیجه تحلیل را در مدل AnalysisSnapshot در دیتابیس ذخیره یا آپدیت می‌کند.
-    """
     try:
         status = package.get("status", "NEUTRAL")
         full_analysis = package.get("full_analysis", {})
@@ -95,9 +93,6 @@ def save_analysis_snapshot(symbol: str, timeframe: str, package: Dict[str, Any])
         logger.error(f"Failed to save AnalysisSnapshot for {symbol} {timeframe}: {e}", exc_info=True)
 
 async def analyze_and_alert(fetcher: ExchangeFetcher, orchestrator: MasterOrchestrator, telegram: TelegramHandler, cache: SignalCache, symbol: str, timeframe: str):
-    """
-    تابع اصلی که برای هر جفت‌ارز/تایم‌فریم اجرا می‌شود.
-    """
     try:
         logger.info(f"Fetching data for {symbol} on {timeframe}...")
         df, source = await fetcher.get_first_successful_klines(symbol, timeframe, limit=300)
@@ -125,9 +120,6 @@ async def analyze_and_alert(fetcher: ExchangeFetcher, orchestrator: MasterOrches
         logger.error(f"An error occurred during analysis for {symbol} {timeframe}: {e}", exc_info=True)
 
 async def main_loop():
-    """
-    حلقه اصلی برنامه که به صورت مداوم اجرا می‌شود.
-    """
     config = {}
     try:
         with open('config.json', 'r', encoding='utf-8') as f:
