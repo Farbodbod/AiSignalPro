@@ -6,15 +6,14 @@ logger = logging.getLogger(__name__)
 
 class BollingerIndicator(BaseIndicator):
     """
-    ✨ UPGRADE v2.0 ✨
-    - Constructor standardized to use **kwargs.
-    - Analyze method enhanced for clearer signal detection.
+    ✨ UPGRADE v2.1 - JSON Serializable ✨
+    کلاس محاسبه و تحلیل حرفه‌ای اندیکاتور Bollinger Bands.
+    خروجی‌ها برای سازگاری کامل با JSON استانداردسازی شده‌اند.
     """
     def __init__(self, df: pd.DataFrame, **kwargs):
         super().__init__(df, **kwargs)
         self.period = self.params.get('period', 20)
         self.std_dev = self.params.get('std_dev', 2)
-        # تعریف نام ستون‌ها برای دسترسی آسان
         self.middle_col = f'bb_middle_{self.period}'
         self.upper_col = f'bb_upper_{self.period}'
         self.lower_col = f'bb_lower_{self.period}'
@@ -22,6 +21,9 @@ class BollingerIndicator(BaseIndicator):
         self.percent_b_col = f'bb_percent_b_{self.period}'
 
     def calculate(self) -> pd.DataFrame:
+        """
+        هر پنج مولفه بولینگر بندز را محاسبه کرده و به دیتافریم اضافه می‌کند.
+        """
         self.df[self.middle_col] = self.df['close'].rolling(window=self.period).mean()
         std = self.df['close'].rolling(window=self.period).std()
         self.df[self.upper_col] = self.df[self.middle_col] + (std * self.std_dev)
@@ -31,13 +33,15 @@ class BollingerIndicator(BaseIndicator):
         return self.df
 
     def analyze(self) -> dict:
+        """
+        آخرین وضعیت بولینگر بندز را تحلیل کرده و سیگنال‌های کلیدی را استخراج می‌کند.
+        """
         last_row = self.df.iloc[-1]
         
-        # تشخیص فشردگی (Squeeze)
         lowest_width_in_lookback = self.df[self.width_col].rolling(window=120, min_periods=1).min().iloc[-1]
-        is_squeeze = last_row[self.width_col] <= (lowest_width_in_lookback * 1.1) if lowest_width_in_lookback else False
+        # ✨ اصلاحیه کلیدی: تبدیل نوع داده NumPy به bool استاندارد پایتون
+        is_squeeze = bool(last_row[self.width_col] <= (lowest_width_in_lookback * 1.1)) if pd.notna(lowest_width_in_lookback) else False
         
-        # تشخیص وضعیت قیمت
         position = "Inside Bands"
         if last_row[self.percent_b_col] > 1.0:
             position = "Breakout Above Upper Band"
