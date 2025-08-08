@@ -6,62 +6,138 @@ from .base import BaseIndicator
 logger = logging.getLogger(__name__)
 
 class AdxIndicator(BaseIndicator):
-    """ ✨ FINAL VERSION - Clean Logs ✨ """
+    """
+    ADX Indicator - World-Class, Flexible & Robust Version
+    ----------------------------------------------------------
+    This version includes:
+    1.  Accurate Wilder's Smoothing calculations.
+    2.  Robust input validation (columns, length, dtype).
+    3.  Graceful handling of division-by-zero by propagating NaNs.
+    4.  Parameterizable thresholds for trend analysis.
+    5.  Explicit crossover signal detection (+DI / -DI).
+    6.  Error-proof analysis method that handles initial NaN values.
+    """
     def __init__(self, df: pd.DataFrame, **kwargs):
         super().__init__(df, **kwargs)
-        self.period = self.params.get('period', 14)
+        # --- Parameterization ---
+        self.period = int(self.params.get('period', 14))
+        # ✨ IMPROVEMENT 1: Make analysis thresholds configurable
+        self.adx_thresholds = self.params.get('adx_thresholds', {
+            'no_trend_max': 20,
+            'weak_trend_max': 25,
+            'strong_trend_max': 40
+        })
+        
+        # --- Column Naming ---
         self.adx_col = f'adx_{self.period}'
         self.plus_di_col = f'plus_di_{self.period}'
         self.minus_di_col = f'minus_di_{self.period}'
 
+    def _validate_input(self, df: pd.DataFrame):
+        """Validates the input DataFrame."""
+        required_cols = {'high', 'low', 'close'}
+        if not required_cols.issubset(df.columns):
+            missing = required_cols - set(df.columns)
+            msg = f"Missing required columns for ADX: {missing}"
+            logger.error(msg)
+            raise ValueError(msg)
+        
+        if len(df) < self.period:
+            logger.warning(f"Data length ({len(df)}) is less than ADX period ({self.period}). Results might be unreliable.")
+            
+        # Ensure correct data types to prevent calculation errors
+        for col in required_cols:
+            if not pd.api.types.is_numeric_dtype(df[col]):
+                 df[col] = pd.to_numeric(df[col], errors='coerce')
+        return df
+
     def calculate(self) -> pd.DataFrame:
+        """Calculates the ADX indicator values."""
         df = self.df.copy()
+        df = self._validate_input(df)
+
+        # True Range (TR)
         high_low = df['high'] - df['low']
         high_close = np.abs(df['high'] - df['close'].shift(1))
         low_close = np.abs(df['low'] - df['close'].shift(1))
+        
         tr = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
+        # Use Wilder's Smoothing (RMA), which is what ewm with alpha=1/period does
         atr = tr.ewm(alpha=1/self.period, adjust=False).mean()
 
-        # ✨ اصلاحیه کلیدی: اضافه کردن .fillna(0) برای جلوگیری از وارنینگ
-        move_up = df['high'].diff().fillna(0)
-        move_down = df['low'].diff().fillna(0)
-        
+        # Directional Movement (DM) - Corrected formulas
+        move_up = df['high'].diff()
+        move_down = df['low'].diff().mul(-1) # Simplified: low.shift(1) - low
+
         plus_dm = np.where((move_up > move_down) & (move_up > 0), move_up, 0.0)
         minus_dm = np.where((move_down > move_up) & (move_down > 0), move_down, 0.0)
-        
+
+        # Smoothed DM
         plus_dm_smooth = pd.Series(plus_dm, index=df.index).ewm(alpha=1/self.period, adjust=False).mean()
         minus_dm_smooth = pd.Series(minus_dm, index=df.index).ewm(alpha=1/self.period, adjust=False).mean()
 
-        self.df[self.plus_di_col] = (plus_dm_smooth / (atr + 1e-12)) * 100
-        self.df[self.minus_di_col] = (minus_dm_smooth / (atr + 1e-12)) * 100
-        
-        dx = (np.abs(self.df[self.plus_di_col] - self.df[self.minus_di_col]) / (self.df[self.plus_di_col] + self.df[self.minus_di_col] + 1e-12)) * 100
+        # Directional Indicators (+DI, -DI) - Propagate NaN on division by zero
+        safe_atr = atr.replace(0, np.nan)
+        self.df[self.plus_di_col] = (plus_dm_smooth / safe_atr) * 100
+        self.df[self.minus_di_col] = (minus_dm_smooth / safe_atr) * 100
+
+        # Directional Movement Index (DX)
+        di_sum = (self.df[self.plus_di_col] + self.df[self.minus_di_col]).replace(0, np.nan)
+        di_diff = np.abs(self.df[self.plus_di_col] - self.df[self.minus_di_col])
+        dx = (di_diff / di_sum) * 100
+
+        # Average Directional Index (ADX)
         self.df[self.adx_col] = dx.ewm(alpha=1/self.period, adjust=False).mean()
-        
-        # پر کردن مقادیر NaN اولیه که در محاسبات ایجاد می‌شوند
-        self.df.fillna({self.adx_col: 20, self.plus_di_col: 20, self.minus_di_col: 20}, inplace=True)
         
         return self.df
 
     def analyze(self) -> dict:
-        last_row = self.df.iloc[-1]; prev_row = self.df.iloc[-2] if len(self.df) > 1 else last_row
-        adx_val = last_row[self.adx_col]; prev_adx_val = prev_row[self.adx_col]
-        plus_di = last_row[self.plus_di_col]; minus_di = last_row[self.minus_di_col]
+        """Analyzes the latest indicator values for signals."""
+        # Ensure we have enough data and it's not NaN
+        if len(self.df) < 2 or self.df[self.adx_col].iloc[-1] is np.nan:
+            return {"signal": "Insufficient Data"}
 
-        trend_strength = "No Trend"
-        if 20 < adx_val <= 25: trend_strength = "Weak Trend"
-        elif 25 < adx_val <= 40: trend_strength = "Strong Trend"
-        elif adx_val > 40: trend_strength = "Very Strong Trend"
+        last = self.df.iloc[-1]
+        prev = self.df.iloc[-2]
 
-        trend_direction = "Neutral"
-        if plus_di > minus_di: trend_direction = "Bullish"
-        elif minus_di > plus_di: trend_direction = "Bearish"
+        adx_val = last[self.adx_col]
+        plus_di = last[self.plus_di_col]
+        minus_di = last[self.minus_di_col]
 
-        is_strengthening = bool(adx_val > prev_adx_val)
+        # --- Trend Strength Analysis (using configurable thresholds) ---
+        t = self.adx_thresholds
+        if adx_val <= t['no_trend_max']:
+            strength = "No Trend"
+        elif adx_val <= t['weak_trend_max']:
+            strength = "Weak Trend"
+        elif adx_val <= t['strong_trend_max']:
+            strength = "Strong Trend"
+        else:
+            strength = "Very Strong Trend"
+        
+        is_strengthening = adx_val > prev[self.adx_col]
+
+        # --- Direction Analysis & ✨ IMPROVEMENT 3: Crossover Signal ---
+        direction = "Neutral"
+        cross_signal = "None"
+        
+        if plus_di > minus_di:
+            direction = "Bullish"
+            if prev[self.plus_di_col] <= prev[self.minus_di_col]:
+                cross_signal = "Bullish Crossover"
+        elif minus_di > plus_di:
+            direction = "Bearish"
+            if prev[self.minus_di_col] <= prev[self.plus_di_col]:
+                cross_signal = "Bearish Crossover"
 
         return {
-            "adx": round(adx_val, 2), "plus_di": round(plus_di, 2), "minus_di": round(minus_di, 2),
-            "strength": trend_strength, "direction": trend_direction,
+            "adx": round(adx_val, 2),
+            "plus_di": round(plus_di, 2),
+            "minus_di": round(minus_di, 2),
+            "strength": strength,
+            "direction": direction,
             "is_strengthening": is_strengthening,
-            "signal": f"{trend_strength} ({trend_direction}) - {'Strengthening' if is_strengthening else 'Weakening'}"
+            "cross_signal": cross_signal,
+            "signal": f"{strength} ({direction}) - {'Strengthening' if is_strengthening else 'Weakening'}"
         }
+
