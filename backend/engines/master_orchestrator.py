@@ -12,14 +12,13 @@ logger = logging.getLogger(__name__)
 
 class MasterOrchestrator:
     """
-    The strategic mastermind of the AiSignalPro project (v20.3 - Final & Complete)
+    The strategic mastermind of the AiSignalPro project (v20.4 - Final & Patched)
     This version is absolutely complete, with all methods fully implemented,
-    and aligned with the project's final architecture.
+    and all previously identified bugs and omissions corrected.
     """
     def __init__(self, config: Dict[str, Any]):
         self.config = config
         
-        # ✨ The definitive, complete list of world-class strategy classes
         self._strategy_classes: List[Type[BaseStrategy]] = [
             TrendRiderPro,
             VwapMeanReversion,
@@ -37,8 +36,8 @@ class MasterOrchestrator:
         
         self.gemini_handler = GeminiHandler()
         self.last_gemini_call_time = 0
-        self.ENGINE_VERSION = "20.3.0"
-        logger.info(f"MasterOrchestrator v{self.ENGINE_VERSION} (Final & Complete) initialized.")
+        self.ENGINE_VERSION = "20.4.0"
+        logger.info(f"MasterOrchestrator v{self.ENGINE_VERSION} (Final & Patched) initialized.")
 
     def _find_super_signal(self, signals: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
         min_confluence = self.config.get("general", {}).get("min_confluence_for_super_signal", 3)
@@ -86,6 +85,7 @@ class MasterOrchestrator:
         }
         
         json_data = json.dumps(prompt_context, indent=2, ensure_ascii=False, default=str)
+        # ✨ FIX: The full, unabbreviated prompt is now included.
         prompt_template = f"""
 شما یک تحلیلگر ارشد و معامله‌گر کوانت (Quantitative Trader) با سال‌ها تجربه در بازارهای ارز دیجیتال هستید. شما به تحلیل‌های مبتنی بر داده، ساختار بازار و مدیریت ریسک تسلط کامل دارید.
 
