@@ -4,8 +4,7 @@ import os
 import django
 import time
 import json
-import math
-from typing import Dict, Tuple, List, Optional, Any
+from typing import Dict, Tuple, List, Any
 from asgiref.sync import sync_to_async
 
 # --- تنظیمات پایه لاگ ---
@@ -23,18 +22,17 @@ from engines.master_orchestrator import MasterOrchestrator
 from engines.signal_adapter import SignalAdapter
 from engines.telegram_handler import TelegramHandler
 from core.models import AnalysisSnapshot
-# فرض بر این است که این تابع در فایل utils شما قرار دارد
 from core.utils import convert_numpy_types 
 
 class SignalCache:
-    """ یک کلاس ساده برای جلوگیری از ارسال سیگنال‌های تکراری. """
     def __init__(self, ttl_map: Dict[str, int]):
         self._cache: Dict[Tuple[str, str, str], float] = {}
-        self.ttl_map = ttl_map
+        # تبدیل ساعت به ثانیه
+        self.ttl_map_seconds = {tf: hours * 3600 for tf, hours in ttl_map.items()}
 
     def is_duplicate(self, symbol: str, timeframe: str, direction: str) -> bool:
         key = (symbol, timeframe, direction)
-        ttl = self.ttl_map.get(timeframe, self.ttl_map.get('default', 3600))
+        ttl = self.ttl_map_seconds.get(timeframe, self.ttl_map_seconds.get('default_ttl_hours', 3600))
         if key in self._cache and (time.time() - self._cache[key]) < ttl:
             remaining_time = ((self._cache[key] + ttl) - time.time()) / 60
             logger.info(f"Duplicate signal {key} found. Cooldown active for {remaining_time:.1f} more minutes.")
@@ -48,46 +46,26 @@ class SignalCache:
 
 @sync_to_async
 def save_analysis_snapshot(symbol: str, timeframe: str, package: Dict[str, Any]):
-    """ نتایج تحلیل را به صورت آسنکرون در دیتابیس ذخیره می‌کند. """
     try:
         status = package.get("status", "NEUTRAL")
-        
-        # ✨ REFINEMENT: Use the more powerful numpy-safe converter
         sanitized_package = convert_numpy_types(package)
-        
         full_analysis = sanitized_package.get("full_analysis", {})
         signal_data = sanitized_package if status == "SUCCESS" else None
         
         AnalysisSnapshot.objects.update_or_create(
-            symbol=symbol,
-            timeframe=timeframe,
-            defaults={
-                'status': status,
-                'full_analysis': full_analysis,
-                'signal_package': signal_data
-            }
+            symbol=symbol, timeframe=timeframe,
+            defaults={'status': status, 'full_analysis': full_analysis, 'signal_package': signal_data}
         )
         logger.info(f"AnalysisSnapshot for {symbol} {timeframe} saved successfully.")
     except Exception as e:
         logger.error(f"Failed to save AnalysisSnapshot for {symbol} {timeframe}: {e}", exc_info=True)
 
-async def analyze_and_alert(
-    semaphore: asyncio.Semaphore, 
-    fetcher: ExchangeFetcher, 
-    orchestrator: MasterOrchestrator, 
-    telegram: TelegramHandler, 
-    cache: SignalCache, 
-    symbol: str, 
-    timeframe: str
-):
-    """
-    پایپ‌لاین کامل تحلیل برای یک جفت‌ارز و تایم‌فریم، با کنترل همزمانی.
-    """
+async def analyze_and_alert(semaphore: asyncio.Semaphore, fetcher: ExchangeFetcher, orchestrator: MasterOrchestrator, telegram: TelegramHandler, cache: SignalCache, symbol: str, timeframe: str):
     async with semaphore:
         try:
             logger.info(f"Fetching data for {symbol} on {timeframe}...")
             df, source = await fetcher.get_first_successful_klines(symbol, timeframe, limit=500)
-            if df is None or df.empty or len(df) < 200: # Ensure enough data for all indicators
+            if df is None or df.empty or len(df) < 200:
                 logger.warning(f"Could not fetch sufficient data for {symbol} on {timeframe}.")
                 return
 
@@ -112,45 +90,36 @@ async def analyze_and_alert(
 
 async def main_loop():
     try:
-        with open('config.json', 'r', encoding='utf-8') as f:
-            config = json.load(f)
+        with open('config.json', 'r', encoding='utf-8') as f: config = json.load(f)
         logger.info("Configuration file 'config.json' loaded successfully.")
     except Exception as e:
-        logger.error(f"FATAL: Could not load or parse 'config.json'. Error: {e}")
-        return
+        logger.error(f"FATAL: Could not load or parse 'config.json'. Error: {e}"); return
 
-    # ✨ REFINEMENT: Load all operational parameters from the config file
     general_config = config.get("general", {})
     symbols = general_config.get("symbols_to_monitor", ['BTC/USDT'])
     timeframes = general_config.get("timeframes_to_analyze", ['1h'])
     poll_interval = general_config.get("poll_interval_seconds", 900)
     max_concurrent = general_config.get("max_concurrent_tasks", 5)
 
-    fetcher = ExchangeFetcher()
-    orchestrator = MasterOrchestrator(config=config)
-    telegram = TelegramHandler()
-    signal_cache = SignalCache(ttl_map=SIGNAL_CACHE_TTL_MAP)
+    fetcher = ExchangeFetcher(); orchestrator = MasterOrchestrator(config=config); telegram = TelegramHandler()
+    
+    # ✨ FIX: Load TTL map from the config file
+    cache_config = config.get("signal_cache", {})
+    ttl_map = cache_config.get("ttl_map_hours", {'default_ttl_hours': 4})
+    signal_cache = SignalCache(ttl_map=ttl_map)
+    
     version = orchestrator.ENGINE_VERSION
     
-    logger.info("======================================================")
-    logger.info(f"  AiSignalPro Live Monitoring Worker (v{version}) has started!")
-    logger.info(f"  Monitoring {len(symbols)} symbols on {len(timeframes)} timeframes.")
-    logger.info(f"  Concurrency limit set to {max_concurrent} tasks.")
-    logger.info("======================================================")
+    logger.info("="*50); logger.info(f"  AiSignalPro Live Monitoring Worker (v{version}) has started!"); logger.info(f"  Monitoring {len(symbols)} symbols on {len(timeframes)} timeframes."); logger.info(f"  Concurrency limit set to {max_concurrent} tasks."); logger.info("="*50)
     await telegram.send_message_async(f"✅ *AiSignalPro Bot (v{version}) is now LIVE!*")
     
-    # ✨ REFINEMENT: Create a semaphore for concurrency control
     semaphore = asyncio.Semaphore(max_concurrent)
     
     cycle_count = 0
     while True:
         cycle_count += 1
         logger.info(f"--- Starting new monitoring cycle #{cycle_count} ---")
-        tasks = [
-            analyze_and_alert(semaphore, fetcher, orchestrator, telegram, signal_cache, symbol, timeframe)
-            for symbol in symbols
-            for timeframe in timeframes
-        ]
+        tasks = [analyze_and_alert(semaphore, fetcher, orchestrator, telegram, signal_cache, symbol, timeframe) for symbol in symbols for timeframe in timeframes]
         await asyncio.gather(*tasks)
         logger.info(f"--- Cycle #{cycle_count} finished. Sleeping for {poll_interval} seconds... ---")
         await asyncio.sleep(poll_interval)
