@@ -1,81 +1,130 @@
 import pandas as pd
 import numpy as np
 import logging
+from typing import Dict, Any
+
+# اطمینان حاصل کنید که این اندیکاتورها از فایل‌های مربوطه و در نسخه‌های نهایی خود وارد شده‌اند
 from .base import BaseIndicator
-from .atr import AtrIndicator # استفاده مجدد از کد برای اصل DRY
+from .atr import AtrIndicator # وابستگی به اندیکاتور ATR کلاس جهانی
 
 logger = logging.getLogger(__name__)
 
 class KeltnerChannelIndicator(BaseIndicator):
     """
-    پیاده‌سازی اندیکاتور Keltner Channel، یک کانال نوسان مبتنی بر EMA و ATR.
+    Keltner Channel - Definitive, MTF, and Advanced Analysis World-Class Version
+    ----------------------------------------------------------------------------
+    This version implements the Keltner Channel with key professional upgrades:
+    - EMA is correctly calculated on the Typical Price (HLC/3).
+    - Features the standard AiSignalPro MTF architecture.
+    - Provides deep analysis, including Breakouts, Channel Touches, and Squeeze detection.
+    - Relies on the world-class AtrIndicator for modularity and efficiency.
     """
+    def __init__(self, df: pd.DataFrame, **kwargs):
+        super().__init__(df, **kwargs)
+        # --- Parameters ---
+        self.params = kwargs.get('params', {})
+        self.ema_period = int(self.params.get('ema_period', 20))
+        self.atr_period = int(self.params.get('atr_period', 10))
+        self.atr_multiplier = float(self.params.get('atr_multiplier', 2.0))
+        self.timeframe = self.params.get('timeframe', None)
+        self.squeeze_period = int(self.params.get('squeeze_period', 50)) # Period for squeeze detection
 
-    def calculate(self) -> pd.DataFrame:
-        """
-        محاسبه خطوط میانی، بالایی و پایینی کانال کلتنر.
+        # --- Dynamic Column Naming ---
+        suffix = f'_{self.ema_period}_{self.atr_period}_{self.atr_multiplier}'
+        if self.timeframe: suffix += f'_{self.timeframe}'
+        self.upper_col = f'keltner_upper{suffix}'
+        self.lower_col = f'keltner_lower{suffix}'
+        self.middle_col = f'keltner_middle{suffix}'
+        self.bandwidth_col = f'keltner_bw{suffix}'
 
-        Returns:
-            pd.DataFrame: دیتافریم به‌روز شده با ستون‌های کانال.
-        """
-        self.ema_period = self.params.get('ema_period', 20)
-        self.atr_period = self.params.get('atr_period', 10)
-        self.atr_multiplier = self.params.get('atr_multiplier', 2.0)
-
-        logger.debug(f"Calculating Keltner Channel with ema_period={self.ema_period}, atr_period={self.atr_period}, multiplier={self.atr_multiplier}")
-
-        # --- محاسبه خط میانی (EMA) ---
-        self.middle_col = f'keltner_middle_{self.ema_period}'
-        self.df[self.middle_col] = self.df['close'].ewm(span=self.ema_period, adjust=False).mean()
-
-        # --- محاسبه ATR با استفاده از کلاس موجود ---
-        atr_indicator = AtrIndicator(df=self.df, period=self.atr_period)
-        self.df = atr_indicator.calculate()
-        atr_col_name = f'atr_{self.atr_period}'
+    def calculate(self) -> 'KeltnerChannelIndicator':
+        """Calculates Keltner Channels based on Typical Price, handling MTF internally."""
+        base_df = self.df
         
-        atr_value = self.df[atr_col_name] * self.atr_multiplier
+        # ✨ MTF LOGIC: Resample data if a timeframe is specified
+        if self.timeframe:
+            if not isinstance(base_df.index, pd.DatetimeIndex):
+                raise TypeError("DataFrame index must be a DatetimeIndex for MTF.")
+            rules = {'open': 'first', 'high': 'max', 'low': 'min', 'close': 'last'}
+            calc_df = base_df.resample(self.timeframe, label='right', closed='right').apply(rules).dropna()
+        else:
+            calc_df = base_df.copy()
 
-        # --- محاسبه باندهای بالا و پایین ---
-        self.upper_col = f'keltner_upper_{self.ema_period}_{self.atr_multiplier}'
-        self.lower_col = f'keltner_lower_{self.ema_period}_{self.atr_multiplier}'
+        if len(calc_df) < max(self.ema_period, self.atr_period):
+            logger.warning(f"Not enough data for Keltner Channel on timeframe {self.timeframe or 'base'}.")
+            return self
 
-        self.df[self.upper_col] = self.df[self.middle_col] + atr_value
-        self.df[self.lower_col] = self.df[self.middle_col] - atr_value
+        # --- ✨ Technical Correction: Use Typical Price for EMA ---
+        typical_price = (calc_df['high'] + calc_df['low'] + calc_df['close']) / 3
         
-        return self.df
+        # --- EMA (Middle Band) ---
+        middle_band = typical_price.ewm(span=self.ema_period, adjust=False).mean()
 
-    def analyze(self) -> dict:
-        """
-        تحلیل موقعیت قیمت نسبت به کانال برای شناسایی سیگنال‌های شکست.
+        # --- ATR Dependency ---
+        atr_params = {'period': self.atr_period, 'timeframe': None}
+        atr_indicator = AtrIndicator(calc_df, params=atr_params)
+        calc_df_with_atr = atr_indicator.calculate()
+        atr_value = calc_df_with_atr[atr_indicator.atr_col] * self.atr_multiplier
 
-        Returns:
-            dict: یک دیکشنری حاوی تحلیل نهایی.
-        """
-        last_row = self.df.iloc[-1]
-        close_price = last_row['close']
-        upper_band = last_row[self.upper_col]
-        lower_band = last_row[self.lower_col]
+        # --- Upper & Lower Bands ---
+        upper_band = middle_band + atr_value
+        lower_band = middle_band - atr_value
+        
+        # --- Bandwidth for Squeeze Detection ---
+        bandwidth = ((upper_band - lower_band) / middle_band.replace(0, np.nan)) * 100
 
-        analysis = {
-            'indicator': self.__class__.__name__,
-            'params': {'ema_p': self.ema_period, 'atr_p': self.atr_period, 'atr_m': self.atr_multiplier},
-            'values': {
-                'close': close_price,
-                'upper_band': round(upper_band, 4),
-                'middle_band': round(last_row[self.middle_col], 4),
-                'lower_band': round(lower_band, 4)
+        # --- Map results back to the original dataframe if MTF ---
+        results_df = pd.DataFrame(index=calc_df.index)
+        results_df[self.upper_col] = upper_band
+        results_df[self.lower_col] = lower_band
+        results_df[self.middle_col] = middle_band
+        results_df[self.bandwidth_col] = bandwidth
+
+        if self.timeframe:
+            final_results = results_df.reindex(base_df.index, method='ffill')
+            for col in final_results.columns: self.df[col] = final_results[col]
+        else:
+            for col in results_df.columns: self.df[col] = results_df[col]
+        
+        return self
+
+    def analyze(self) -> Dict[str, Any]:
+        """Provides deep analysis of price action relative to the Keltner Channel."""
+        required_cols = [self.upper_col, self.lower_col, self.middle_col, self.bandwidth_col]
+        valid_df = self.df.dropna(subset=required_cols)
+        
+        if len(valid_df) < self.squeeze_period:
+            return {"status": "Insufficient Data", "analysis": {}}
+
+        last = valid_df.iloc[-1]
+        close, high, low = last['close'], last['high'], last['low']
+        upper, middle, lower = last[self.upper_col], last[self.middle_col], last[self.lower_col]
+        
+        # --- ✨ Deep Analysis Logic ---
+        position, message = "Inside Channel", "Price is contained within the bands."
+        if close > upper:
+            position, message = "Breakout Above", "Price closed strongly above the upper band."
+        elif close < lower:
+            position, message = "Breakdown Below", "Price closed strongly below the lower band."
+        elif high >= upper:
+            position, message = "Touching Upper Band", "Price tested the upper band, potential reversal or breakout."
+        elif low <= lower:
+            position, message = "Touching Lower Band", "Price tested the lower band, potential reversal or breakdown."
+            
+        # --- Squeeze Detection ---
+        recent_bandwidth = valid_df[self.bandwidth_col].tail(self.squeeze_period)
+        is_in_squeeze = last[self.bandwidth_col] <= recent_bandwidth.min()
+        
+        return {
+            "status": "OK",
+            "timeframe": self.timeframe or 'Base',
+            "values": {
+                "upper_band": round(upper, 5), "middle_band": round(middle, 5), "lower_band": round(lower, 5),
+                "bandwidth_percent": round(last[self.bandwidth_col], 2)
+            },
+            "analysis": {
+                "position": position,
+                "is_in_squeeze": is_in_squeeze, # True if volatility is at a relative low
+                "message": message
             }
         }
-
-        if close_price > upper_band:
-            analysis['signal'] = 'buy'
-            analysis['message'] = "Price closed strongly above the upper Keltner Channel band. Strong bullish breakout."
-        elif close_price < lower_band:
-            analysis['signal'] = 'sell'
-            analysis['message'] = "Price closed strongly below the lower Keltner Channel band. Strong bearish breakdown."
-        else:
-            analysis['signal'] = 'neutral'
-            analysis['message'] = "Price is contained within the Keltner Channel."
-            
-        return analysis
-
