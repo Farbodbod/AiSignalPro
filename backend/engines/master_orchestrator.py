@@ -12,32 +12,33 @@ logger = logging.getLogger(__name__)
 
 class MasterOrchestrator:
     """
-    The strategic mastermind of the AiSignalPro project (v20.4 - Final & Patched)
-    This version is absolutely complete, with all methods fully implemented,
-    and all previously identified bugs and omissions corrected.
+    The strategic mastermind of the AiSignalPro project (v21.0 - Final & Synced)
+    This version is absolutely complete and perfectly synchronized with the final
+    strategy and indicator architecture of the project.
     """
     def __init__(self, config: Dict[str, Any]):
         self.config = config
         
+        # ✨ FINAL & SYNCED LIST: The definitive list of all 12 world-class strategy classes
         self._strategy_classes: List[Type[BaseStrategy]] = [
-            TrendRiderPro,
-            VwapMeanReversion,
-            DivergenceSniperPro,
-            WhaleReversal,
-            VolumeCatalystPro,
             BreakoutHunter,
-            IchimokuHybridPro,
             ChandelierTrendRider,
+            DivergenceSniperPro,
+            EmaCrossoverStrategy,
+            ConfluenceSniper,
+            IchimokuHybridPro,
             KeltnerMomentumBreakout,
             PivotConfluenceSniper,
-            ConfluenceSniper,
-            EmaCrossoverStrategy,
+            TrendRiderPro,
+            VolumeCatalystPro,
+            WhaleReversal,
+            VwapMeanReversion,
         ]
         
         self.gemini_handler = GeminiHandler()
         self.last_gemini_call_time = 0
-        self.ENGINE_VERSION = "20.4.0"
-        logger.info(f"MasterOrchestrator v{self.ENGINE_VERSION} (Final & Patched) initialized.")
+        self.ENGINE_VERSION = "21.0.0"
+        logger.info(f"MasterOrchestrator v{self.ENGINE_VERSION} (Final & Synced) initialized.")
 
     def _find_super_signal(self, signals: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
         min_confluence = self.config.get("general", {}).get("min_confluence_for_super_signal", 3)
@@ -85,7 +86,6 @@ class MasterOrchestrator:
         }
         
         json_data = json.dumps(prompt_context, indent=2, ensure_ascii=False, default=str)
-        # ✨ FIX: The full, unabbreviated prompt is now included.
         prompt_template = f"""
 شما یک تحلیلگر ارشد و معامله‌گر کوانت (Quantitative Trader) با سال‌ها تجربه در بازارهای ارز دیجیتال هستید. شما به تحلیل‌های مبتنی بر داده، ساختار بازار و مدیریت ریسک تسلط کامل دارید.
 
@@ -124,7 +124,6 @@ class MasterOrchestrator:
         logger.info(f"Running HTF analysis for {symbol} on {htf_timeframe}...")
         htf_analyzer = IndicatorAnalyzer(df, config=self.config.get('indicators', {}), timeframe=htf_timeframe)
         htf_analyzer.calculate_all()
-        # ✨ FIX: Corrected typo from hf_analyzer to htf_analyzer
         htf_analysis = htf_analyzer.get_analysis_summary()
         
         valid_signals = []
