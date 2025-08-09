@@ -2,16 +2,18 @@ import pandas as pd
 import logging
 from typing import Dict, Any, Type, List
 
-# ایمپورت کردن تمام اندیکاتورهای پروژه (نسخه‌های کلاس جهانی و MTF)
+# ایمپورت کردن تمام اندیکاتورهای پروژه
 from .indicators import *
 
 logger = logging.getLogger(__name__)
 
 class IndicatorAnalyzer:
     """
-    The strategic mastermind of the AiSignalPro project (v2.2 - Final)
-    This version uses future-proof timeframe strings and ensures all
-    interactions with indicators are stable and efficient.
+    The strategic mastermind of the AiSignalPro project (v3.0 - Stateful & Optimized)
+    ---------------------------------------------------------------------------------
+    This version introduces a stateful, sequential data flow to correctly handle
+    inter-indicator dependencies. It also resolves performance warnings and ensures
+    all analyses are run on the complete, final dataset.
     """
     def __init__(self, df: pd.DataFrame, config: Dict[str, Any] = None, timeframes: List[str] = None):
         if not isinstance(df, pd.DataFrame) or df.empty:
@@ -21,8 +23,6 @@ class IndicatorAnalyzer:
             
         self.base_df = df
         self.config = config if config is not None else self._get_default_config()
-        
-        # ✨ FIX: Updated timeframe strings to be future-proof (e.g., 'T' -> 'min', 'H' -> 'h')
         self.timeframes = timeframes or ['5min', '15min', '1h', '4h']
         
         self._indicator_classes: Dict[str, Type[BaseIndicator]] = {
@@ -42,25 +42,14 @@ class IndicatorAnalyzer:
         self.final_df = self.base_df.copy()
 
     def _get_default_config(self) -> Dict[str, Any]:
-        # This is a sample config and should be completed with all indicator defaults
-        return {
-            'rsi': {'period': 14, 'enabled': True},
-            'macd': {'fast_period': 12, 'slow_period': 26, 'signal_period': 9, 'enabled': True},
-            'bollinger': {'period': 20, 'std_dev': 2.0, 'enabled': True},
-            'supertrend': {'period': 10, 'multiplier': 3.0, 'enabled': True},
-            'ichimoku': {'enabled': True},
-            'structure': {'zigzag_deviation': 3.0, 'enabled': True},
-            'fibonacci': {'zigzag_deviation': 3.0, 'enabled': True},
-            'divergence': {'enabled': True},
-        }
+        # A sample config, should be completed
+        return {'rsi': {'period': 14, 'enabled': True}, 'macd': {'enabled': True}}
 
     def calculate_all(self) -> pd.DataFrame:
-        """
-        Orchestrates the calculation of all enabled indicators across all configured timeframes.
-        This method follows the "Calculate Once" principle.
-        """
         logger.info(f"Starting MTF calculation for timeframes: {self.timeframes}")
-        df_with_all_indicators = self.base_df.copy()
+        
+        # Start with a clean copy of the base dataframe
+        df_for_calc = self.base_df.copy()
 
         for tf in self.timeframes:
             logger.info(f"--- Calculating for timeframe: {tf} ---")
@@ -74,34 +63,30 @@ class IndicatorAnalyzer:
                         instance_params = {k:v for k,v in params.items() if k != 'enabled'}
                         instance_params['timeframe'] = tf
                         
-                        # The calculate method returns the instance with the updated df
-                        instance = indicator_class(self.base_df, params=instance_params).calculate()
+                        # ✨ FIX #1: Sequential Data Flow
+                        # The indicator is initialized with the most up-to-date dataframe
+                        # ensuring dependencies from previous indicators are available.
+                        instance = indicator_class(df_for_calc, params=instance_params).calculate()
                         
-                        # Merge the newly calculated columns into our main df
-                        for col in instance.df.columns:
-                            if col not in df_with_all_indicators.columns:
-                                df_with_all_indicators[col] = instance.df[col]
+                        # The dataframe is updated for the next indicator in the chain.
+                        df_for_calc = instance.df
 
                         self._indicator_instances[tf][name] = instance
                         
                     except Exception as e:
                         logger.error(f"Failed to calculate indicator '{name}' on timeframe '{tf}': {e}", exc_info=True)
         
-        self.final_df = df_with_all_indicators
+        # ✨ FIX #2: Defragment the final DataFrame for optimal performance.
+        self.final_df = df_for_calc.copy()
+        
         logger.info("All MTF calculations are complete.")
         return self.final_df
 
     def get_analysis_summary(self) -> Dict[str, Any]:
-        """
-        Analyzes all calculated indicators across all timeframes.
-        This method is highly efficient as it performs no recalculations.
-        It is also bias-free because each indicator's analyze() method is bias-free.
-        """
         if len(self.final_df) < 2:
             return {"status": "Insufficient Data"}
         
         summary: Dict[str, Any] = {"status": "OK"}
-        
         last_closed_candle = self.base_df.iloc[-2]
         summary['price_data'] = {
             'close': last_closed_candle.get('close'),
@@ -112,6 +97,10 @@ class IndicatorAnalyzer:
             tf_summary = {}
             for name, instance in instances.items():
                 try:
+                    # ✨ FIX #3: Ensure the instance analyzes the final, complete dataframe
+                    # This gives every indicator's analyze() method full access to all columns.
+                    instance.df = self.final_df
+                    
                     analysis = instance.analyze()
                     if analysis:
                         tf_summary[name] = analysis
