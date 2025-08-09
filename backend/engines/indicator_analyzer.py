@@ -9,11 +9,10 @@ logger = logging.getLogger(__name__)
 
 class IndicatorAnalyzer:
     """
-    The Single-Timeframe Analysis Engine for AiSignalPro (v4.0 - Final & Complete)
+    The Single-Timeframe Analysis Engine for AiSignalPro (v4.1 - Final & Harmonized)
     ---------------------------------------------------------------------------------
-    This version is designed to work as a powerful engine within a larger MTF orchestrator.
-    It focuses on analyzing all indicators for a single, specific timeframe. This
-    simplifies the architecture and resolves all data flow errors.
+    This final version includes price_data in its summary output to be fully
+    harmonized with the BaseStrategy toolkit.
     """
     def __init__(self, df: pd.DataFrame, config: Dict[str, Any], timeframe: str):
         if not isinstance(df, pd.DataFrame) or df.empty:
@@ -58,34 +57,43 @@ class IndicatorAnalyzer:
                     instance_params = {k:v for k,v in params.items() if k != 'enabled'}
                     instance_params['timeframe'] = self.timeframe
                     
-                    # ✨ REFINEMENT: The indicator is initialized with the most up-to-date dataframe
                     instance = indicator_class(df_for_calc, params=instance_params).calculate()
                     
-                    # The dataframe is updated for the next indicator in the chain
                     df_for_calc = instance.df
                     self._indicator_instances[name] = instance
                     
                 except Exception as e:
                     logger.error(f"Failed to calculate indicator '{name}' on timeframe '{self.timeframe}': {e}", exc_info=True)
         
-        # Defragment the final DataFrame for optimal performance
         self.final_df = df_for_calc.copy()
         logger.info(f"Calculations for timeframe {self.timeframe} are complete.")
         return self
 
     def get_analysis_summary(self) -> Dict[str, Any]:
         """
-        Analyzes all calculated indicators for the single timeframe.
-        This method is efficient and bias-free.
+        Analyzes all calculated indicators for the single timeframe and returns a
+        self-contained summary report.
         """
         if len(self.final_df) < 2:
             return {"status": "Insufficient Data"}
         
         summary: Dict[str, Any] = {"status": "OK"}
         
+        # ✨ REFINEMENT: Add the last closed candle's price data to the summary.
+        # This makes each summary a self-contained report for the strategies.
+        last_closed_candle = self.final_df.iloc[-2]
+        summary['price_data'] = {
+            'open': last_closed_candle.get('open'),
+            'high': last_closed_candle.get('high'),
+            'low': last_closed_candle.get('low'),
+            'close': last_closed_candle.get('close'),
+            'volume': last_closed_candle.get('volume'),
+            'timestamp': str(last_closed_candle.name)
+        }
+
         for name, instance in self._indicator_instances.items():
             try:
-                # The instance's internal dataframe is already the complete, final one.
+                # The instance's internal dataframe is the complete, final one.
                 # Its analyze() method is internally bias-free.
                 analysis = instance.analyze()
                 if analysis:
