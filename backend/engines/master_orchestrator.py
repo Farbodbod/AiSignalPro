@@ -12,14 +12,15 @@ logger = logging.getLogger(__name__)
 
 class MasterOrchestrator:
     """
-    The strategic mastermind of the AiSignalPro project (v20.2 - Final & Complete)
-    This version is absolutely complete, with all methods fully implemented
+    The strategic mastermind of the AiSignalPro project (v20.3 - Final & Complete)
+    This version is absolutely complete, with all methods fully implemented,
     and aligned with the project's final architecture.
     """
     def __init__(self, config: Dict[str, Any]):
         self.config = config
+        
+        # ✨ The definitive, complete list of world-class strategy classes
         self._strategy_classes: List[Type[BaseStrategy]] = [
-            # The final, world-class strategy list
             TrendRiderPro,
             VwapMeanReversion,
             DivergenceSniperPro,
@@ -33,9 +34,10 @@ class MasterOrchestrator:
             ConfluenceSniper,
             EmaCrossoverStrategy,
         ]
+        
         self.gemini_handler = GeminiHandler()
         self.last_gemini_call_time = 0
-        self.ENGINE_VERSION = "20.2.0"
+        self.ENGINE_VERSION = "20.3.0"
         logger.info(f"MasterOrchestrator v{self.ENGINE_VERSION} (Final & Complete) initialized.")
 
     def _find_super_signal(self, signals: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
@@ -100,7 +102,6 @@ class MasterOrchestrator:
 **داده‌های تحلیل:**
 {json_data}
 """
-        
         self.last_gemini_call_time = time.time()
         ai_response = self.gemini_handler.query(prompt_template)
 
@@ -114,9 +115,17 @@ class MasterOrchestrator:
         return ai_response
 
     def run_full_pipeline(self, df: pd.DataFrame, symbol: str, timeframe: str) -> Dict[str, Any]:
-        analyzer = IndicatorAnalyzer(df, config=self.config.get('indicators', {}), timeframe=timeframe)
-        analyzer.calculate_all()
-        analysis_summary = analyzer.get_analysis_summary()
+        logger.info(f"Running primary analysis for {symbol} on {timeframe}...")
+        primary_analyzer = IndicatorAnalyzer(df, config=self.config.get('indicators', {}), timeframe=timeframe)
+        primary_analyzer.calculate_all()
+        primary_analysis = primary_analyzer.get_analysis_summary()
+
+        htf_timeframe = '4h'
+        logger.info(f"Running HTF analysis for {symbol} on {htf_timeframe}...")
+        htf_analyzer = IndicatorAnalyzer(df, config=self.config.get('indicators', {}), timeframe=htf_timeframe)
+        htf_analyzer.calculate_all()
+        # ✨ FIX: Corrected typo from hf_analyzer to htf_analyzer
+        htf_analysis = htf_analyzer.get_analysis_summary()
         
         valid_signals = []
         strategy_configs = self.config.get('strategies', {})
@@ -125,29 +134,24 @@ class MasterOrchestrator:
             strategy_config = strategy_configs.get(strategy_name, {})
             if strategy_config.get('enabled', True):
                 try:
-                    htf_timeframe = '4h'
-                    htf_analyzer = IndicatorAnalyzer(df, config=self.config.get('indicators', {}), timeframe=htf_timeframe)
-                    htf_analyzer.calculate_all()
-                    htf_analysis = hf_analyzer.get_analysis_summary()
-                    
-                    instance = sc(analysis_summary, strategy_config, htf_analysis=htf_analysis)
+                    instance = sc(primary_analysis, strategy_config, htf_analysis=htf_analysis)
                     signal = instance.check_signal()
                     if signal:
                         signal['strategy_name'] = instance.strategy_name
                         valid_signals.append(signal)
                 except Exception as e:
                     logger.error(f"Error running strategy '{strategy_name}' on {timeframe}: {e}", exc_info=True)
-
+        
         if not valid_signals:
             logger.info(f"No valid signals found by any strategy for {symbol} {timeframe}.")
-            return {"status": "NEUTRAL", "message": "No strategy conditions met.", "full_analysis": analysis_summary}
+            return {"status": "NEUTRAL", "message": "No strategy conditions met.", "full_analysis": primary_analysis}
 
         min_rr = self.config.get("general", {}).get("min_risk_reward_ratio", 1.0)
         qualified_signals = [s for s in valid_signals if s.get('risk_reward_ratio', 0) >= min_rr]
         
         if not qualified_signals:
             logger.info(f"Signals found for {symbol} {timeframe} but failed R/R quality check.")
-            return {"status": "NEUTRAL", "message": "Signals found but failed R/R quality check.", "full_analysis": analysis_summary}
+            return {"status": "NEUTRAL", "message": "Signals found but failed R/R quality check.", "full_analysis": primary_analysis}
         
         best_signal = self._find_super_signal(qualified_signals)
         if not best_signal:
@@ -159,7 +163,7 @@ class MasterOrchestrator:
         
         ai_confirmation = self._get_ai_confirmation(best_signal, symbol, timeframe)
         if ai_confirmation is None:
-            return {"status": "NEUTRAL", "message": "Signal was vetoed by AI analysis.", "full_analysis": analysis_summary}
+            return {"status": "NEUTRAL", "message": "Signal was vetoed by AI analysis.", "full_analysis": primary_analysis}
 
         return {
             "status": "SUCCESS",
@@ -167,5 +171,5 @@ class MasterOrchestrator:
             "timeframe": timeframe,
             "base_signal": best_signal,
             "ai_confirmation": ai_confirmation,
-            "full_analysis": analysis_summary
+            "full_analysis": primary_analysis
         }
