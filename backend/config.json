@@ -19,6 +19,16 @@
     "min_confluence_for_super_signal": 3,
     "min_risk_reward_ratio": 1.5
   },
+  "signal_cache": {
+    "default_ttl_hours": 8,
+    "ttl_map_hours": {
+      "5min": 2,
+      "15min": 4,
+      "1h": 8,
+      "4h": 24,
+      "1d": 72
+    }
+  },
   "strategy_priority": [
     "SuperSignal Confluence",
     "ConfluenceSniper",
@@ -38,7 +48,7 @@
     "adx": { "enabled": true, "period": 14 },
     "atr": { "enabled": true, "period": 14 },
     "bollinger": { "enabled": true, "period": 20, "std_dev": 2.0, "squeeze_lookback": 120, "squeeze_threshold": 1.1 },
-    "cci": { "enabled": true, "period": 20, "use_adaptive_thresholds": true, "adaptive_multiplier": 2.0 },
+    "cci": { "enabled": true, "period": 20, "use_adaptive_thresholds": true, "adaptive_multiplier": 2.0, "overbought": 100, "oversold": -100 },
     "chandelier_exit": { "enabled": true, "atr_period": 22, "atr_multiplier": 3.0 },
     "donchian_channel": { "enabled": true, "period": 20, "use_atr_filter": true, "atr_period": 14 },
     "ema_cross": { "enabled": true, "short_period": 9, "long_period": 21 },
