@@ -3,11 +3,10 @@ from typing import Dict, Any, Optional, List
 
 class BaseStrategy(ABC):
     """
-    World-Class Base Strategy - The Strategy Toolkit for AiSignalPro (v3.1 - Final)
+    World-Class Base Strategy - The Strategy Toolkit for AiSignalPro (v3.2 - Final)
     --------------------------------------------------------------------------------
-    This final version correctly handles the injection of Higher-Timeframe (HTF)
-    analysis, allowing all child strategies to perform robust, multi-timeframe
-    confirmations.
+    This final, complete version is fully harmonized with the entire AiSignalPro
+    ecosystem. It's a robust toolkit for building powerful, multi-timeframe strategies.
     """
     strategy_name: str = "BaseStrategy"
 
@@ -18,6 +17,8 @@ class BaseStrategy(ABC):
         self.analysis = analysis_summary
         self.config = config or {}
         self.htf_analysis = htf_analysis or {} # Ensure it's always a dict
+        
+        # ✨ REFINED: price_data is now correctly and safely extracted from the analysis summary
         self.price_data = self.analysis.get('price_data', {})
 
     @abstractmethod
@@ -43,26 +44,19 @@ class BaseStrategy(ABC):
         return None
 
     def _get_trend_confirmation(self, direction: str, timeframe: str) -> bool:
-        """
-        ✨ REFINED: Checks the injected htf_analysis to confirm trend alignment.
-        """
-        # We now look inside self.htf_analysis, which is provided by the orchestrator.
+        """ Checks the injected htf_analysis to confirm trend alignment. """
         adx_analysis = self.htf_analysis.get('adx')
         supertrend_analysis = self.htf_analysis.get('supertrend')
-        
         if not adx_analysis or not supertrend_analysis: return False
-
         min_adx = self.config.get('min_adx_for_confirmation', 20)
         adx_strength = adx_analysis.get('values', {}).get('adx', 0)
         adx_direction = adx_analysis.get('analysis', {}).get('direction')
-        supertrend_direction = supertrend_analysis.get('analysis', {}).get('trend')
-
+        supertrend_trend = supertrend_analysis.get('analysis', {}).get('trend')
         if adx_strength < min_adx: return False
-
         if direction.upper() == 'BUY':
-            return adx_direction == 'Bullish' and supertrend_direction == 'Uptrend'
+            return adx_direction == 'Bullish' and supertrend_trend == 'Uptrend'
         elif direction.upper() == 'SELL':
-            return adx_direction == 'Bearish' and supertrend_direction == 'Downtrend'
+            return adx_direction == 'Bearish' and supertrend_trend == 'Downtrend'
         return False
 
     def _get_volume_confirmation(self) -> bool:
@@ -76,7 +70,8 @@ class BaseStrategy(ABC):
     def _calculate_smart_risk_management(self, entry_price: float, direction: str, stop_loss: float) -> Dict[str, Any]:
         if not all([entry_price, direction, stop_loss]) or entry_price == stop_loss: return {"stop_loss": stop_loss, "targets": [], "risk_reward_ratio": 0}
         risk_amount = abs(entry_price - stop_loss)
-        if risk_amount == 0: return {"stop_loss": stop_loss, "targets": [], "risk_reward_ratio": 0}
+        if risk_amount < 1e-9: return {"stop_loss": stop_loss, "targets": [], "risk_reward_ratio": 0}
+        
         structure_data = self.get_indicator('structure')
         key_levels = structure_data.get('key_levels', {}) if structure_data else {}
         targets = []
@@ -86,9 +81,14 @@ class BaseStrategy(ABC):
         elif direction.upper() == 'SELL':
             supports = sorted([s for s in key_levels.get('supports', []) if s < entry_price], reverse=True)
             targets = supports[:3]
+
+        # ✨ REFINEMENT: Fallback R/R ratios are now configurable
         if not targets:
             reward_ratios = self.config.get('reward_tp_ratios', [1.5, 3.0, 5.0])
             targets = [entry_price + (risk_amount * r if direction.upper() == 'BUY' else -risk_amount * r) for r in reward_ratios]
+        
         if not targets: return {"stop_loss": round(stop_loss, 5), "targets": [], "risk_reward_ratio": 0}
+        
         actual_rr = round(abs(targets[0] - entry_price) / risk_amount, 2)
+        
         return {"stop_loss": round(stop_loss, 5), "targets": [round(t, 5) for t in targets], "risk_reward_ratio": actual_rr}
