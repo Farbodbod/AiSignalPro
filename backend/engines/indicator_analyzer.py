@@ -1,20 +1,32 @@
 import pandas as pd
 import logging
-from typing import Dict, Any, Type
+from typing import Dict, Any, Type, List
 
-# ایمپورت کردن تمام اندیکاتورهای پروژه
+# ایمپورت کردن تمام اندیکاتورهای پروژه (نسخه‌های کلاس جهانی و MTF)
 from .indicators import *
 
 logger = logging.getLogger(__name__)
 
 class IndicatorAnalyzer:
-    def __init__(self, df: pd.DataFrame, config: Dict[str, Any] = None):
+    """
+    The strategic mastermind of the AiSignalPro project.
+    -----------------------------------------------------
+    This world-class version is a Multi-Timeframe (MTF) Orchestrator.
+    It manages the calculation and analysis of all indicators across multiple
+    timeframes, providing a comprehensive, bias-free, and real-time snapshot
+    of the market, perfectly designed for a fully automated trading system.
+    """
+    def __init__(self, df: pd.DataFrame, config: Dict[str, Any] = None, timeframes: List[str] = None):
         if not isinstance(df, pd.DataFrame) or df.empty:
             raise ValueError("Input DataFrame cannot be empty.")
-        self.df = df
+        if not isinstance(df.index, pd.DatetimeIndex):
+            raise TypeError("DataFrame index must be a DatetimeIndex for MTF analysis.")
+            
+        self.base_df = df
         self.config = config if config is not None else self._get_default_config()
+        self.timeframes = timeframes or ['5T', '15T', '1H', '4H']
         
-        # دیکشنری کامل و جامع از تمام اندیکاتورهای پروژه
+        # Dictionary mapping indicator names to their classes
         self._indicator_classes: Dict[str, Type[BaseIndicator]] = {
             'rsi': RsiIndicator, 'macd': MacdIndicator, 'bollinger': BollingerIndicator,
             'ichimoku': IchimokuIndicator, 'adx': AdxIndicator, 'supertrend': SuperTrendIndicator,
@@ -28,73 +40,92 @@ class IndicatorAnalyzer:
             'kelt_channel': KeltnerChannelIndicator, 'zigzag': ZigzagIndicator,
             'fibonacci': FibonacciIndicator,
         }
-        self._indicator_instances: Dict[str, BaseIndicator] = {}
+        # A nested dictionary to store instances: { '1H': { 'rsi': RsiInstance, ... }, '4H': { ... } }
+        self._indicator_instances: Dict[str, Dict[str, BaseIndicator]] = {tf: {} for tf in self.timeframes}
+        self.final_df = self.base_df.copy()
 
     def _get_default_config(self) -> Dict[str, Any]:
-        # کانفیگ پیش‌فرض برای تمام اندیکاتورها
-        # (این بخش بدون تغییر باقی می‌ماند)
+        # A more complete default config for our world-class indicators
         return {
             'rsi': {'period': 14, 'enabled': True},
-            'bollinger': {'period': 20, 'std_dev': 2, 'enabled': True},
-            # ... and so on for all indicators
+            'macd': {'fast_period': 12, 'slow_period': 26, 'signal_period': 9, 'enabled': True},
+            'bollinger': {'period': 20, 'std_dev': 2.0, 'enabled': True},
+            'supertrend': {'period': 10, 'multiplier': 3.0, 'enabled': True},
+            'ichimoku': {'enabled': True},
+            # ... add other indicator defaults here
         }
 
     def calculate_all(self) -> pd.DataFrame:
-        logger.info("Starting calculation for all enabled indicators.")
-        for name, params in self.config.items():
-            if params.get('enabled', False):
-                indicator_class = self._indicator_classes.get(name)
-                if indicator_class:
+        """
+        Orchestrates the calculation of all enabled indicators across all configured timeframes.
+        This method follows the "Calculate Once" principle.
+        """
+        logger.info(f"Starting MTF calculation for timeframes: {self.timeframes}")
+        
+        # We work on a copy to aggregate all indicator columns
+        df_with_all_indicators = self.base_df.copy()
+
+        for tf in self.timeframes:
+            logger.info(f"--- Calculating for timeframe: {tf} ---")
+            for name, params in self.config.items():
+                if params.get('enabled', False):
+                    indicator_class = self._indicator_classes.get(name)
+                    if not indicator_class:
+                        logger.warning(f"Indicator class '{name}' not found.")
+                        continue
                     try:
-                        # ✨ FIX #1: The correct way to instantiate our indicators.
-                        # We pass the DataFrame and the parameters as keyword arguments.
-                        instance = indicator_class(self.df, params=params)
+                        # Create instance with the base_df and pass the timeframe parameter
+                        instance_params = {k:v for k,v in params.items() if k != 'enabled'}
+                        instance_params['timeframe'] = tf
                         
-                        # The calculate method in our world-class indicators now returns `self` (the instance).
-                        # We update self.df from the instance's df attribute after calculation.
-                        indicator_instance = instance.calculate()
-                        self.df = indicator_instance.df
-                        self._indicator_instances[name] = indicator_instance
+                        instance = indicator_class(self.base_df, params=instance_params)
+                        instance.calculate()
+                        
+                        # Merge the newly calculated columns into our main df
+                        for col in instance.df.columns:
+                            if col not in df_with_all_indicators.columns:
+                                df_with_all_indicators[col] = instance.df[col]
+
+                        self._indicator_instances[tf][name] = instance
                         
                     except Exception as e:
-                        logger.error(f"Failed to calculate indicator '{name}': {e}", exc_info=True)
-        return self.df
+                        logger.error(f"Failed to calculate indicator '{name}' on timeframe '{tf}': {e}", exc_info=True)
+        
+        self.final_df = df_with_all_indicators
+        logger.info("All MTF calculations are complete.")
+        return self.final_df
 
     def get_analysis_summary(self) -> Dict[str, Any]:
-        summary: Dict[str, Any] = {}
-        
-        # ✨ FIX #2: Prevent Look-ahead Bias.
-        # For a fully automated system, all analysis must be based on the last *closed* candle.
-        if len(self.df) < 2:
-            logger.warning("Not enough data for a bias-free analysis (requires at least 2 rows).")
+        """
+        Analyzes all calculated indicators across all timeframes.
+        This method is highly efficient as it performs no recalculations.
+        It is also bias-free because each indicator's analyze() method is bias-free.
+        """
+        if len(self.final_df) < 2:
             return {"status": "Insufficient Data"}
-            
-        # We prepare the analysis based on the last closed candle's data.
-        closed_candle_df = self.df.iloc[:-1]
         
-        last_closed_candle = closed_candle_df.iloc[-1]
+        # The summary will be nested by timeframe
+        summary: Dict[str, Any] = {"status": "OK"}
+        
+        # --- Price data is based on the base timeframe's last closed candle ---
+        last_closed_candle = self.base_df.iloc[-2]
         summary['price_data'] = {
-            'open': last_closed_candle.get('open'), 'high': last_closed_candle.get('high'),
-            'low': last_closed_candle.get('low'), 'close': last_closed_candle.get('close'),
-            'volume': last_closed_candle.get('volume'),
+            'close': last_closed_candle.get('close'),
             'timestamp': str(last_closed_candle.name)
         }
-        
-        for name, instance in self._indicator_instances.items():
-            try:
-                # We need to run analyze on the bias-free dataframe.
-                # A robust way is to re-create the instance with the closed-candle data.
-                # This ensures `analyze` methods also don't suffer from look-ahead bias.
-                bias_free_instance = self._indicator_classes[name](closed_candle_df, params=instance.params)
-                
-                # The instance already has calculated columns, so we just need to analyze.
-                # We assign the full df so it has the calculated columns, but analyze should use the last closed candle.
-                bias_free_instance.df = self.df 
-                
-                analysis = bias_free_instance.analyze()
-                if analysis: summary[name] = analysis
-            except Exception as e:
-                logger.error(f"Failed to analyze indicator '{name}': {e}", exc_info=True)
-                summary[name] = {"error": str(e)}
-                
+
+        for tf, instances in self._indicator_instances.items():
+            tf_summary = {}
+            for name, instance in instances.items():
+                try:
+                    # Each indicator's analyze() method is already bias-free.
+                    # We simply call it on the stored instance.
+                    analysis = instance.analyze()
+                    if analysis:
+                        tf_summary[name] = analysis
+                except Exception as e:
+                    logger.error(f"Failed to analyze indicator '{name}' on timeframe '{tf}': {e}", exc_info=True)
+                    tf_summary[name] = {"error": str(e)}
+            summary[tf] = tf_summary
+            
         return summary
