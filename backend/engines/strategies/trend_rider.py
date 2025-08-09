@@ -4,106 +4,121 @@ from .base_strategy import BaseStrategy
 
 logger = logging.getLogger(__name__)
 
-class TrendRiderStrategy(BaseStrategy):
+class TrendRiderPro(BaseStrategy):
     """
-    ✨ UPGRADE v3.0 - TrendRiderPro ✨
-    یک استراتژی روندساز پیشرفته که از SuperTrend یا EMA Cross برای ورود استفاده کرده،
-    با ADX و DEMA/TEMA فیلتر شده و با Chandelier Exit مدیریت می‌شود.
+    TrendRiderPro - Definitive, World-Class, and Toolkit-Powered Version
+    ---------------------------------------------------------------------
+    This advanced trend-following strategy utilizes the powerful toolkit from
+    BaseStrategy to create clean, readable, and robust trading logic.
+    It identifies a trend entry, validates it with multiple filters (ADX, Price-MA,
+    optional HTF, optional Volume), and uses Chandelier Exit for dynamic risk management.
     """
-
-    def __init__(self, analysis_summary: Dict[str, Any], config: Dict[str, Any] = None, htf_analysis: Optional[Dict[str, Any]] = None):
-        super().__init__(analysis_summary, config, htf_analysis)
-        self.strategy_name = "TrendRiderPro"
+    strategy_name: str = "TrendRiderPro"
 
     def _get_signal_config(self) -> Dict[str, Any]:
-        """
-        پارامترهای قابل تنظیم استراتژی را از فایل کانفیگ بارگیری می‌کند.
-        """
+        """Loads and validates the strategy's specific parameters from the config."""
         return {
             "entry_trigger_type": self.config.get("entry_trigger_type", "supertrend"), # 'supertrend' or 'ema_cross'
             # EMA Cross Params
-            "ema_short_period": self.config.get("ema_short_period", 9),
-            "ema_long_period": self.config.get("ema_long_period", 21),
+            "ema_short_period": int(self.config.get("ema_short_period", 9)),
+            "ema_long_period": int(self.config.get("ema_long_period", 21)),
             # SuperTrend Params
-            "supertrend_atr_period": self.config.get("supertrend_atr_period", 10),
-            "supertrend_multiplier": self.config.get("supertrend_multiplier", 3.0),
+            "st_period": int(self.config.get("supertrend_atr_period", 10)),
+            "st_multiplier": float(self.config.get("supertrend_multiplier", 3.0)),
             # Chandelier Exit (Stop Loss) Params
-            "chandelier_atr_period": self.config.get("chandelier_atr_period", 22),
-            "chandelier_atr_multiplier": self.config.get("chandelier_atr_multiplier", 3.0),
+            "ch_atr_period": int(self.config.get("chandelier_atr_period", 22)),
+            "ch_atr_multiplier": float(self.config.get("chandelier_atr_multiplier", 3.0)),
             # Filter Params
-            "min_adx_strength": self.config.get("min_adx_strength", 25),
-            "trend_filter_ma_period": self.config.get("trend_filter_ma_period", 50) # DEMA/TEMA period
+            "min_adx_strength": float(self.config.get("min_adx_strength", 25.0)),
+            "trend_filter_ma_period": int(self.config.get("trend_filter_ma_period", 50)),
+            "trend_filter_ma_type": str(self.config.get("trend_filter_ma_type", "DEMA")).upper(),
+            # Higher Timeframe Confirmation Filter
+            "htf_confirmation_enabled": bool(self.config.get("htf_confirmation_enabled", True)),
+            "htf_timeframe": str(self.config.get("htf_timeframe", "4h")),
         }
 
     def check_signal(self) -> Optional[Dict[str, Any]]:
-        # 1. دریافت داده‌ها و کانفیگ
         cfg = self._get_signal_config()
-        price_data = self.analysis.get('price_data')
-        adx_data = self.analysis.get('adx')
-        chandelier_indicator_name = f'chandelier_exit_{cfg["chandelier_atr_period"]}_{cfg["chandelier_atr_multiplier"]}'
-        chandelier_data = self.analysis.get(chandelier_indicator_name)
         
-        if not all([price_data, adx_data, chandelier_data]):
-            return None
-
-        # 2. بررسی سیگنال ورود بر اساس کانفیگ
-        signal_direction = None
-        entry_trigger_name = ""
-        
-        if cfg['entry_trigger_type'] == 'ema_cross':
-            entry_trigger_name = f"EMA Cross ({cfg['ema_short_period']}/{cfg['ema_long_period']})"
-            ema_cross_signal = self.analysis.get(f"signal_ema_cross_{cfg['ema_short_period']}_{cfg['ema_long_period']}")
-            if ema_cross_signal == 1: signal_direction = "BUY"
-            elif ema_cross_signal == -1: signal_direction = "SELL"
-        else: # Default to supertrend
-            entry_trigger_name = f"SuperTrend ({cfg['supertrend_atr_period']},{cfg['supertrend_multiplier']})"
-            st_indicator_name = f"supertrend_{cfg['supertrend_atr_period']}_{cfg['supertrend_multiplier']}"
-            supertrend_data = self.analysis.get(st_indicator_name)
-            if supertrend_data and supertrend_data.get('signal') == "Bullish Trend Change": signal_direction = "BUY"
-            elif supertrend_data and supertrend_data.get('signal') == "Bearish Trend Change": signal_direction = "SELL"
-
+        # --- 1. Get Primary Entry Signal ---
+        signal_direction, entry_trigger_name = self._get_primary_signal(cfg)
         if not signal_direction:
             return None
-            
-        # 3. اعمال فیلترهای پیشرفته
-        # فیلتر قدرت روند ADX
-        if adx_data['adx'] < cfg['min_adx_strength']:
+
+        # --- 2. Apply Filters ---
+        # ✨ ADX Strength Filter
+        adx_data = self.get_indicator('adx')
+        if not adx_data or adx_data.get('status') != 'OK': return None
+        adx_strength = adx_data.get('values', {}).get('adx', 0)
+        if adx_strength < cfg['min_adx_strength']:
+            logger.info(f"[{self.strategy_name}] Signal rejected: ADX strength ({adx_strength:.2f}) is below threshold ({cfg['min_adx_strength']}).")
             return None
 
-        # فیلتر تایید روند با DEMA/TEMA (فرض می‌کنیم تحلیلگر FastMA با این پریود اجرا شده)
-        ma_filter_name = f'dema_{cfg["trend_filter_ma_period"]}' # میتوان TEMA هم باشد
-        ma_filter_data = self.analysis.get(ma_filter_name)
-        if ma_filter_data:
-            ma_value = ma_filter_data.get('values', {}).get(f'dema_{cfg["trend_filter_ma_period"]}')
-            if ma_value:
-                if signal_direction == "BUY" and price_data['close'] < ma_value: return None
-                if signal_direction == "SELL" and price_data['close'] > ma_value: return None
+        # ✨ Price vs. Fast MA Trend Filter
+        ma_filter_data = self.get_indicator('fast_ma')
+        if ma_filter_data and ma_filter_data.get('status') == 'OK':
+            ma_value = ma_filter_data.get('values', {}).get('ma_value', 0)
+            current_price = self.price_data.get('close', 0)
+            if (signal_direction == "BUY" and current_price < ma_value) or \
+               (signal_direction == "SELL" and current_price > ma_value):
+                logger.info(f"[{self.strategy_name}] Signal rejected: Price is on the wrong side of the trend filter MA.")
+                return None
         
-        # فیلتر تایید تایم فریم بالاتر (HTF)
-        # (منطق HTF از نسخه قبلی شما می‌تواند در اینجا نیز اضافه شود)
-
-        logger.info(f"✨ [{self.strategy_name}] Signal for {signal_direction} confirmed by filters.")
-
-        # 4. محاسبه مدیریت ریسک با Chandelier Exit
-        entry_price = price_data['close']
-        chandelier_values = chandelier_data.get('values', {})
-        stop_loss = chandelier_values.get('long_stop') if signal_direction == "BUY" else chandelier_values.get('short_stop')
+        # ✨ Higher Timeframe Trend Confirmation Filter (Optional)
+        if cfg['htf_confirmation_enabled']:
+            if not self._get_trend_confirmation(signal_direction, cfg['htf_timeframe']):
+                logger.info(f"[{self.strategy_name}] Signal rejected: Trend confirmation failed on {cfg['htf_timeframe']}.")
+                return None
+        
+        # --- 3. Calculate Risk Management ---
+        entry_price = self.price_data.get('close')
+        chandelier_data = self.get_indicator('chandelier_exit')
+        if not chandelier_data or chandelier_data.get('status') != 'OK': return None
+        
+        stop_loss_key = 'long_stop' if signal_direction == "BUY" else 'short_stop'
+        stop_loss = chandelier_data.get('values', {}).get(stop_loss_key)
 
         if not stop_loss: return None
             
         risk_params = self._calculate_smart_risk_management(entry_price, signal_direction, stop_loss)
+        # Final quality check for Risk/Reward
+        if not risk_params or not risk_params.get("targets"):
+             logger.info(f"[{self.strategy_name}] Signal rejected: Could not calculate valid risk/reward targets.")
+             return None
 
-        # 5. آماده‌سازی خروجی نهایی
+        # --- 4. Package the Final Signal ---
+        logger.info(f"✨✨ [{self.strategy_name}] Signal for {signal_direction} confirmed by all filters! ✨✨")
+        
         confirmations = {
             "entry_trigger": entry_trigger_name,
-            "strength_filter": f"ADX > {cfg['min_adx_strength']} (Value: {round(adx_data['adx'], 2)})",
-            "exit_management": f"Chandelier Stop at {stop_loss}"
+            "strength_filter": f"ADX > {cfg['min_adx_strength']} (Value: {adx_strength:.2f})",
+            "trend_filter": f"Price confirmed by {cfg['trend_filter_ma_type']}({cfg['trend_filter_ma_period']})",
+            "htf_confirmation": f"Confirmed by {cfg['htf_timeframe']} trend" if cfg['htf_confirmation_enabled'] else "Disabled",
+            "exit_management": f"Chandelier Stop Loss"
         }
         
         return {
-            "strategy_name": self.strategy_name,
             "direction": signal_direction,
             "entry_price": entry_price,
             **risk_params,
             "confirmations": confirmations
         }
+
+    def _get_primary_signal(self, cfg: Dict[str, Any]) -> tuple[Optional[str], str]:
+        """ Determines the initial BUY or SELL signal based on the configured entry trigger. """
+        if cfg['entry_trigger_type'] == 'ema_cross':
+            trigger_name = f"EMA Cross ({cfg['ema_short_period']}/{cfg['ema_long_period']})"
+            ema_cross_data = self.get_indicator('ema_cross')
+            if ema_cross_data and ema_cross_data.get('status') == 'OK':
+                signal = ema_cross_data.get('analysis', {}).get('signal')
+                if signal in ['Buy', 'Sell']:
+                    return signal.upper(), trigger_name
+        else: # Default to supertrend
+            trigger_name = f"SuperTrend ({cfg['st_period']},{cfg['st_multiplier']})"
+            supertrend_data = self.get_indicator('supertrend')
+            if supertrend_data and supertrend_data.get('status') == 'OK':
+                signal = supertrend_data.get('analysis', {}).get('signal')
+                if signal == "Bullish Crossover": return "BUY", trigger_name
+                if signal == "Bearish Crossover": return "SELL", trigger_name
+                
+        return None, ""
