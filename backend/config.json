@@ -1,5 +1,20 @@
 {
   "general": {
+    "symbols_to_monitor": [
+      "BTC/USDT",
+      "ETH/USDT",
+      "SOL/USDT",
+      "XRP/USDT",
+      "DOGE/USDT"
+    ],
+    "timeframes_to_analyze": [
+      "5min",
+      "15min",
+      "1h",
+      "4h"
+    ],
+    "poll_interval_seconds": 300,
+    "max_concurrent_tasks": 5,
     "gemini_cooldown_seconds": 300,
     "min_confluence_for_super_signal": 3,
     "min_risk_reward_ratio": 1.5
@@ -10,12 +25,12 @@
     "DivergenceSniperPro",
     "WhaleReversal",
     "VolumeCatalystPro",
+    "PivotConfluenceSniper",
     "BreakoutHunter",
     "IchimokuHybridPro",
     "ChandelierTrendRider",
     "TrendRiderPro",
     "KeltnerMomentumBreakout",
-    "PivotConfluenceSniper",
     "VwapMeanReversion",
     "EmaCrossoverStrategy"
   ],
@@ -23,7 +38,7 @@
     "adx": { "enabled": true, "period": 14 },
     "atr": { "enabled": true, "period": 14 },
     "bollinger": { "enabled": true, "period": 20, "std_dev": 2.0, "squeeze_lookback": 120, "squeeze_threshold": 1.1 },
-    "cci": { "enabled": true, "period": 20, "use_adaptive_thresholds": false, "adaptive_multiplier": 2.0, "overbought": 100, "oversold": -100 },
+    "cci": { "enabled": true, "period": 20, "use_adaptive_thresholds": true, "adaptive_multiplier": 2.0 },
     "chandelier_exit": { "enabled": true, "atr_period": 22, "atr_multiplier": 3.0 },
     "donchian_channel": { "enabled": true, "period": 20, "use_atr_filter": true, "atr_period": 14 },
     "ema_cross": { "enabled": true, "short_period": 9, "long_period": 21 },
@@ -33,7 +48,7 @@
     "macd": { "enabled": true, "fast_period": 12, "slow_period": 26, "signal_period": 9 },
     "mfi": { "enabled": true, "period": 14, "detect_divergence": true, "zigzag_deviation": 3.0 },
     "obv": { "enabled": true, "signal_period": 20, "rvol_period": 20, "price_ma_period": 20, "rvol_threshold": 1.5 },
-    "pivots": { "enabled": true, "method": "standard" },
+    "pivots": { "enabled": true, "reset_period": "D", "method": "standard" },
     "rsi": { "enabled": true, "period": 14, "signal_period": 5, "use_dynamic_levels": true, "bb_period": 20, "bb_std_dev": 2.0, "detect_divergence": true, "zigzag_deviation": 3.0 },
     "stochastic": { "enabled": true, "k_period": 14, "d_period": 3, "smooth_k": 3, "detect_divergence": true, "zigzag_deviation": 3.0 },
     "supertrend": { "enabled": true, "period": 10, "multiplier": 3.0 },
@@ -49,10 +64,10 @@
   "strategies": {
     "TrendRiderPro": { "enabled": true, "min_adx_strength": 25.0, "htf_confirmation_enabled": true, "htf_timeframe": "4h" },
     "VwapMeanReversion": { "enabled": true, "oscillator_logic": "AND", "use_rsi": true, "rsi_oversold": 30, "use_williams_r": true, "williams_r_oversold": -80, "min_rr_ratio": 1.0 },
-    "DivergenceSniperPro": { "enabled": true, "htf_confirmation_enabled": false, "volume_confirmation_enabled": true },
-    "WhaleReversal": { "enabled": true, "proximity_percent": 0.5, "min_rr_ratio": 1.5 },
-    "VolumeCatalystPro": { "enabled": true, "cci_threshold": 100, "min_rr_ratio": 1.5 },
-    "BreakoutHunter": { "enabled": true, "min_rr_ratio": 1.5, "htf_confirmation_enabled": true },
+    "DivergenceSniperPro": { "enabled": true, "htf_confirmation_enabled": true, "htf_timeframe": "4h", "volume_confirmation_enabled": true, "candlestick_confirmation_enabled": true },
+    "WhaleReversal": { "enabled": true, "proximity_percent": 0.5, "min_rr_ratio": 1.5, "htf_confirmation_enabled": false },
+    "VolumeCatalystPro": { "enabled": true, "cci_threshold": 100.0, "min_rr_ratio": 1.5, "htf_confirmation_enabled": true },
+    "BreakoutHunter": { "enabled": true, "min_rr_ratio": 1.5, "htf_confirmation_enabled": true, "htf_timeframe": "4h" },
     "IchimokuHybridPro": { "enabled": true, "min_score_to_signal": 5, "min_adx_strength": 23.0, "min_rr_ratio": 1.5 },
     "ChandelierTrendRider": { "enabled": true, "min_adx_strength": 25.0, "min_rr_ratio": 1.2 },
     "KeltnerMomentumBreakout": { "enabled": true, "min_adx_strength": 25.0, "cci_threshold": 100.0, "min_rr_ratio": 1.5 },
