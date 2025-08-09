@@ -11,12 +11,9 @@ logger = logging.getLogger(__name__)
 
 class ChandelierExitIndicator(BaseIndicator):
     """
-    Chandelier Exit - Definitive, MTF, and World-Class Version
-    -----------------------------------------------------------
-    This version implements a robust, non-repainting Chandelier Exit,
-    ideal for dynamic stop-loss and trend-following strategies. It fully
-    integrates the AiSignalPro MTF architecture and relies on the world-class
-    AtrIndicator for volatility measurement.
+    Chandelier Exit - Definitive, MTF, and World-Class Version (v2.1 - Bugfix)
+    -------------------------------------------------------------------------
+    This version includes a critical bug fix in the dependency call to AtrIndicator.
     """
     def __init__(self, df: pd.DataFrame, **kwargs):
         super().__init__(df, **kwargs)
@@ -24,44 +21,36 @@ class ChandelierExitIndicator(BaseIndicator):
         self.params = kwargs.get('params', {})
         self.atr_period = int(self.params.get('atr_period', 22))
         self.atr_multiplier = float(self.params.get('atr_multiplier', 3.0))
-        self.timeframe = self.params.get('timeframe', None) # e.g., '1H', '4H'
+        self.timeframe = self.params.get('timeframe', None)
 
         # --- Dynamic Column Naming ---
         suffix = f'_{self.atr_period}_{self.atr_multiplier}'
         if self.timeframe: suffix += f'_{self.timeframe}'
         self.long_stop_col = f'chandelier_long_stop{suffix}'
         self.short_stop_col = f'chandelier_short_stop{suffix}'
-        # We need the atr_col name from the dependency
-        self.atr_col = f'atr_{self.atr_period}'
-        if self.timeframe: self.atr_col += f'_{self.timeframe}'
-
+        
     def calculate(self) -> 'ChandelierExitIndicator':
         """Calculates the Chandelier Exit lines, handling MTF internally."""
         base_df = self.df
         
-        # ✨ MTF LOGIC: Resample data if a timeframe is specified
         if self.timeframe:
-            if not isinstance(base_df.index, pd.DatetimeIndex):
-                raise TypeError("DataFrame index must be a DatetimeIndex for MTF.")
+            if not isinstance(base_df.index, pd.DatetimeIndex): raise TypeError("DatetimeIndex required for MTF.")
             rules = {'open': 'first', 'high': 'max', 'low': 'min', 'close': 'last'}
             calc_df = base_df.resample(self.timeframe, label='right', closed='right').apply(rules).dropna()
         else:
             calc_df = base_df.copy()
 
-        if len(calc_df) < self.atr_period:
-            logger.warning(f"Not enough data for Chandelier Exit on timeframe {self.timeframe or 'base'}.")
-            return self
+        if len(calc_df) < self.atr_period: logger.warning(f"Not enough data for Chandelier Exit on {self.timeframe or 'base'}."); return self
 
-        # --- Dependency Calculation: ATR ---
-        atr_params = {'period': self.atr_period, 'timeframe': None} # ATR calculated on the already resampled df
-        atr_indicator = AtrIndicator(calc_df, params=atr_params)
-        calc_df_with_atr = atr_indicator.calculate()
+        # ✨ FIX: Correctly handle the return from AtrIndicator.calculate()
+        atr_params = {'period': self.atr_period, 'timeframe': None}
+        atr_instance = AtrIndicator(calc_df, params=atr_params).calculate()
+        calc_df_with_atr = atr_instance.df
+        atr_values = calc_df_with_atr[atr_instance.atr_col]
         
         # --- Core Chandelier Calculation ---
         highest_high = calc_df['high'].rolling(window=self.atr_period).max()
         lowest_low = calc_df['low'].rolling(window=self.atr_period).min()
-        
-        atr_values = calc_df_with_atr[atr_indicator.atr_col]
         
         long_stop = highest_high - (atr_values * self.atr_multiplier)
         short_stop = lowest_low + (atr_values * self.atr_multiplier)
@@ -82,43 +71,13 @@ class ChandelierExitIndicator(BaseIndicator):
         return self
 
     def analyze(self) -> Dict[str, Any]:
-        """Analyzes the current price against the Chandelier stops for exit signals."""
+        # ... (بخش analyze کامل و بدون تغییر است) ...
         required_cols = [self.long_stop_col, self.short_stop_col, 'close']
         valid_df = self.df.dropna(subset=required_cols)
-        
-        if len(valid_df) < 2:
-            return {"status": "Insufficient Data", "analysis": {}}
-
-        last = valid_df.iloc[-1]
-        prev = valid_df.iloc[-2]
-        
-        close_price = last['close']
-        long_stop = last[self.long_stop_col]
-        short_stop = last[self.short_stop_col]
-        
-        signal = "Hold"
-        message = "Price is between the Chandelier Exit stops."
-        
-        # --- Confirmed Crossover Logic ---
-        # Exit Long: If price was previously above the stop and now closes below it.
-        if prev['close'] >= prev[self.long_stop_col] and close_price < long_stop:
-            signal = "Exit Long"
-            message = f"Price closed below the Long Stop at {round(long_stop, 5)}."
-        # Exit Short: If price was previously below the stop and now closes above it.
-        elif prev['close'] <= prev[self.short_stop_col] and close_price > short_stop:
-            signal = "Exit Short"
-            message = f"Price closed above the Short Stop at {round(short_stop, 5)}."
-            
-        return {
-            "status": "OK",
-            "timeframe": self.timeframe or 'Base',
-            "values": {
-                "close": round(close_price, 5),
-                "long_stop": round(long_stop, 5),
-                "short_stop": round(short_stop, 5)
-            },
-            "analysis": {
-                "signal": signal,
-                "message": message
-            }
-        }
+        if len(valid_df) < 2: return {"status": "Insufficient Data", "analysis": {}}
+        last = valid_df.iloc[-1]; prev = valid_df.iloc[-2]
+        close_price = last['close']; long_stop = last[self.long_stop_col]; short_stop = last[self.short_stop_col]
+        signal = "Hold"; message = "Price is between the Chandelier Exit stops."
+        if prev['close'] >= prev[self.long_stop_col] and close_price < long_stop: signal, message = "Exit Long", f"Price closed below the Long Stop at {round(long_stop, 5)}."
+        elif prev['close'] <= prev[self.short_stop_col] and close_price > short_stop: signal, message = "Exit Short", f"Price closed above the Short Stop at {round(short_stop, 5)}."
+        return { "status": "OK", "timeframe": self.timeframe or 'Base', "values": { "close": round(close_price, 5), "long_stop": round(long_stop, 5), "short_stop": round(short_stop, 5) }, "analysis": { "signal": signal, "message": message } }
