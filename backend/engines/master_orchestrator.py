@@ -14,16 +14,31 @@ class MasterOrchestrator:
     def __init__(self, config: Dict[str, Any]):
         self.config = config
         self._strategy_classes: List[Type[BaseStrategy]] = [
-            TrendRiderStrategy, MeanReversionStrategy, DivergenceSniperStrategy, 
-            PivotReversalStrategy, VolumeCatalystStrategy, IchimokuProStrategy,
-            EmaCrossoverStrategy, BreakoutStrategy, ChandelierTrendStrategy,
-            VolumeReversalStrategy, VwapReversionStrategy, KeltnerBreakoutStrategy,
+            # این لیست کامل استراتژی‌های شماست که از فایل خودتان برداشته شده
+            TrendRiderPro,
+            VwapReversionPro,
+            DivergenceSniperPro,
+            WhaleReversal,
+            VolumeCatalystPro,
+            BreakoutHunter,
+            IchimokuHybridPro,
+            ChandelierTrendRider,
+            KeltnerMomentumBreakout,
+            PivotConfluenceSniper,
+            ConfluenceSniper,
+            # استراتژی‌های قدیمی‌تر یا با نام دیگر برای سازگاری
+            MeanReversionStrategy, 
+            PivotReversalStrategy, 
+            IchimokuProStrategy,
+            EmaCrossoverStrategy, 
+            VolumeReversalStrategy, 
+            VwapReversionStrategy,
             FibStructureStrategy
         ]
         self.gemini_handler = GeminiHandler()
         self.last_gemini_call_time = 0
-        self.ENGINE_VERSION = "18.2.0"
-        logger.info(f"MasterOrchestrator v{self.ENGINE_VERSION} (Full Analysis Output) initialized.")
+        self.ENGINE_VERSION = "20.0.0" # Version bump for Final Architecture
+        logger.info(f"MasterOrchestrator v{self.ENGINE_VERSION} (Final Architecture) initialized.")
 
     def _find_super_signal(self, signals: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
         min_confluence = self.config.get("general", {}).get("min_confluence_for_super_signal", 3)
@@ -62,7 +77,7 @@ class MasterOrchestrator:
         cooldown = self.config.get("general", {}).get('gemini_cooldown_seconds', 300)
         if (time.time() - self.last_gemini_call_time) < cooldown:
             logger.info("Gemini call skipped due to cooldown.")
-            return {"signal": "N/A", "confidence": 0, "explanation_fa": "AI analysis skipped due to cooldown."}
+            return {"signal": "N/A", "confidence_percent": 0, "explanation_fa": "AI analysis skipped due to cooldown."}
 
         prompt_context = {
             "signal_details": {k: v for k, v in signal.items() if k not in ['confirmations', 'strategy_name']},
@@ -70,7 +85,7 @@ class MasterOrchestrator:
             "system_reasons": signal.get('confirmations')
         }
         
-        json_data = json.dumps(prompt_context, indent=2, ensure_ascii=False)
+        json_data = json.dumps(prompt_context, indent=2, ensure_ascii=False, default=str)
         prompt_template = f"""
 شما یک تحلیلگر ارشد و معامله‌گر کوانت (Quantitative Trader) با سال‌ها تجربه در بازارهای ارز دیجیتال هستید. شما به تحلیل‌های مبتنی بر داده، ساختار بازار و مدیریت ریسک تسلط کامل دارید.
 
@@ -98,21 +113,27 @@ class MasterOrchestrator:
         return ai_response
 
     def run_full_pipeline(self, df: pd.DataFrame, symbol: str, timeframe: str) -> Dict[str, Any]:
-        analyzer = IndicatorAnalyzer(df, config=self.config.get('indicators', {}))
+        # ✨ REFINEMENT: The analyzer is now instantiated with the timeframe it's responsible for.
+        analyzer = IndicatorAnalyzer(df, config=self.config.get('indicators', {}), timeframe=timeframe)
         analyzer.calculate_all()
         analysis_summary = analyzer.get_analysis_summary()
         
         valid_signals = []
         strategy_configs = self.config.get('strategies', {})
         for sc in self._strategy_classes:
-            strategy_name_key = sc.__name__
-            strategy_config = strategy_configs.get(strategy_name_key, {})
+            strategy_name = sc.strategy_name # Accessing the class attribute
+            strategy_config = strategy_configs.get(strategy_name, {})
             if strategy_config.get('enabled', True):
-                instance = sc(analysis_summary, strategy_config, htf_analysis=None)
-                signal = instance.check_signal()
-                if signal:
-                    signal['strategy_name'] = instance.strategy_name
-                    valid_signals.append(signal)
+                try:
+                    # htf_analysis را می‌توان در آینده برای تحلیل چندزمانی استراتژی‌ها تکمیل کرد
+                    instance = sc(analysis_summary, strategy_config, htf_analysis=None)
+                    signal = instance.check_signal()
+                    if signal:
+                        signal['strategy_name'] = instance.strategy_name
+                        valid_signals.append(signal)
+                except Exception as e:
+                    logger.error(f"Error running strategy '{strategy_name}': {e}", exc_info=True)
+
 
         if not valid_signals:
             logger.info(f"No valid signals found by any strategy for {symbol} {timeframe}.")
@@ -122,7 +143,7 @@ class MasterOrchestrator:
         qualified_signals = [s for s in valid_signals if s.get('risk_reward_ratio', 0) >= min_rr]
         
         if not qualified_signals:
-            logger.info(f"Signals found for {symbol} but failed R/R quality check.")
+            logger.info(f"Signals found for {symbol} {timeframe} but failed R/R quality check.")
             return {"status": "NEUTRAL", "message": "Signals found but failed R/R quality check.", "full_analysis": analysis_summary}
         
         best_signal = self._find_super_signal(qualified_signals)
