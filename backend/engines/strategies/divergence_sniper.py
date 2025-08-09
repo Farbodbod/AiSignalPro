@@ -1,95 +1,129 @@
 import logging
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from .base_strategy import BaseStrategy
 
 logger = logging.getLogger(__name__)
 
-class DivergenceSniperStrategy(BaseStrategy):
+class DivergenceSniperPro(BaseStrategy):
     """
-    ✨ UPGRADE v3.0 - DivergenceSniperPro ✨
-    یک استراتژی تک‌تیرانداز که واگرایی‌های قوی را شناسایی کرده و آن‌ها را با
-    پیوت‌های ساختاری ZigZag و یک ماشه ورود مبتنی بر مومنتوم (Williams %R) تایید می‌کند.
+    DivergenceSniperPro - Definitive, World-Class, Toolkit-Powered Version
+    -----------------------------------------------------------------------
+    This is a high-precision reversal strategy. It uses a "Confirmation Funnel"
+    to validate a raw divergence signal against multiple market context layers,
+    producing high-probability trading signals.
+    
+    The Funnel:
+    1.  Signal: Find a strong Regular Divergence.
+    2.  Filter 1 (Structure): Confirm the divergence occurred near a key S/R level.
+    3.  Filter 2 (HTF Trend): Ensure the signal is not fighting a strong higher-timeframe trend.
+    4.  Filter 3 (Volume): Confirm significant whale activity supports the move.
+    5.  Trigger: Use Williams %R exiting OB/OS zones as the final momentum trigger for entry.
     """
-
-    def __init__(self, analysis_summary: Dict[str, Any], config: Dict[str, Any] = None, htf_analysis: Optional[Dict[str, Any]] = None):
-        super().__init__(analysis_summary, config, htf_analysis)
-        self.strategy_name = "DivergenceSniperPro"
+    strategy_name: str = "DivergenceSniperPro"
 
     def _get_signal_config(self) -> Dict[str, Any]:
-        """
-        پارامترهای قابل تنظیم استراتژی را از فایل کانفیگ بارگیری می‌کند.
-        """
+        """Loads and validates the strategy's specific parameters from the config."""
         return {
-            "zigzag_deviation": self.config.get("zigzag_deviation", 5.0),
-            "williams_r_oversold_exit": self.config.get("williams_r_oversold_exit", -80),
-            "williams_r_overbought_exit": self.config.get("williams_r_overbought_exit", -20),
+            "htf_confirmation_enabled": self.config.get("htf_confirmation_enabled", True),
+            "htf_timeframe": self.config.get("htf_timeframe", "4h"),
+            "volume_confirmation_enabled": self.config.get("volume_confirmation_enabled", True),
+            "candlestick_confirmation_enabled": self.config.get("candlestick_confirmation_enabled", True),
             "atr_sl_multiplier": self.config.get("atr_sl_multiplier", 1.0)
         }
 
     def check_signal(self) -> Optional[Dict[str, Any]]:
-        # 1. دریافت داده‌ها و کانفیگ
         cfg = self._get_signal_config()
         
-        divergence_data = self.analysis.get('divergence')
-        zigzag_data = self.analysis.get(f'zigzag_{cfg["zigzag_deviation"]}')
-        williams_r_data = self.analysis.get('williams_r')
-        price_data = self.analysis.get('price_data')
-        atr_data = self.analysis.get('atr')
-
-        if not all([divergence_data, zigzag_data, williams_r_data, price_data, atr_data]):
+        # --- Funnel Step 1: Find a valid Divergence Signal ---
+        divergence_data = self.get_indicator('divergence')
+        if not divergence_data or not divergence_data.get('analysis', {}).get('signals'):
             return None
 
-        # 2. بررسی سیگنال اولیه: واگرایی قوی
-        if divergence_data.get('strength') != "Strong":
+        # We are interested in "Regular" divergences for reversals
+        potential_signals = [
+            s for s in divergence_data['analysis']['signals'] 
+            if "Regular" in s.get('type', '')
+        ]
+        if not potential_signals:
             return None
 
-        signal_direction = "BUY" if divergence_data['type'] == "Bullish" else "SELL"
+        divergence = potential_signals[0] # Take the most recent one
+        signal_direction = "BUY" if "Bullish" in divergence['type'] else "SELL"
+        logger.info(f"[{self.strategy_name}] Initial Signal: Found {divergence['type']}.")
         
-        # 3. فیلتر شماره ۱: تایید ساختاری با ZigZag
-        last_pivot = zigzag_data.get('values', {})
-        if not last_pivot: return None
+        # --- Funnel Step 2: Structure Confirmation (S/R Confluence) ---
+        structure_data = self.get_indicator('structure')
+        if not structure_data: return None
+        price_position = structure_data.get('analysis', {}).get('position')
         
-        # آیا نوع واگرایی با نوع آخرین پیوت ZigZag مطابقت دارد؟
-        is_bullish_match = signal_direction == "BUY" and last_pivot.get('last_pivot_type') == 'trough'
-        is_bearish_match = signal_direction == "SELL" and last_pivot.get('last_pivot_type') == 'peak'
+        is_at_support = "Support" in price_position if price_position else False
+        is_at_resistance = "Resistance" in price_position if price_position else False
+
+        if (signal_direction == "BUY" and not is_at_support) or \
+           (signal_direction == "SELL" and not is_at_resistance):
+            logger.info(f"[{self.strategy_name}] Signal REJECTED: Divergence is not at a key support/resistance zone.")
+            return None
+        confirmations = {"divergence_type": divergence['type'], "structure_confirmation": f"Confirmed at {price_position}"}
+
+        # --- Funnel Step 3: Higher-Timeframe Trend Filter (Optional) ---
+        if cfg['htf_confirmation_enabled']:
+            if self._get_trend_confirmation(signal_direction, cfg['htf_timeframe']):
+                logger.info(f"[{self.strategy_name}] Signal REJECTED: Divergence is against a strong HTF trend ({cfg['htf_timeframe']}).")
+                return None # Note: For reversals, we want the HTF trend to NOT be strongly aligned
+            confirmations['htf_filter'] = f"Passed (No strong opposing trend on {cfg['htf_timeframe']})"
+
+        # --- Funnel Step 4: Volume Confirmation (Optional) ---
+        if cfg['volume_confirmation_enabled']:
+            if not self._get_volume_confirmation():
+                logger.info(f"[{self.strategy_name}] Signal REJECTED: Lacks significant volume spike.")
+                return None
+            confirmations['volume_filter'] = "Passed (Whale activity detected)"
+
+        # --- Funnel Step 5: Candlestick Confirmation (Optional) ---
+        if cfg['candlestick_confirmation_enabled']:
+            confirming_pattern = self._get_candlestick_confirmation(signal_direction, min_reliability='Strong')
+            if not confirming_pattern:
+                logger.info(f"[{self.strategy_name}] Signal REJECTED: No strong confirming candlestick pattern.")
+                return None
+            confirmations['candlestick_filter'] = f"Passed (Pattern: {confirming_pattern.get('name')})"
+
+        # --- Final Trigger: Williams %R Momentum ---
+        wr_data = self.get_indicator('williams_r')
+        if not wr_data: return None
+        wr_signal = wr_data.get('analysis', {}).get('crossover_signal', 'Hold')
         
-        if not (is_bullish_match or is_bearish_match):
-            logger.info(f"[{self.strategy_name}] Divergence found, but not confirmed by a ZigZag pivot.")
+        trigger_fired = (signal_direction == "BUY" and "Buy" in wr_signal) or \
+                        (signal_direction == "SELL" and "Sell" in wr_signal)
+        
+        if not trigger_fired:
+            logger.info(f"[{self.strategy_name}] Signal PENDING: All confirmations met, awaiting Williams %R momentum trigger.")
             return None
 
-        # 4. فیلتر شماره ۲: ماشه ورود با Williams %R (خروج از ناحیه اشباع)
-        # این منطق در اندیکاتور Williams %R پیاده‌سازی شده، ما فقط سیگنال آن را چک می‌کنیم
-        if williams_r_data.get('signal') != signal_direction.lower():
-            logger.info(f"[{self.strategy_name}] Divergence & Pivot confirmed, but waiting for Williams %R momentum trigger.")
-            return None
+        logger.info(f"✨✨ [{self.strategy_name}] DIVERGENCE SNIPER SIGNAL CONFIRMED! ✨✨")
 
-        # تایید نهایی با کندل استیک (اختیاری اما مفید)
-        confirming_pattern = self._get_candlestick_confirmation(signal_direction)
-        if not confirming_pattern:
-             return None
+        # --- Risk Management ---
+        entry_price = self.price_data.get('close')
+        atr_data = self.get_indicator('atr')
+        if not entry_price or not atr_data: return None
+        
+        # Use the price of the pivot that formed the divergence for a safer Stop Loss
+        pivot_price = divergence.get('pivots', [{}, {}])[1].get('price')
+        if not pivot_price: return None # Should not happen
 
-        logger.info(f"✨ [{self.strategy_name}] Divergence signal fully confirmed by ZigZag, Williams %R, and Candlestick!")
+        atr_value = atr_data.get('values', {}).get('atr', entry_price * 0.01)
         
-        # 5. محاسبه مدیریت ریسک دقیق
-        entry_price = price_data['close']
-        atr_value = atr_data.get('value')
-        
-        # حد ضرر بر اساس قیمت پیوت ZigZag
-        pivot_price = last_pivot.get('last_pivot_price')
-        stop_loss = pivot_price - (atr_value * cfg['atr_sl_multiplier']) if signal_direction == "BUY" else pivot_price + (atr_value * cfg['atr_sl_multiplier'])
-        
+        if signal_direction == "BUY":
+            stop_loss = pivot_price - (atr_value * cfg['atr_sl_multiplier'])
+        else: # SELL
+            stop_loss = pivot_price + (atr_value * cfg['atr_sl_multiplier'])
+
         risk_params = self._calculate_smart_risk_management(entry_price, signal_direction, stop_loss)
-
-        # 6. آماده‌سازی خروجی نهایی
-        confirmations = {
-            "divergence": f"Strong {divergence_data['type']}",
-            "structure_confirmation": f"Confirmed at ZigZag {last_pivot.get('last_pivot_type')} at {pivot_price}",
-            "momentum_trigger": f"Williams %R crossed out of {'oversold' if signal_direction == 'BUY' else 'overbought'} zone",
-            "candlestick_pattern": confirming_pattern
-        }
+        if not risk_params or not risk_params.get("targets"):
+             logger.info(f"[{self.strategy_name}] Signal REJECTED: Could not calculate valid risk/reward targets.")
+             return None
         
+        # --- Package and Return the Final Signal ---
         return {
-            "strategy_name": self.strategy_name,
             "direction": signal_direction,
             "entry_price": entry_price,
             **risk_params,
