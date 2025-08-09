@@ -6,7 +6,7 @@ logger = logging.getLogger(__name__)
 
 class BaseIndicator(ABC):
     """
-    کلاس پایه انتزاعی (Abstract Base Class) برای تمام اندیکاتورهای AiSignalPro.
+    کلاس پایه انتزاعی (Abstract Base Class) برای تمام اندیکاتورهای AiSignalPro (v2.0 - Final).
     این کلاس یک "قرارداد" استاندارد برای تمام اندیکاتورها تعریف می‌کند تا از
     یکپارچگی و قابلیت اطمینان کل سیستم اطمینان حاصل شود.
     """
@@ -22,10 +22,11 @@ class BaseIndicator(ABC):
         if not isinstance(df, pd.DataFrame) or df.empty:
             raise ValueError("Input must be a non-empty pandas DataFrame.")
         
-        # ما یک کپی از df ذخیره می‌کنیم تا از تغییرات ناخواسته (Side Effects) جلوگیری کنیم.
+        # ما یک کپی از df را در ابتدا ذخیره نمی‌کنیم تا به اندیکاتور اجازه دهیم آن را تغییر دهد
+        # و در نهایت نسخه تغییر یافته را برگرداند.
         self.df = df
-        # پارامترها در self.params ذخیره می‌شوند تا در سراسر کلاس قابل دسترس باشند.
-        # این الگو به ما اجازه می‌دهد تا به راحتی پارامترها را از config بخوانیم.
+        
+        # این الگو به ما اجازه می‌دهد پارامترها را هم به صورت مستقیم و هم داخل یک دیکشنری 'params' ارسال کنیم.
         self.params = kwargs.get('params', kwargs)
         
         logger.debug(f"Initialized {self.__class__.__name__} with params: {self.params}")
@@ -43,5 +44,6 @@ class BaseIndicator(ABC):
         """
         متد انتزاعی برای تحلیل نتیجه اندیکاتور.
         این متد باید آخرین وضعیت را تحلیل کرده و یک دیکشنری استاندارد برگرداند.
+        این متد باید به گونه‌ای طراحی شود که از سوگیری نگاه به آینده (Look-ahead Bias) جلوگیری کند.
         """
         pass
