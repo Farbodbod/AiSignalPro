@@ -5,91 +5,151 @@ logger = logging.getLogger(__name__)
 
 from .base_strategy import BaseStrategy
 
-class PivotReversalStrategy(BaseStrategy):
+class PivotConfluenceSniper(BaseStrategy):
     """
-    ✨ UPGRADE v3.0 - PivotConfluenceSniper ✨
-    یک استراتژی بازگشتی بسیار دقیق که به دنبال تلاقی (Confluence) بین پیوت‌های
-    کلاسیک و سطوح ساختاری بازار می‌گردد و با تایید دوگانه اسیلاتورها و
-    الگوهای کندلی، سیگنال ورود صادر می‌کند.
+    PivotConfluenceSniper - The Legendary, World-Class, Toolkit-Powered Version
+    ----------------------------------------------------------------------------
+    This is a high-precision mean-reversion and reversal strategy. It embodies the
+    philosophy of confluence trading.
+
+    The Funnel:
+    1.  Zone Identification: Find high-probability reversal zones where mathematical
+        Pivot Points coincide with historical price Structure (S/R levels).
+    2.  Price Test: Wait for the price to actively test one of these powerful zones.
+    3.  Filter 1 (Dual Oscillator): Confirm the test with simultaneous Overbought/Oversold
+        readings from both Stochastic and CCI.
+    4.  Filter 2 (Price Action): Require a confirming candlestick reversal pattern
+        at the zone.
+    5.  Risk Management: Place Stop Loss logically behind the confluence structure.
     """
-    def __init__(self, analysis_summary: Dict[str, Any], config: Dict[str, Any] = None, htf_analysis: Optional[Dict[str, Any]] = None):
-        super().__init__(analysis_summary, config, htf_analysis)
-        self.strategy_name = "PivotConfluenceSniper"
+    strategy_name: str = "PivotConfluenceSniper"
 
     def _get_signal_config(self) -> Dict[str, Any]:
-        """
-        پارامترهای قابل تنظیم استراتژی را از فایل کانفیگ بارگیری می‌کند.
-        """
+        """Loads and validates the strategy's specific parameters from the config."""
         return {
             "pivot_levels_to_check": self.config.get("pivot_levels_to_check", ['R2', 'R1', 'S1', 'S2']),
-            "confluence_proximity_percent": self.config.get("confluence_proximity_percent", 0.003), # 0.3%
-            "stoch_oversold": self.config.get("stoch_oversold", 20),
-            "stoch_overbought": self.config.get("stoch_overbought", 80),
-            "cci_oversold": self.config.get("cci_oversold", -100),
-            "cci_overbought": self.config.get("cci_overbought", 100),
-            "atr_sl_multiplier": self.config.get("atr_sl_multiplier", 1.2)
+            "confluence_proximity_percent": float(self.config.get("confluence_proximity_percent", 0.3)), # 0.3%
+            "stoch_oversold": float(self.config.get("stoch_oversold", 25.0)),
+            "stoch_overbought": float(self.config.get("stoch_overbought", 75.0)),
+            "cci_oversold": float(self.config.get("cci_oversold", -100.0)),
+            "cci_overbought": float(self.config.get("cci_overbought", 100.0)),
+            "atr_sl_multiplier": float(self.config.get("atr_sl_multiplier", 1.2)),
+            "min_rr_ratio": float(self.config.get("min_risk_reward_ratio", 1.5)),
         }
-        
-    def _find_confluence_zones(self, pivots_data, structure_data, direction):
-        """متد کمکی برای پیدا کردن نواحی تلاقی."""
+
+    def _find_best_confluence_zone(self, direction: str) -> Optional[Dict[str, Any]]:
+        """
+        Finds all confluence zones and returns the one closest to the current price.
+        """
         cfg = self._get_signal_config()
-        pivot_levels = pivots_data.get('levels', {})
-        structure_levels = structure_data.get('key_levels', {})
-        target_pivots = [p for p in cfg['pivot_levels_to_check'] if p.startswith('S' if direction == "BUY" else 'R')]
-        target_structures = structure_levels.get('supports' if direction == "BUY" else 'resistances', [])
+        pivots_data = self.get_indicator('pivots')
+        structure_data = self.get_indicator('structure')
+        current_price = self.price_data.get('close')
+
+        if not all([pivots_data, structure_data, current_price]): return None
+
+        pivot_levels = {lvl['level']: lvl['price'] for lvl in pivots_data.get('levels', [])}
+        key_levels = structure_data.get('key_levels', {})
+        
+        target_pivot_names = [p for p in cfg['pivot_levels_to_check'] if (p.startswith('S') if direction == "BUY" else p.startswith('R'))]
+        target_structures = key_levels.get('supports' if direction == "BUY" else 'resistances', [])
         
         confluence_zones = []
-        for pivot_name in target_pivots:
+        for pivot_name in target_pivot_names:
             pivot_price = pivot_levels.get(pivot_name)
             if not pivot_price: continue
             for struct_price in target_structures:
-                if abs(pivot_price - struct_price) / struct_price < cfg['confluence_proximity_percent']:
-                    confluence_zones.append({"price": (pivot_price + struct_price) / 2, "pivot_name": pivot_name, "structure_price": struct_price})
-        return confluence_zones
+                # Safe division and proximity check
+                if abs(pivot_price - struct_price) / (struct_price or 1) * 100 < cfg['confluence_proximity_percent']:
+                    zone_price = (pivot_price + struct_price) / 2.0
+                    confluence_zones.append({
+                        "price": zone_price,
+                        "pivot_name": pivot_name,
+                        "structure_price": struct_price,
+                        "distance_to_price": abs(zone_price - current_price)
+                    })
+        
+        # Return the zone with the minimum distance to the current price
+        return min(confluence_zones, key=lambda x: x['distance_to_price']) if confluence_zones else None
 
     def check_signal(self) -> Optional[Dict[str, Any]]:
-        # 1. دریافت داده‌ها
         cfg = self._get_signal_config()
-        pivots_data = self.analysis.get('pivots'); structure_data = self.analysis.get('structure'); stoch_data = self.analysis.get('stochastic'); cci_data = self.analysis.get('cci'); price_data = self.analysis.get('price_data'); atr_data = self.analysis.get('atr')
-        if not all([pivots_data, structure_data, stoch_data, cci_data, price_data, atr_data]): return None
 
-        # 2. پیدا کردن نواحی تلاقی برای هر دو جهت
-        buy_zones = self._find_confluence_zones(pivots_data, structure_data, "BUY")
-        sell_zones = self._find_confluence_zones(pivots_data, structure_data, "SELL")
+        # --- 1. Zone Identification & Price Test ---
+        buy_zone = self._find_best_confluence_zone("BUY")
+        sell_zone = self._find_best_confluence_zone("SELL")
+        price_low, price_high = self.price_data.get('low'), self.price_data.get('high')
         
-        potential_direction, zone_info = (None, None)
+        signal_direction, zone_info = None, None
+        if buy_zone and price_low and price_low <= buy_zone['price']:
+            signal_direction, zone_info = "BUY", buy_zone
+        elif sell_zone and price_high and price_high >= sell_zone['price']:
+            signal_direction, zone_info = "SELL", sell_zone
+        else:
+            return None
         
-        # 3. بررسی تست نواحی و تایید اسیلاتورها
-        if buy_zones and price_data['low'] <= buy_zones[0]['price']:
-            if stoch_data['percent_k'] < cfg['stoch_oversold'] and cci_data['value'] < cfg['cci_oversold']:
-                potential_direction, zone_info = "BUY", buy_zones[0]
-        
-        if not potential_direction and sell_zones and price_data['high'] >= sell_zones[0]['price']:
-            if stoch_data['percent_k'] > cfg['stoch_overbought'] and cci_data['value'] > cfg['cci_overbought']:
-                potential_direction, zone_info = "SELL", sell_zones[0]
+        logger.info(f"[{self.strategy_name}] Potential Signal: Price tested a {signal_direction} confluence zone at {zone_info['price']:.5f}.")
+        confirmations = {"confluence_zone": f"Pivot {zone_info['pivot_name']} & Structure at ~{zone_info['price']:.5f}"}
 
-        if not potential_direction: return None
-        
-        # 4. تایید نهایی با کندل استیک
-        confirming_pattern = self._get_candlestick_confirmation(potential_direction)
-        if not confirming_pattern: return None
-        
-        logger.info(f"✨ [{self.strategy_name}] Confluence Reversal signal for {potential_direction} fully confirmed!")
+        # --- 2. Confirmation Funnel ---
+        # Filter 1: Dual Oscillator Confirmation
+        stoch_data = self.get_indicator('stochastic')
+        cci_data = self.get_indicator('cci')
+        if not all([stoch_data, cci_data]): return None
 
-        # 5. محاسبه مدیریت ریسک
-        entry_price = price_data['close']; atr_value = atr_data.get('value'); stop_loss = None
+        stoch_k = stoch_data.get('values', {}).get('k')
+        cci_val = cci_data.get('values', {}).get('value')
+        if stoch_k is None or cci_val is None: return None
+
+        osc_confirmed = False
+        if signal_direction == "BUY" and stoch_k < cfg['stoch_oversold'] and cci_val < cfg['cci_oversold']:
+            osc_confirmed = True
+        elif signal_direction == "SELL" and stoch_k > cfg['stoch_overbought'] and cci_val > cfg['cci_overbought']:
+            osc_confirmed = True
+
+        if not osc_confirmed:
+            logger.info(f"[{self.strategy_name}] Signal REJECTED: Lack of oscillator confirmation.")
+            return None
+        confirmations['oscillator_filter'] = f"Passed (Stoch: {stoch_k:.2f}, CCI: {cci_val:.2f})"
+
+        # Filter 2: Candlestick Confirmation
+        confirming_pattern = self._get_candlestick_confirmation(signal_direction, min_reliability='Strong')
+        if not confirming_pattern:
+            logger.info(f"[{self.strategy_name}] Signal REJECTED: No strong candlestick confirmation pattern.")
+            return None
+        confirmations['candlestick_filter'] = f"Passed (Pattern: {confirming_pattern.get('name')})"
+
+        # --- 3. Risk Management & Final Checks ---
+        entry_price = self.price_data.get('close')
+        atr_data = self.get_indicator('atr')
+        if not all([entry_price, atr_data]): return None
+
+        atr_value = atr_data.get('values', {}).get('atr', entry_price * 0.01)
         structure_level = zone_info['structure_price']
-        stop_loss = structure_level - (atr_value * cfg['atr_sl_multiplier']) if potential_direction == "BUY" else structure_level + (atr_value * cfg['atr_sl_multiplier'])
-            
-        risk_params = self._calculate_smart_risk_management(entry_price, potential_direction, stop_loss)
-        if pivots_data.get('levels', {}).get('P'): risk_params['targets'][0] = pivots_data['levels']['P']
-
-        # 6. آماده‌سازی خروجی نهایی
-        confirmations = {
-            "confluence_at": round(zone_info['price'], 5),
-            "trigger_level": f"Pivot {zone_info['pivot_name']} + Structure {zone_info['structure_price']}",
-            "oscillator_confirmation": f"Stoch({round(stoch_data['percent_k'],1)}) & CCI({round(cci_data['value'],1)})",
-            "candlestick_pattern": confirming_pattern
-        }
         
-        return {"strategy_name": self.strategy_name, "direction": potential_direction, "entry_price": entry_price, **risk_params, "confirmations": confirmations}
+        stop_loss = structure_level - (atr_value * cfg['atr_sl_multiplier']) if signal_direction == "BUY" else structure_level + (atr_value * cfg['atr_sl_multiplier'])
+            
+        risk_params = self._calculate_smart_risk_management(entry_price, signal_direction, stop_loss)
+        
+        # Pre-Trade R/R Check
+        if not risk_params or risk_params.get("risk_reward_ratio", 0) < cfg['min_rr_ratio']:
+            logger.info(f"[{self.strategy_name}] Signal REJECTED: Initial R/R ratio is below threshold.")
+            return None
+        confirmations['rr_check'] = f"Passed (R/R: {risk_params.get('risk_reward_ratio')})"
+
+        # Optional: Set first target to the Central Pivot
+        pivots_data = self.get_indicator('pivots')
+        pivot_p_level = next((lvl['price'] for lvl in pivots_data.get('levels', []) if lvl['level'] == 'P'), None)
+        if pivot_p_level and risk_params.get('targets'):
+            risk_params['targets'][0] = pivot_p_level
+            confirmations['target_adjustment'] = "TP1 set to Central Pivot"
+            
+        logger.info(f"✨✨ [{self.strategy_name}] PIVOT SNIPER SIGNAL CONFIRMED! ✨✨")
+
+        # --- 4. Package and Return the Legendary Signal ---
+        return {
+            "direction": signal_direction,
+            "entry_price": entry_price,
+            **risk_params,
+            "confirmations": confirmations
+        }
