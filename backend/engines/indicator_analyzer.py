@@ -9,12 +9,9 @@ logger = logging.getLogger(__name__)
 
 class IndicatorAnalyzer:
     """
-    The strategic mastermind of the AiSignalPro project.
-    -----------------------------------------------------
-    This world-class version is a Multi-Timeframe (MTF) Orchestrator.
-    It manages the calculation and analysis of all indicators across multiple
-    timeframes, providing a comprehensive, bias-free, and real-time snapshot
-    of the market, perfectly designed for a fully automated trading system.
+    The strategic mastermind of the AiSignalPro project (v2.2 - Final)
+    This version uses future-proof timeframe strings and ensures all
+    interactions with indicators are stable and efficient.
     """
     def __init__(self, df: pd.DataFrame, config: Dict[str, Any] = None, timeframes: List[str] = None):
         if not isinstance(df, pd.DataFrame) or df.empty:
@@ -24,9 +21,10 @@ class IndicatorAnalyzer:
             
         self.base_df = df
         self.config = config if config is not None else self._get_default_config()
-        self.timeframes = timeframes or ['5T', '15T', '1H', '4H']
         
-        # Dictionary mapping indicator names to their classes
+        # ✨ FIX: Updated timeframe strings to be future-proof (e.g., 'T' -> 'min', 'H' -> 'h')
+        self.timeframes = timeframes or ['5min', '15min', '1h', '4h']
+        
         self._indicator_classes: Dict[str, Type[BaseIndicator]] = {
             'rsi': RsiIndicator, 'macd': MacdIndicator, 'bollinger': BollingerIndicator,
             'ichimoku': IchimokuIndicator, 'adx': AdxIndicator, 'supertrend': SuperTrendIndicator,
@@ -40,19 +38,20 @@ class IndicatorAnalyzer:
             'kelt_channel': KeltnerChannelIndicator, 'zigzag': ZigzagIndicator,
             'fibonacci': FibonacciIndicator,
         }
-        # A nested dictionary to store instances: { '1H': { 'rsi': RsiInstance, ... }, '4H': { ... } }
         self._indicator_instances: Dict[str, Dict[str, BaseIndicator]] = {tf: {} for tf in self.timeframes}
         self.final_df = self.base_df.copy()
 
     def _get_default_config(self) -> Dict[str, Any]:
-        # A more complete default config for our world-class indicators
+        # This is a sample config and should be completed with all indicator defaults
         return {
             'rsi': {'period': 14, 'enabled': True},
             'macd': {'fast_period': 12, 'slow_period': 26, 'signal_period': 9, 'enabled': True},
             'bollinger': {'period': 20, 'std_dev': 2.0, 'enabled': True},
             'supertrend': {'period': 10, 'multiplier': 3.0, 'enabled': True},
             'ichimoku': {'enabled': True},
-            # ... add other indicator defaults here
+            'structure': {'zigzag_deviation': 3.0, 'enabled': True},
+            'fibonacci': {'zigzag_deviation': 3.0, 'enabled': True},
+            'divergence': {'enabled': True},
         }
 
     def calculate_all(self) -> pd.DataFrame:
@@ -61,8 +60,6 @@ class IndicatorAnalyzer:
         This method follows the "Calculate Once" principle.
         """
         logger.info(f"Starting MTF calculation for timeframes: {self.timeframes}")
-        
-        # We work on a copy to aggregate all indicator columns
         df_with_all_indicators = self.base_df.copy()
 
         for tf in self.timeframes:
@@ -74,12 +71,11 @@ class IndicatorAnalyzer:
                         logger.warning(f"Indicator class '{name}' not found.")
                         continue
                     try:
-                        # Create instance with the base_df and pass the timeframe parameter
                         instance_params = {k:v for k,v in params.items() if k != 'enabled'}
                         instance_params['timeframe'] = tf
                         
-                        instance = indicator_class(self.base_df, params=instance_params)
-                        instance.calculate()
+                        # The calculate method returns the instance with the updated df
+                        instance = indicator_class(self.base_df, params=instance_params).calculate()
                         
                         # Merge the newly calculated columns into our main df
                         for col in instance.df.columns:
@@ -104,10 +100,8 @@ class IndicatorAnalyzer:
         if len(self.final_df) < 2:
             return {"status": "Insufficient Data"}
         
-        # The summary will be nested by timeframe
         summary: Dict[str, Any] = {"status": "OK"}
         
-        # --- Price data is based on the base timeframe's last closed candle ---
         last_closed_candle = self.base_df.iloc[-2]
         summary['price_data'] = {
             'close': last_closed_candle.get('close'),
@@ -118,8 +112,6 @@ class IndicatorAnalyzer:
             tf_summary = {}
             for name, instance in instances.items():
                 try:
-                    # Each indicator's analyze() method is already bias-free.
-                    # We simply call it on the stored instance.
                     analysis = instance.analyze()
                     if analysis:
                         tf_summary[name] = analysis
