@@ -10,11 +10,12 @@ logger = logging.getLogger(__name__)
 
 class DonchianChannelIndicator(BaseIndicator):
     """
-    Donchian Channel - Definitive, World-Class Version (v3.1 - Harmonized Edition)
+    Donchian Channel - Definitive, World-Class Version (v3.2 - Final & Harmonized)
     ----------------------------------------------------------------------------------
     This version correctly identifies its ATR dependency column using a standardized
     naming convention. The internal resampling logic has been removed to align with
-    the IndicatorAnalyzer's single-timeframe calculation architecture.
+    the IndicatorAnalyzer's single-timeframe calculation architecture. It also
+    includes robust error handling for missing ATR columns in the analyze method.
     """
     dependencies = ['atr']
 
@@ -57,7 +58,7 @@ class DonchianChannelIndicator(BaseIndicator):
     def analyze(self) -> Dict[str, Any]:
         """
         Analyzes for breakouts, applying an ATR filter if configured and available.
-        FIX: Uses the standardized ATR naming method.
+        FIX: Uses the standardized ATR naming method and handles missing columns gracefully.
         """
         required_cols = [self.upper_col, self.lower_col, 'close']
         valid_df = self.df.dropna(subset=required_cols)
@@ -78,6 +79,7 @@ class DonchianChannelIndicator(BaseIndicator):
             # FIX: Use the standardized method to get the ATR column name
             atr_col_name = AtrIndicator._get_atr_col_name(self.atr_period, self.timeframe)
             
+            # --- ✨ اصلاح اصلی: بررسی وجود ستون ATR و مقادیر NaN ---
             if atr_col_name in last and pd.notna(last[atr_col_name]):
                 last_atr_val = last[atr_col_name]
                 # A simple volatility threshold: e.g., breakout is only valid if ATR is at least 0.5% of the price
@@ -85,7 +87,7 @@ class DonchianChannelIndicator(BaseIndicator):
                 if last_atr_val < atr_threshold:
                     atr_filter_passed, message, signal = False, message + " (Signal Ignored: Low Volatility)", "Neutral"
             else:
-                atr_filter_passed, message, signal = False, message + f" (Signal Ignored: ATR column '{atr_col_name}' missing)", "Neutral"
+                atr_filter_passed, message, signal = False, message + f" (Signal Ignored: ATR column '{atr_col_name}' missing or NaN)", "Neutral"
         
         return {
             "status": "OK",
