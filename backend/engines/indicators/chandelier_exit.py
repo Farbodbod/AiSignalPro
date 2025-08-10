@@ -3,17 +3,19 @@ import numpy as np
 import logging
 from typing import Dict, Any
 
-# اطمینان حاصل کنید که این اندیکاتورها از فایل‌های مربوطه و در نسخه‌های نهایی خود وارد شده‌اند
 from .base import BaseIndicator
-from .atr import AtrIndicator # وابستگی به اندیکاتور ATR کلاس جهانی
+# ✨ REFINEMENT: The indicator itself no longer needs to import its dependencies.
 
 logger = logging.getLogger(__name__)
 
 class ChandelierExitIndicator(BaseIndicator):
     """
-    Chandelier Exit - Definitive, MTF, and World-Class Version (v2.1 - Bugfix)
-    -------------------------------------------------------------------------
-    This version includes a critical bug fix in the dependency call to AtrIndicator.
+    Chandelier Exit - Definitive, MTF & World-Class Version (v3.0 - No Internal Deps)
+    ----------------------------------------------------------------------------------
+    This version adheres to the final AiSignalPro architecture. It does not
+    calculate its own dependencies. Instead, it relies on the IndicatorAnalyzer
+    to provide the necessary ATR column, making it a pure, efficient, and
+    robust calculation engine.
     """
     def __init__(self, df: pd.DataFrame, **kwargs):
         super().__init__(df, **kwargs)
@@ -30,23 +32,34 @@ class ChandelierExitIndicator(BaseIndicator):
         self.short_stop_col = f'chandelier_short_stop{suffix}'
         
     def calculate(self) -> 'ChandelierExitIndicator':
-        """Calculates the Chandelier Exit lines, handling MTF internally."""
+        """
+        Calculates the Chandelier Exit lines, assuming the ATR column is already present.
+        """
         base_df = self.df
         
         if self.timeframe:
             if not isinstance(base_df.index, pd.DatetimeIndex): raise TypeError("DatetimeIndex required for MTF.")
-            rules = {'open': 'first', 'high': 'max', 'low': 'min', 'close': 'last'}
+            rules = {'open': 'first', 'high': 'max', 'low': 'min', 'close': 'last', 'volume': 'sum'}
             calc_df = base_df.resample(self.timeframe, label='right', closed='right').apply(rules).dropna()
         else:
             calc_df = base_df.copy()
 
-        if len(calc_df) < self.atr_period: logger.warning(f"Not enough data for Chandelier Exit on {self.timeframe or 'base'}."); return self
+        if len(calc_df) < self.atr_period:
+            logger.warning(f"Not enough data for Chandelier Exit on {self.timeframe or 'base'}.")
+            # Ensure columns exist even if we can't calculate, to prevent KeyErrors later
+            self.df[self.long_stop_col] = np.nan
+            self.df[self.short_stop_col] = np.nan
+            return self
 
-        # ✨ FIX: Correctly handle the return from AtrIndicator.calculate()
-        atr_params = {'period': self.atr_period, 'timeframe': None}
-        atr_instance = AtrIndicator(calc_df, params=atr_params).calculate()
-        calc_df_with_atr = atr_instance.df
-        atr_values = calc_df_with_atr[atr_instance.atr_col]
+        # ✨ THE MIRACLE FIX: No internal dependency calls.
+        # It now expects the ATR column to have been pre-calculated by the Analyzer.
+        atr_col_name = f'atr_{self.atr_period}'
+        if self.timeframe: atr_col_name += f'_{self.timeframe}'
+        
+        if atr_col_name not in calc_df.columns:
+            raise ValueError(f"Required ATR column '{atr_col_name}' not found for Chandelier Exit calculation. Ensure ATR is calculated first by the Analyzer.")
+
+        atr_values = calc_df[atr_col_name]
         
         # --- Core Chandelier Calculation ---
         highest_high = calc_df['high'].rolling(window=self.atr_period).max()
@@ -71,13 +84,36 @@ class ChandelierExitIndicator(BaseIndicator):
         return self
 
     def analyze(self) -> Dict[str, Any]:
-        # ... (بخش analyze کامل و بدون تغییر است) ...
+        """ Provides a bias-free analysis of the price relative to the exit lines. """
         required_cols = [self.long_stop_col, self.short_stop_col, 'close']
         valid_df = self.df.dropna(subset=required_cols)
         if len(valid_df) < 2: return {"status": "Insufficient Data", "analysis": {}}
-        last = valid_df.iloc[-1]; prev = valid_df.iloc[-2]
-        close_price = last['close']; long_stop = last[self.long_stop_col]; short_stop = last[self.short_stop_col]
-        signal = "Hold"; message = "Price is between the Chandelier Exit stops."
-        if prev['close'] >= prev[self.long_stop_col] and close_price < long_stop: signal, message = "Exit Long", f"Price closed below the Long Stop at {round(long_stop, 5)}."
-        elif prev['close'] <= prev[self.short_stop_col] and close_price > short_stop: signal, message = "Exit Short", f"Price closed above the Short Stop at {round(short_stop, 5)}."
-        return { "status": "OK", "timeframe": self.timeframe or 'Base', "values": { "close": round(close_price, 5), "long_stop": round(long_stop, 5), "short_stop": round(short_stop, 5) }, "analysis": { "signal": signal, "message": message } }
+        
+        last = valid_df.iloc[-1]
+        prev = valid_df.iloc[-2]
+        
+        close_price = last['close']
+        long_stop = last[self.long_stop_col]
+        short_stop = last[self.short_stop_col]
+        
+        signal = "Hold"
+        message = "Price is between the Chandelier Exit stops."
+        
+        if prev['close'] >= prev[self.long_stop_col] and close_price < long_stop:
+            signal, message = "Exit Long", f"Price closed below the Long Stop at {round(long_stop, 5)}."
+        elif prev['close'] <= prev[self.short_stop_col] and close_price > short_stop:
+            signal, message = "Exit Short", f"Price closed above the Short Stop at {round(short_stop, 5)}."
+            
+        return {
+            "status": "OK",
+            "timeframe": self.timeframe or 'Base',
+            "values": {
+                "close": round(close_price, 5),
+                "long_stop": round(long_stop, 5),
+                "short_stop": round(short_stop, 5)
+            },
+            "analysis": {
+                "signal": signal,
+                "message": message
+            }
+        }
