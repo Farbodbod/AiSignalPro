@@ -9,10 +9,11 @@ logger = logging.getLogger(__name__)
 
 class WilliamsRIndicator(BaseIndicator):
     """
-    Williams %R - Definitive, MTF, and Divergence-Detection World-Class Version (v3.0 - No Internal Deps)
-    ------------------------------------------------------------------------------------------------------
+    Williams %R - Definitive, World-Class Version (v4.0 - Final Architecture)
+    -------------------------------------------------------------------------
     This advanced version provides a multi-faceted analysis of momentum by consuming
-    pre-calculated ZigZag columns for its powerful, fully-implemented divergence detection feature.
+    pre-calculated ZigZag columns for its powerful, fully-implemented divergence
+    detection feature. It adheres to the final AiSignalPro architecture.
     """
     dependencies = ['zigzag']
 
@@ -45,26 +46,19 @@ class WilliamsRIndicator(BaseIndicator):
         return res
 
     def calculate(self) -> 'WilliamsRIndicator':
-        """Calculates Williams %R, assuming ZigZag is pre-calculated if needed."""
-        base_df = self.df
-        if self.timeframe:
-            rules = {'open': 'first', 'high': 'max', 'low': 'min', 'close': 'last'}
-            calc_df = base_df.resample(self.timeframe, label='right', closed='right').apply(rules).dropna()
-        else:
-            calc_df = base_df.copy()
+        """
+        ✨ FINAL ARCHITECTURE: No resampling. Just pure calculation.
+        """
+        df_for_calc = self.df
 
-        if len(calc_df) < self.period:
+        if len(df_for_calc) < self.period:
             logger.warning(f"Not enough data for Williams %R on {self.timeframe or 'base'}.")
             self.df[self.wr_col] = np.nan
             return self
 
-        wr_results = self._calculate_wr(calc_df)
+        wr_results = self._calculate_wr(df_for_calc)
         
-        if self.timeframe:
-            final_results = wr_results.reindex(base_df.index, method='ffill')
-            self.df[self.wr_col] = final_results[self.wr_col]
-        else:
-            self.df[self.wr_col] = wr_results[self.wr_col]
+        self.df[self.wr_col] = wr_results[self.wr_col]
             
         return self
     
