@@ -3,26 +3,31 @@ from typing import Dict, Any, Optional, List
 
 class BaseStrategy(ABC):
     """
-    World-Class Base Strategy - The Strategy Toolkit for AiSignalPro (v3.2 - Final)
-    --------------------------------------------------------------------------------
+    World-Class Base Strategy - The Strategy Toolkit for AiSignalPro (v3.2 - Bulletproof & Final)
+    ---------------------------------------------------------------------------------------------
     This final, complete version is fully harmonized with the entire AiSignalPro
-    ecosystem. It's a robust toolkit for building powerful, multi-timeframe strategies.
+    ecosystem. It's a robust toolkit for building powerful, multi-timeframe strategies,
+    featuring a bulletproof risk management method.
     """
     strategy_name: str = "BaseStrategy"
 
-    def __init__(self, analysis_summary: Dict[str, Any], config: Dict[str, Any], htf_analysis: Optional[Dict[str, Any]] = None):
+    def __init__(self, primary_analysis: Dict[str, Any], config: Dict[str, Any], primary_timeframe: str, htf_analysis: Optional[Dict[str, Any]] = None):
         """
-        Initializes the strategy with its primary analysis and optional HTF analysis.
+        Initializes the strategy with its primary analysis, its own timeframe context,
+        and optional HTF analysis.
         """
-        self.analysis = analysis_summary
+        self.analysis = primary_analysis
         self.config = config or {}
-        self.htf_analysis = htf_analysis or {} # Ensure it's always a dict
-        
-        # ✨ REFINED: price_data is now correctly and safely extracted from the analysis summary
+        self.htf_analysis = htf_analysis or {}
+        self.primary_timeframe = primary_timeframe
         self.price_data = self.analysis.get('price_data', {})
 
     @abstractmethod
     def check_signal(self) -> Optional[Dict[str, Any]]:
+        """
+        The main method to be implemented by child strategies.
+        It should return a signal package if conditions are met, otherwise None.
+        """
         pass
 
     # --- TOOLKIT: HELPER METHODS FOR STRATEGIES ---
@@ -68,6 +73,11 @@ class BaseStrategy(ABC):
         return is_whale_activity and spike_score >= min_spike_score
 
     def _calculate_smart_risk_management(self, entry_price: float, direction: str, stop_loss: float) -> Dict[str, Any]:
+        """
+        Calculates stop-loss and take-profit targets.
+        It prioritizes structural S/R levels and falls back to R/R ratios.
+        This version is bulletproof against unexpected data types.
+        """
         if not all([entry_price, direction, stop_loss]) or entry_price == stop_loss: return {"stop_loss": stop_loss, "targets": [], "risk_reward_ratio": 0}
         risk_amount = abs(entry_price - stop_loss)
         if risk_amount < 1e-9: return {"stop_loss": stop_loss, "targets": [], "risk_reward_ratio": 0}
@@ -75,14 +85,21 @@ class BaseStrategy(ABC):
         structure_data = self.get_indicator('structure')
         key_levels = structure_data.get('key_levels', {}) if structure_data else {}
         targets = []
-        if direction.upper() == 'BUY':
-            resistances = sorted([r for r in key_levels.get('resistances', []) if r > entry_price])
-            targets = resistances[:3]
-        elif direction.upper() == 'SELL':
-            supports = sorted([s for s in key_levels.get('supports', []) if s < entry_price], reverse=True)
-            targets = supports[:3]
+        
+        # ✨ BULLETPROOF FIX: Explicitly convert S/R levels to a sorted list to prevent any TypeErrors.
+        resistances_raw = key_levels.get('resistances', [])
+        supports_raw = key_levels.get('supports', [])
+        
+        resistances = sorted([r for r in list(resistances_raw) if isinstance(r, (int, float))])
+        supports = sorted([s for s in list(supports_raw) if isinstance(s, (int, float))], reverse=True)
 
-        # ✨ REFINEMENT: Fallback R/R ratios are now configurable
+        if direction.upper() == 'BUY':
+            structural_targets = [r for r in resistances if r > entry_price][:3]
+            targets = structural_targets
+        elif direction.upper() == 'SELL':
+            structural_targets = [s for s in supports if s < entry_price][:3]
+            targets = structural_targets
+
         if not targets:
             reward_ratios = self.config.get('reward_tp_ratios', [1.5, 3.0, 5.0])
             targets = [entry_price + (risk_amount * r if direction.upper() == 'BUY' else -risk_amount * r) for r in reward_ratios]
