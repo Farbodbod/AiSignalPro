@@ -17,6 +17,8 @@ class ChandelierExitIndicator(BaseIndicator):
     to provide the necessary ATR column, making it a pure, efficient, and
     robust calculation engine.
     """
+    dependencies = ['atr']
+
     def __init__(self, df: pd.DataFrame, **kwargs):
         super().__init__(df, **kwargs)
         # --- Parameters ---
