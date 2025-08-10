@@ -8,8 +8,8 @@
       "DOGE/USDT"
     ],
     "timeframes_to_analyze": [
-      "5min",
-      "15min",
+      "5m",
+      "15m",
       "1h",
       "4h"
     ],
@@ -22,8 +22,8 @@
   "signal_cache": {
     "default_ttl_hours": 8,
     "ttl_map_hours": {
-      "5min": 2,
-      "15min": 4,
+      "5m": 2,
+      "15m": 4,
       "1h": 8,
       "4h": 24,
       "1d": 72
@@ -48,12 +48,12 @@
     "adx": { "enabled": true, "period": 14 },
     "atr": { "enabled": true, "period": 14 },
     "bollinger": { "enabled": true, "period": 20, "std_dev": 2.0, "squeeze_lookback": 120, "squeeze_threshold": 1.1 },
-    "cci": { "enabled": true, "period": 20, "use_adaptive_thresholds": true, "adaptive_multiplier": 2.0, "overbought": 100, "oversold": -100 },
+    "cci": { "enabled": true, "period": 20, "use_adaptive_thresholds": true, "adaptive_multiplier": 2.0 },
     "chandelier_exit": { "enabled": true, "atr_period": 22, "atr_multiplier": 3.0 },
     "donchian_channel": { "enabled": true, "period": 20, "use_atr_filter": true, "atr_period": 14 },
     "ema_cross": { "enabled": true, "short_period": 9, "long_period": 21 },
-    "fast_ma": { "enabled": true, "period": 50, "ma_type": "DEMA", "slope_threshold": 0.0005 },
-    "ichimoku": { "enabled": true, "tenkan_period": 9, "kijun_period": 26, "senkou_b_period": 52 },
+    "fast_ma": { "enabled": true, "period": 50, "ma_type": "DEMA" },
+    "ichimoku": { "enabled": true },
     "keltner_channel": { "enabled": true, "ema_period": 20, "atr_period": 10, "atr_multiplier": 2.0, "squeeze_period": 50 },
     "macd": { "enabled": true, "fast_period": 12, "slow_period": 26, "signal_period": 9 },
     "mfi": { "enabled": true, "period": 14, "detect_divergence": true, "zigzag_deviation": 3.0 },
@@ -76,7 +76,7 @@
     "VwapMeanReversion": { "enabled": true, "oscillator_logic": "AND", "use_rsi": true, "rsi_oversold": 30, "use_williams_r": true, "williams_r_oversold": -80, "min_rr_ratio": 1.0 },
     "DivergenceSniperPro": { "enabled": true, "htf_confirmation_enabled": true, "htf_timeframe": "4h", "volume_confirmation_enabled": true, "candlestick_confirmation_enabled": true },
     "WhaleReversal": { "enabled": true, "proximity_percent": 0.5, "min_rr_ratio": 1.5, "htf_confirmation_enabled": false },
-    "VolumeCatalystPro": { "enabled": true, "min_rr_ratio": 1.5, "htf_confirmation_enabled": true },
+    "VolumeCatalystPro": { "enabled": true, "cci_threshold": 100.0, "min_rr_ratio": 1.5, "htf_confirmation_enabled": true },
     "BreakoutHunter": { "enabled": true, "min_rr_ratio": 1.5, "htf_confirmation_enabled": true },
     "IchimokuHybridPro": { "enabled": true, "min_score_to_signal": 5, "min_adx_strength": 23.0, "min_rr_ratio": 1.5 },
     "ChandelierTrendRider": { "enabled": true, "min_adx_strength": 25.0, "min_rr_ratio": 1.2 },
