@@ -1,20 +1,20 @@
 import pandas as pd
 import numpy as np
 import logging
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 from .base import BaseIndicator
+from .atr import AtrIndicator # FIX: Import AtrIndicator to access the standardized naming method
 
 logger = logging.getLogger(__name__)
 
 class DonchianChannelIndicator(BaseIndicator):
     """
-    Donchian Channel - Definitive, MTF & World-Class Version (v3.0 - No Internal Deps)
+    Donchian Channel - Definitive, World-Class Version (v3.1 - Harmonized Edition)
     ----------------------------------------------------------------------------------
-    This version adheres to the final AiSignalPro architecture. It does not
-    calculate its own dependencies. Instead, its analyze() method consumes the
-    pre-calculated ATR column provided by the IndicatorAnalyzer for its optional
-    volatility filter.
+    This version correctly identifies its ATR dependency column using a standardized
+    naming convention. The internal resampling logic has been removed to align with
+    the IndicatorAnalyzer's single-timeframe calculation architecture.
     """
     dependencies = ['atr']
 
@@ -34,46 +34,30 @@ class DonchianChannelIndicator(BaseIndicator):
 
     def calculate(self) -> 'DonchianChannelIndicator':
         """
-        Calculates the Donchian Channel bands. It no longer calculates ATR internally.
+        ✨ FINAL ARCHITECTURE: No resampling. Just pure calculation.
         """
-        base_df = self.df
-        if self.timeframe:
-            rules = {'open': 'first', 'high': 'max', 'low': 'min', 'close': 'last', 'volume': 'sum'}
-            calc_df = base_df.resample(self.timeframe, label='right', closed='right').apply(rules).dropna()
-        else:
-            calc_df = base_df.copy()
+        df_for_calc = self.df
         
-        if len(calc_df) < self.period:
+        if len(df_for_calc) < self.period:
             logger.warning(f"Not enough data for Donchian on {self.timeframe or 'base'}.")
             self.df[self.upper_col] = np.nan; self.df[self.lower_col] = np.nan; self.df[self.middle_col] = np.nan
             return self
 
         # --- Core Donchian Calculation ---
-        upper_band = calc_df['high'].rolling(window=self.period).max()
-        lower_band = calc_df['low'].rolling(window=self.period).min()
+        upper_band = df_for_calc['high'].rolling(window=self.period).max()
+        lower_band = df_for_calc['low'].rolling(window=self.period).min()
         middle_band = (upper_band + lower_band) / 2
         
-        results_df = pd.DataFrame(index=calc_df.index)
-        results_df[self.upper_col] = upper_band
-        results_df[self.lower_col] = lower_band
-        results_df[self.middle_col] = middle_band
-
-        # --- Map results back to the original dataframe if MTF ---
-        if self.timeframe:
-            final_results = results_df.reindex(base_df.index, method='ffill')
-            self.df[self.upper_col] = final_results[self.upper_col]
-            self.df[self.lower_col] = final_results[self.lower_col]
-            self.df[self.middle_col] = final_results[self.middle_col]
-        else:
-            self.df[self.upper_col] = results_df[self.upper_col]
-            self.df[self.lower_col] = results_df[self.lower_col]
-            self.df[self.middle_col] = results_df[self.middle_col]
+        self.df[self.upper_col] = upper_band
+        self.df[self.lower_col] = lower_band
+        self.df[self.middle_col] = middle_band
             
         return self
 
     def analyze(self) -> Dict[str, Any]:
         """
         Analyzes for breakouts, applying an ATR filter if configured and available.
+        FIX: Uses the standardized ATR naming method.
         """
         required_cols = [self.upper_col, self.lower_col, 'close']
         valid_df = self.df.dropna(subset=required_cols)
@@ -91,8 +75,8 @@ class DonchianChannelIndicator(BaseIndicator):
         # --- ✨ FINAL ARCHITECTURE: ATR Filter (Consumer Logic) ---
         atr_filter_passed, last_atr_val = True, None
         if self.use_atr_filter and signal != "Neutral":
-            atr_col_name = f'atr_{self.atr_period}'
-            if self.timeframe: atr_col_name += f'_{self.timeframe}'
+            # FIX: Use the standardized method to get the ATR column name
+            atr_col_name = AtrIndicator._get_atr_col_name(self.atr_period, self.timeframe)
             
             if atr_col_name in last and pd.notna(last[atr_col_name]):
                 last_atr_val = last[atr_col_name]
@@ -101,7 +85,6 @@ class DonchianChannelIndicator(BaseIndicator):
                 if last_atr_val < atr_threshold:
                     atr_filter_passed, message, signal = False, message + " (Signal Ignored: Low Volatility)", "Neutral"
             else:
-                # If the column is not found, the filter fails.
                 atr_filter_passed, message, signal = False, message + f" (Signal Ignored: ATR column '{atr_col_name}' missing)", "Neutral"
         
         return {
