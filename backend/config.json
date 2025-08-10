@@ -13,7 +13,7 @@
       "1h",
       "4h"
     ],
-    "poll_interval_seconds": 300,
+    "poll_interval_seconds": 900,
     "max_concurrent_tasks": 5,
     "gemini_cooldown_seconds": 300,
     "min_confluence_for_super_signal": 3,
