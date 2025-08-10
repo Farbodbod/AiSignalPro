@@ -16,6 +16,8 @@ class KeltnerChannelIndicator(BaseIndicator):
     column provided by the IndicatorAnalyzer, making it a pure, efficient, and
     robust calculation engine for volatility channels and squeezes.
     """
+    dependencies = ['atr']
+
     def __init__(self, df: pd.DataFrame, **kwargs):
         super().__init__(df, **kwargs)
         self.params = kwargs.get('params', {})
