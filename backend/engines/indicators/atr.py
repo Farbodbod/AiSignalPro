@@ -1,7 +1,7 @@
 import pandas as pd
 import numpy as np
 import logging
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 from .base import BaseIndicator
 
@@ -9,13 +9,12 @@ logger = logging.getLogger(__name__)
 
 class AtrIndicator(BaseIndicator):
     """
-    ATR Indicator - Definitive, World-Class Version (v4.0 - Final Architecture)
+    ATR Indicator - Definitive, World-Class Version (v4.1 - Harmonized Edition)
     ---------------------------------------------------------------------------
-    This version adheres to the final AiSignalPro architecture. It performs its
-    calculations on the pre-resampled dataframe provided by the IndicatorAnalyzer,
-    making it a pure, efficient, and powerful volatility analysis engine.
+    This version includes a standardized naming convention for its output columns,
+    ensuring seamless integration with other dependent indicators like SuperTrend and Chandelier Exit.
     """
-    dependencies: list = [] # ATR has no internal dependencies on other indicators
+    dependencies: list = []
 
     def __init__(self, df: pd.DataFrame, **kwargs):
         super().__init__(df, **kwargs)
@@ -28,15 +27,25 @@ class AtrIndicator(BaseIndicator):
             'high_max': 5.0
         })
 
-        suffix = f'_{self.period}'
-        if self.timeframe: suffix += f'_{self.timeframe}'
-        self.atr_col = f'atr{suffix}'
-        self.atr_pct_col = f'atr_pct{suffix}'
+        # FIX: Use the new standardized method for column names
+        self.atr_col = self._get_atr_col_name(self.period, self.timeframe)
+        self.atr_pct_col = f'atr_pct_{self.period}'
+        if self.timeframe: self.atr_pct_col += f'_{self.timeframe}'
+        
+    @staticmethod
+    def _get_atr_col_name(period: int, timeframe: Optional[str] = None) -> str:
+        """
+        Provides a standardized way to generate the ATR column name.
+        This method will be used by all dependent indicators to ensure consistency.
+        """
+        name = f'atr_{period}'
+        if timeframe:
+            name += f'_{timeframe}'
+        return name
 
     def calculate(self) -> 'AtrIndicator':
         """
         ✨ FINAL ARCHITECTURE: No resampling. Just pure calculation.
-        The dataframe received is already at the correct timeframe.
         """
         df_for_calc = self.df
         
@@ -66,7 +75,6 @@ class AtrIndicator(BaseIndicator):
     def analyze(self) -> Dict[str, Any]:
         """
         Provides an intelligent classification of the current market volatility.
-        This powerful analysis logic remains unchanged.
         """
         required_cols = [self.atr_col, self.atr_pct_col]
         valid_df = self.df.dropna(subset=required_cols)
