@@ -9,10 +9,11 @@ logger = logging.getLogger(__name__)
 
 class MfiIndicator(BaseIndicator):
     """
-    Money Flow Index (MFI) - Definitive, MTF, and Divergence-Detection World-Class Version (v3.0 - No Internal Deps)
-    ---------------------------------------------------------------------------------------------------------------
-    This version adheres to the final AiSignalPro architecture. Its calculate() method is purely
-    focused on MFI. The analyze() method consumes pre-calculated ZigZag columns to detect divergences.
+    Money Flow Index (MFI) - Definitive, World-Class Version (v3.1 - Final Architecture)
+    -------------------------------------------------------------------------------------
+    This version adheres to the final AiSignalPro architecture. Its calculate() method is
+    purely focused on MFI. The analyze() method consumes pre-calculated ZigZag columns
+    to provide its powerful divergence detection feature.
     """
     dependencies = ['zigzag']
 
@@ -36,6 +37,7 @@ class MfiIndicator(BaseIndicator):
     def _calculate_mfi(self, df: pd.DataFrame) -> pd.DataFrame:
         """The core, technically correct MFI calculation logic."""
         res = pd.DataFrame(index=df.index)
+        
         tp = (df['high'] + df['low'] + df['close']) / 3
         raw_money_flow = tp * df['volume']
         price_diff = tp.diff(1)
@@ -53,26 +55,20 @@ class MfiIndicator(BaseIndicator):
         return res
 
     def calculate(self) -> 'MfiIndicator':
-        """Calculates only the MFI value, without internal dependencies."""
-        base_df = self.df
-        if self.timeframe:
-            rules = {'open': 'first', 'high': 'max', 'low': 'min', 'close': 'last', 'volume':'sum'}
-            calc_df = base_df.resample(self.timeframe, label='right', closed='right').apply(rules).dropna()
-        else:
-            calc_df = base_df.copy()
+        """
+        ✨ FINAL ARCHITECTURE: No resampling. Just pure calculation.
+        Calculates only the MFI value, assuming dependencies are pre-calculated.
+        """
+        df_for_calc = self.df
             
-        if len(calc_df) < self.period:
+        if len(df_for_calc) < self.period:
             logger.warning(f"Not enough data for MFI on {self.timeframe or 'base'}.")
             self.df[self.mfi_col] = np.nan
             return self
 
-        mfi_results = self._calculate_mfi(calc_df)
+        mfi_results = self._calculate_mfi(df_for_calc)
         
-        if self.timeframe:
-            final_results = mfi_results.reindex(base_df.index, method='ffill')
-            self.df[self.mfi_col] = final_results[self.mfi_col]
-        else:
-            self.df[self.mfi_col] = mfi_results[self.mfi_col]
+        self.df[self.mfi_col] = mfi_results[self.mfi_col]
             
         return self
     
