@@ -3,24 +3,23 @@ import numpy as np
 import logging
 from typing import Dict, Any
 
-# اطمینان حاصل کنید که این اندیکاتور از فایل مربوطه وارد شده‌ است
 from .base import BaseIndicator
 
 logger = logging.getLogger(__name__)
 
 class BollingerIndicator(BaseIndicator):
     """
-    Bollinger Bands - Definitive, Trading-Safe, MTF & World-Class Version
-    ----------------------------------------------------------------------
-    This version is the final standard for the AiSignalPro project, featuring:
-    - Technically precise calculations (std with ddof=0) for cross-platform consistency.
-    - Bias-free analysis logic, safe for backtesting and live trading.
-    - The standard, encapsulated MTF architecture.
-    - Advanced, configurable volatility squeeze detection.
+    Bollinger Bands - Definitive, World-Class Version (v4.0 - Final Architecture)
+    -----------------------------------------------------------------------------
+    This version adheres to the final AiSignalPro architecture. It performs its
+    calculations on the pre-resampled dataframe provided by the IndicatorAnalyzer,
+    making it a pure, efficient, and powerful volatility and mean-reversion
+    analysis engine.
     """
+    dependencies: list = [] # Bollinger Bands has no internal dependencies
+
     def __init__(self, df: pd.DataFrame, **kwargs):
         super().__init__(df, **kwargs)
-        # --- Parameters ---
         self.params = kwargs.get('params', {})
         self.period = int(self.params.get('period', 20))
         self.std_dev = float(self.params.get('std_dev', 2.0))
@@ -28,7 +27,6 @@ class BollingerIndicator(BaseIndicator):
         self.squeeze_lookback = int(self.params.get('squeeze_lookback', 120))
         self.squeeze_threshold = float(self.params.get('squeeze_threshold', 1.1))
 
-        # --- Dynamic Column Naming ---
         suffix = f'_{self.period}_{self.std_dev}'
         if self.timeframe: suffix += f'_{self.timeframe}'
         self.middle_col = f'bb_middle{suffix}'
@@ -42,13 +40,12 @@ class BollingerIndicator(BaseIndicator):
         res = pd.DataFrame(index=df.index)
         
         middle = df['close'].rolling(window=self.period).mean()
-        # ✨ Technical Correction: Use ddof=0 for consistency with platforms like TradingView
+        # Use ddof=0 for consistency with platforms like TradingView
         std = df['close'].rolling(window=self.period).std(ddof=0)
         
         upper = middle + (std * self.std_dev)
         lower = middle - (std * self.std_dev)
         
-        # Safe division for width and %B
         safe_middle = middle.replace(0, np.nan)
         safe_range = (upper - lower).replace(0, np.nan)
         
@@ -63,51 +60,43 @@ class BollingerIndicator(BaseIndicator):
         return res
 
     def calculate(self) -> 'BollingerIndicator':
-        """Orchestrates the MTF calculation for Bollinger Bands."""
-        base_df = self.df
+        """
+        ✨ FINAL ARCHITECTURE: No resampling. Just pure calculation.
+        The dataframe received is already at the correct timeframe.
+        """
+        df_for_calc = self.df
         
-        # ✨ MTF LOGIC: Resample data if a timeframe is specified
-        if self.timeframe:
-            if not isinstance(base_df.index, pd.DatetimeIndex):
-                raise TypeError("DataFrame index must be a DatetimeIndex for MTF.")
-            rules = {'open': 'first', 'high': 'max', 'low': 'min', 'close': 'last'}
-            calc_df = base_df.resample(self.timeframe, label='right', closed='right').apply(rules).dropna()
-        else:
-            calc_df = base_df.copy()
-
-        if len(calc_df) < self.period:
+        if len(df_for_calc) < self.period:
             logger.warning(f"Not enough data for Bollinger Bands on timeframe {self.timeframe or 'base'}.")
+            # Create empty columns to prevent KeyErrors downstream
+            for col in [self.middle_col, self.upper_col, self.lower_col, self.width_col, self.percent_b_col]:
+                self.df[col] = np.nan
             return self
 
-        bb_results = self._calculate_bb(calc_df)
+        bb_results = self._calculate_bb(df_for_calc)
         
-        # --- Map results back to the original dataframe if MTF ---
-        if self.timeframe:
-            final_results = bb_results.reindex(base_df.index, method='ffill')
-            for col in final_results.columns: self.df[col] = final_results[col]
-        else:
-            for col in bb_results.columns: self.df[col] = bb_results[col]
-
+        # Add the final columns directly to the dataframe
+        for col in bb_results.columns:
+            self.df[col] = bb_results[col]
+            
         return self
 
     def analyze(self) -> Dict[str, Any]:
-        """Provides a bias-free analysis, safe for backtesting and live trading."""
-        required_cols = [self.middle_col, self.width_col, self.percent_b_col]
-        
-        # ✨ Bias-Free: Drop all NaNs first to get a clean series for analysis
+        """
+        Provides a bias-free analysis, safe for backtesting and live trading.
+        This powerful analysis logic remains unchanged.
+        """
+        required_cols = [self.middle_col, self.upper_col, self.lower_col, self.width_col, self.percent_b_col]
         valid_df = self.df.dropna(subset=required_cols)
         
         if len(valid_df) < self.squeeze_lookback:
-            return {"status": "Insufficient Data", "analysis": {}}
+            return {"status": "Insufficient Data for Squeeze Analysis", "analysis": {}}
 
-        # ✨ Bias-Free: Analyze the last fully closed candle's data
         last_row = valid_df.iloc[-1]
         
-        # --- Squeeze Detection ---
         lowest_width = valid_df[self.width_col].rolling(window=self.squeeze_lookback).min().iloc[-1]
         is_squeeze = last_row[self.width_col] <= (lowest_width * self.squeeze_threshold)
         
-        # --- Position Analysis ---
         position = "Inside Bands"
         if last_row[self.percent_b_col] > 1.0: position = "Breakout Above"
         elif last_row[self.percent_b_col] < 0.0: position = "Breakdown Below"
