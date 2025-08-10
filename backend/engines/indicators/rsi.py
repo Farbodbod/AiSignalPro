@@ -15,6 +15,8 @@ class RsiIndicator(BaseIndicator):
     signal line, dynamic Bollinger Bands for OB/OS levels, and predictive divergence
     detection by consuming pre-calculated ZigZag columns.
     """
+    dependencies = ['zigzag']
+
     def __init__(self, df: pd.DataFrame, **kwargs):
         super().__init__(df, **kwargs)
         self.params = kwargs.get('params', {})
