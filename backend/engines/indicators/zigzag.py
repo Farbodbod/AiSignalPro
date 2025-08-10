@@ -1,25 +1,28 @@
 import pandas as pd
 import numpy as np
 import logging
+from typing import Dict, Any
+
 from .base import BaseIndicator
 
 logger = logging.getLogger(__name__)
 
 class ZigzagIndicator(BaseIndicator):
     """
-    ZigZag Indicator - Definitive MTF & World-Class Market Structure Analysis Tool
-    ---------------------------------------------------------------------------------
-    This is the final, unified version combining the full market structure analysis
-    logic with the multi-timeframe (MTF) architectural pattern.
+    ZigZag Indicator - Definitive, World-Class Version (v4.0 - Final Architecture)
+    -------------------------------------------------------------------------------
+    This version adheres to the final AiSignalPro architecture. It performs its
+    complex, non-repainting calculations on the pre-resampled dataframe provided
+    by the IndicatorAnalyzer. Its analysis is hardened to be fully bias-free.
     """
+    dependencies: list = []
+
     def __init__(self, df: pd.DataFrame, **kwargs):
         super().__init__(df, **kwargs)
-        # --- Parameters ---
         self.params = kwargs.get('params', {})
         self.deviation = float(self.params.get('deviation', 3.0))
         self.timeframe = self.params.get('timeframe', None)
 
-        # --- Column Naming (Dynamic based on params) ---
         suffix = f'_{self.deviation}'
         if self.timeframe: suffix += f'_{self.timeframe}'
         self.col_pivots = f'zigzag_pivots{suffix}'
@@ -30,9 +33,7 @@ class ZigzagIndicator(BaseIndicator):
         required_cols = {'high', 'low', 'close'}
         if not required_cols.issubset(df.columns):
             missing = required_cols - set(df.columns)
-            msg = f"Missing required columns for ZigZag: {missing}"
-            logger.error(msg)
-            raise ValueError(msg)
+            raise ValueError(f"Missing required columns for ZigZag: {missing}")
         
         if len(df) < 3:
             logger.warning("ZigZag calculation may be unreliable: data length < 3.")
@@ -43,20 +44,12 @@ class ZigzagIndicator(BaseIndicator):
         return df.dropna(subset=required_cols)
 
     def _get_pivots(self, df: pd.DataFrame, deviation_threshold: float):
-        """
-        The complete, non-repainting pivot detection logic.
-        This method is now run on the (potentially resampled) dataframe.
-        """
-        highs = df['high'].values
-        lows = df['low'].values
-        pivots = np.zeros(len(df), dtype=int)
-        prices = np.zeros(len(df), dtype=float)
-        
+        """The complete, non-repainting pivot detection logic."""
+        highs = df['high'].values; lows = df['low'].values
+        pivots = np.zeros(len(df), dtype=int); prices = np.zeros(len(df), dtype=float)
         if len(df) == 0: return pivots, prices
-
-        last_pivot_idx = 0
-        last_pivot_price = highs[0]
-        trend = 0
+        
+        last_pivot_idx = 0; last_pivot_price = highs[0]; trend = 0
 
         for i in range(1, len(df)):
             current_high, current_low = highs[i], lows[i]
@@ -83,64 +76,54 @@ class ZigzagIndicator(BaseIndicator):
         if trend != 0 and pivots[last_pivot_idx] == 0:
             pivots[last_pivot_idx] = trend
             prices[last_pivot_idx] = last_pivot_price
-            
         return pivots, prices
 
     def calculate(self) -> 'ZigzagIndicator':
-        base_df = self.df
+        """
+        ✨ FINAL ARCHITECTURE: No resampling. Just pure calculation.
+        """
+        df_for_calc = self.df
         
-        if self.timeframe:
-            if not isinstance(base_df.index, pd.DatetimeIndex):
-                raise TypeError("DataFrame index must be a DatetimeIndex for MTF.")
-            rules = {'open': 'first', 'high': 'max', 'low': 'min', 'close': 'last'}
-            calc_df = base_df.resample(self.timeframe).apply(rules).dropna()
-        else:
-            calc_df = base_df.copy()
-
-        validated_df = self._validate_input(calc_df)
+        validated_df = self._validate_input(df_for_calc)
         pivots, prices = self._get_pivots(validated_df, self.deviation)
         
-        results_df = pd.DataFrame(index=validated_df.index)
-        results_df[self.col_pivots] = pivots
-        results_df[self.col_prices] = prices
-
-        if self.timeframe:
-            final_results = results_df.reindex(base_df.index, method='ffill')
-            self.df[self.col_pivots] = final_results[self.col_pivots].fillna(0).astype(int)
-            self.df[self.col_prices] = final_results[self.col_prices].fillna(0)
-        else:
-            self.df[self.col_pivots] = results_df[self.col_pivots]
-            self.df[self.col_prices] = results_df[self.col_prices]
-
+        self.df[self.col_pivots] = pivots
+        self.df[self.col_prices] = prices.round(5)
+        
         return self
 
     def analyze(self) -> dict:
         """
-        The complete, deep market structure analysis.
-        This method operates on the final dataframe which has the MTF columns.
+        Provides a deep, bias-free analysis of the market structure.
         """
-        pivots_df = self.df[self.df[self.col_pivots] != 0].copy()
+        # Drop NaNs to handle the start of the series correctly
+        valid_df = self.df.dropna(subset=[self.col_pivots, self.col_prices])
+        pivots_df = valid_df[valid_df[self.col_pivots] != 0]
         
         if len(pivots_df) < 2:
             return {"status": "Awaiting Pivots", "timeframe": self.timeframe or 'Base'}
+
+        # ✨ BIAS-FREE FIX: Use the last closed candle for current price analysis
+        if len(self.df) < 2: return {"status": "Insufficient Data"}
+        current_price = self.df.iloc[-2]['close']
 
         last_pivot = pivots_df.iloc[-1]
         prev_pivot = pivots_df.iloc[-2]
         last_type = 'peak' if last_pivot[self.col_pivots] == 1 else 'trough'
         last_price = last_pivot[self.col_prices]
-        current_price = self.df['close'].iloc[-1]
         
         bos_signal = 'None'
         if last_type == 'peak' and current_price > last_price:
-            bos_signal = 'Bullish BOS'
+            bos_signal = 'Bullish BOS' # Break of Structure
         elif last_type == 'trough' and current_price < last_price:
-            bos_signal = 'Bearish BOS'
+            bos_signal = 'Bearish BOS' # Break of Structure
 
         def to_safe_json(value):
             if hasattr(value, 'strftime'): return value.strftime('%Y-%m-%d %H:%M:%S')
             return str(value)
 
         return {
+            "status": "OK",
             "timeframe": self.timeframe or 'Base',
             "last_pivot": {"type": last_type, "price": round(last_price, 5), "time": to_safe_json(last_pivot.name)},
             "previous_pivot": {"type": 'peak' if prev_pivot[self.col_pivots] == 1 else 'trough', "price": round(prev_pivot[self.col_prices], 5), "time": to_safe_json(prev_pivot.name)},
