@@ -9,12 +9,11 @@ logger = logging.getLogger(__name__)
 
 class SuperTrendIndicator(BaseIndicator):
     """
-    SuperTrend - Definitive, Optimized, MTF & World-Class Version (v4.0 - No Internal Deps)
-    ---------------------------------------------------------------------------------------
-    This version adheres to the final AiSignalPro architecture. It does not
-    calculate its own dependencies. Instead, it consumes the pre-calculated ATR
-    column provided by the IndicatorAnalyzer, making it a pure, efficient, and
-    robust trend analysis engine.
+    SuperTrend - Definitive, World-Class Version (v4.1 - Final Architecture)
+    ------------------------------------------------------------------------
+    This version adheres to the final AiSignalPro architecture. It performs its
+    calculations on the pre-resampled dataframe provided by the IndicatorAnalyzer,
+    making it a pure, efficient, and powerful trend analysis engine.
     """
     dependencies = ['atr']
 
@@ -25,6 +24,10 @@ class SuperTrendIndicator(BaseIndicator):
         self.multiplier = float(self.params.get('multiplier', 3.0))
         self.timeframe = self.params.get('timeframe', None)
         
+        # Note: The ATR period for SuperTrend is typically the same as the SuperTrend period.
+        # We will use self.period to construct the expected ATR column name.
+        self.atr_period = int(self.params.get('atr_period', self.period))
+
         suffix = f'_{self.period}_{self.multiplier}'
         if self.timeframe: suffix += f'_{self.timeframe}'
         self.supertrend_col = f'supertrend{suffix}'
@@ -35,65 +38,60 @@ class SuperTrendIndicator(BaseIndicator):
         high = df['high'].to_numpy(); low = df['low'].to_numpy(); close = df['close'].to_numpy()
         atr = df[atr_col].to_numpy()
 
-        hl2 = (high + low) / 2
-        final_upper_band = hl2 + (multiplier * atr)
-        final_lower_band = hl2 - (multiplier * atr)
+        # Calculation can produce NaNs if ATR is NaN, handle this.
+        with np.errstate(invalid='ignore'):
+            hl2 = (high + low) / 2
+            final_upper_band = hl2 + (multiplier * atr)
+            final_lower_band = hl2 - (multiplier * atr)
         
         supertrend = np.full(len(df), np.nan)
         direction = np.full(len(df), 1)
 
         for i in range(1, len(df)):
-            if final_upper_band[i] > final_upper_band[i-1] or close[i-1] > final_upper_band[i-1]:
-                final_upper_band[i] = final_upper_band[i-1]
-            if final_lower_band[i] < final_lower_band[i-1] or close[i-1] < final_lower_band[i-1]:
-                final_lower_band[i] = final_lower_band[i-1]
+            # If previous supertrend is NaN, initialize based on current close vs lower band
+            prev_st = supertrend[i-1]
+            if np.isnan(prev_st):
+                prev_st = final_lower_band[i-1] # A reasonable starting point
 
-            if i > 0 and not np.isnan(supertrend[i-1]):
-                if supertrend[i-1] == final_upper_band[i-1]:
-                    direction[i] = -1 if close[i] < final_upper_band[i] else 1
-                else:
-                    direction[i] = 1 if close[i] > final_lower_band[i] else -1
-            else: # Initial case
-                 direction[i] = 1 if close[i] > final_lower_band[i] else -1
+            if final_upper_band[i] > prev_st or close[i-1] > prev_st:
+                final_upper_band[i] = min(final_upper_band[i], prev_st)
+            
+            if final_lower_band[i] < prev_st or close[i-1] < prev_st:
+                final_lower_band[i] = max(final_lower_band[i], prev_st)
+
+            if close[i] > final_upper_band[i-1]:
+                direction[i] = 1
+            elif close[i] < final_lower_band[i-1]:
+                direction[i] = -1
+            else:
+                direction[i] = direction[i-1]
 
             supertrend[i] = final_lower_band[i] if direction[i] == 1 else final_upper_band[i]
 
         return pd.Series(supertrend, index=df.index), pd.Series(direction, index=df.index)
 
     def calculate(self) -> 'SuperTrendIndicator':
-        """Calculates SuperTrend, assuming the ATR column is already present."""
-        base_df = self.df
-        if self.timeframe:
-            if not isinstance(base_df.index, pd.DatetimeIndex): raise TypeError("DatetimeIndex required for MTF.")
-            rules = {'open': 'first', 'high': 'max', 'low': 'min', 'close': 'last'}
-            calc_df = base_df.resample(self.timeframe, label='right', closed='right').apply(rules).dropna()
-        else:
-            calc_df = base_df.copy()
-
-        if len(calc_df) < self.period:
+        """
+        ✨ FINAL ARCHITECTURE: No resampling. Just pure calculation.
+        """
+        df_for_calc = self.df
+        
+        if len(df_for_calc) < self.period:
             logger.warning(f"Not enough data for SuperTrend on {self.timeframe or 'base'}.")
+            self.df[self.supertrend_col] = np.nan
+            self.df[self.direction_col] = np.nan
             return self
 
-        # ✨ THE MIRACLE FIX: Expect the ATR column to be pre-calculated.
-        atr_col_name = f'atr_{self.period}'
+        atr_col_name = f'atr_{self.atr_period}'
         if self.timeframe: atr_col_name += f'_{self.timeframe}'
         
-        if atr_col_name not in calc_df.columns:
+        if atr_col_name not in df_for_calc.columns:
             raise ValueError(f"Required ATR column '{atr_col_name}' not found for SuperTrend. Ensure ATR is calculated first by the Analyzer.")
         
-        st_series, dir_series = self._calculate_supertrend(calc_df, self.period, self.multiplier, atr_col_name)
+        st_series, dir_series = self._calculate_supertrend(df_for_calc, self.period, self.multiplier, atr_col_name)
         
-        results_df = pd.DataFrame(index=calc_df.index)
-        results_df[self.supertrend_col] = st_series
-        results_df[self.direction_col] = dir_series
-
-        if self.timeframe:
-            final_results = results_df.reindex(base_df.index, method='ffill')
-            self.df[self.supertrend_col] = final_results[self.supertrend_col]
-            self.df[self.direction_col] = final_results[self.direction_col]
-        else:
-            self.df[self.supertrend_col] = results_df[self.supertrend_col]
-            self.df[self.direction_col] = results_df[self.direction_col]
+        self.df[self.supertrend_col] = st_series
+        self.df[self.direction_col] = dir_series
             
         return self
 
