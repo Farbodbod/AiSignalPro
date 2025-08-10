@@ -3,34 +3,31 @@ import numpy as np
 import logging
 from typing import Dict, Any
 
-# اطمینان حاصل کنید که این اندیکاتور از فایل مربوطه وارد شده‌ است
 from .base import BaseIndicator
 
 logger = logging.getLogger(__name__)
 
 class FastMAIndicator(BaseIndicator):
     """
-    Fast MA (DEMA/TEMA) - Definitive, MTF, and Advanced Momentum Analysis Version
-    -----------------------------------------------------------------------------
-    This version provides a world-class implementation of DEMA and TEMA, featuring:
-    - The standard AiSignalPro MTF architecture.
-    - Advanced momentum analysis, including trend slope and acceleration.
-    - A configurable slope threshold to filter out market noise.
-    - Robust parameter validation and bias-free analysis.
+    Fast MA (DEMA/TEMA) - Definitive, World-Class Version (v4.0 - Final Architecture)
+    ----------------------------------------------------------------------------------
+    This version provides a world-class implementation of DEMA and TEMA, featuring
+    advanced momentum analysis (slope and acceleration). It adheres to the final
+    AiSignalPro architecture by calculating on the pre-resampled dataframe.
     """
+    dependencies: list = []
+
     def __init__(self, df: pd.DataFrame, **kwargs):
         super().__init__(df, **kwargs)
-        # --- Parameter Validation and Setup ---
         self.params = kwargs.get('params', {})
         self.period = int(self.params.get('period', 14))
         self.ma_type = str(self.params.get('ma_type', 'DEMA')).upper()
         self.timeframe = self.params.get('timeframe', None)
-        self.slope_threshold = float(self.params.get('slope_threshold', 0.0005)) # 0.05% change threshold
+        self.slope_threshold = float(self.params.get('slope_threshold', 0.0005)) # 0.05%
 
         if self.period < 1: raise ValueError("Period must be a positive integer.")
         if self.ma_type not in ['DEMA', 'TEMA']: raise ValueError("ma_type must be 'DEMA' or 'TEMA'.")
         
-        # --- Dynamic Column Naming ---
         suffix = f'_{self.period}'
         if self.timeframe: suffix += f'_{self.timeframe}'
         self.ma_col = f'{self.ma_type.lower()}{suffix}'
@@ -52,36 +49,29 @@ class FastMAIndicator(BaseIndicator):
         return res
 
     def calculate(self) -> 'FastMAIndicator':
-        """Orchestrates the MTF calculation for the Fast Moving Average."""
-        base_df = self.df
+        """
+        ✨ FINAL ARCHITECTURE: No resampling. Just pure calculation.
+        The dataframe received is already at the correct timeframe.
+        """
+        df_for_calc = self.df
         
-        # ✨ MTF LOGIC: Resample data if a timeframe is specified
-        if self.timeframe:
-            if not isinstance(base_df.index, pd.DatetimeIndex):
-                raise TypeError("DataFrame index must be a DatetimeIndex for MTF.")
-            rules = {'open': 'first', 'high': 'max', 'low': 'min', 'close': 'last'}
-            calc_df = base_df.resample(self.timeframe, label='right', closed='right').apply(rules).dropna()
-        else:
-            calc_df = base_df.copy()
-
-        if len(calc_df) < self.period * 3: # A safe margin for TEMA
+        # A safe margin for TEMA which uses EMA of EMA of EMA
+        if len(df_for_calc) < self.period * 3:
             logger.warning(f"Not enough data for {self.ma_type} on timeframe {self.timeframe or 'base'}.")
+            self.df[self.ma_col] = np.nan
             return self
 
-        ma_results = self._calculate_fast_ma(calc_df)
+        ma_results = self._calculate_fast_ma(df_for_calc)
         
-        # --- Map results back to the original dataframe if MTF ---
-        if self.timeframe:
-            final_results = ma_results.reindex(base_df.index, method='ffill')
-            self.df[self.ma_col] = final_results[self.ma_col]
-        else:
-            self.df[self.ma_col] = ma_results[self.ma_col]
+        self.df[self.ma_col] = ma_results[self.ma_col]
 
         return self
 
     def analyze(self) -> Dict[str, Any]:
-        """Provides a deep, bias-free analysis of the trend's momentum and acceleration."""
-        # ✨ Bias-Free: Drop all NaNs first and get the last valid rows
+        """
+        Provides a deep, bias-free analysis of the trend's momentum and acceleration.
+        This powerful analysis logic remains unchanged.
+        """
         valid_df = self.df.dropna(subset=[self.ma_col, 'close'])
         if len(valid_df) < 3: # Need at least 3 points to calculate acceleration
             return {"status": "Insufficient Data", "analysis": {}}
@@ -93,29 +83,22 @@ class FastMAIndicator(BaseIndicator):
         close_price = last['close']
         ma_val = last[self.ma_col]
         
-        # --- ✨ Deep Momentum Analysis ---
-        # 1. Slope (Velocity)
         slope = ma_val - prev[self.ma_col]
-        
-        # 2. Acceleration (Change in Slope)
         prev_slope = prev[self.ma_col] - prev_prev[self.ma_col]
         acceleration = slope - prev_slope
         
-        # --- Signal Logic ---
-        signal = "Neutral"
-        message = "No clear momentum signal."
+        signal = "Neutral"; message = "No clear momentum signal."
         
-        # A strong buy signal requires price to be above the MA, and the MA's slope to be positive and accelerating
-        is_bullish = close_price > ma_val and slope > (ma_val * self.slope_threshold)
-        is_bearish = close_price < ma_val and slope < -(ma_val * self.slope_threshold)
+        is_bullish = close_price > ma_val and slope > (abs(ma_val) * self.slope_threshold)
+        is_bearish = close_price < ma_val and slope < -(abs(ma_val) * self.slope_threshold)
 
         if is_bullish:
             signal = "Buy"
-            strength = "Strong" if acceleration > 0 else "Weakening"
+            strength = "Accelerating" if acceleration > 0 else "Decelerating"
             message = f"Bullish trend ({strength}). Price is above {self.ma_type} and slope is positive."
         elif is_bearish:
             signal = "Sell"
-            strength = "Strong" if acceleration < 0 else "Weakening"
+            strength = "Accelerating" if acceleration < 0 else "Decelerating"
             message = f"Bearish trend ({strength}). Price is below {self.ma_type} and slope is negative."
 
         return {
