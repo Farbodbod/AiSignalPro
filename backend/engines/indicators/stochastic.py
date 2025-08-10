@@ -4,13 +4,15 @@ import logging
 from typing import Dict, Any, List, Optional
 
 from .base import BaseIndicator
-from .zigzag import ZigzagIndicator
 
 logger = logging.getLogger(__name__)
 
 class StochasticIndicator(BaseIndicator):
     """
-    Stochastic Oscillator - Definitive, MTF, and Divergence-Detection World-Class Version (v3.2 - Final & Complete)
+    Stochastic Oscillator - Definitive, MTF, and Divergence-Detection World-Class Version (v3.1 - No Internal Deps)
+    ---------------------------------------------------------------------------------------------------------------
+    This advanced version provides a multi-faceted analysis of momentum by consuming
+    pre-calculated ZigZag columns for its powerful divergence detection feature.
     """
     def __init__(self, df: pd.DataFrame, **kwargs):
         super().__init__(df, **kwargs)
@@ -29,26 +31,20 @@ class StochasticIndicator(BaseIndicator):
         if self.timeframe: suffix += f'_{self.timeframe}'
         self.k_col = f'stoch_k{suffix}'
         self.d_col = f'stoch_d{suffix}'
-        self._zigzag_indicator: Optional[ZigzagIndicator] = None
 
     def _calculate_stochastic(self, df: pd.DataFrame) -> pd.DataFrame:
+        """The core, technically correct, and bias-free stochastic calculation logic."""
         res = pd.DataFrame(index=df.index)
         
         low_min = df['low'].rolling(window=self.k_period).min()
         high_max = df['high'].rolling(window=self.k_period).max()
+        
         price_range = (high_max - low_min).replace(0, np.nan)
+        
         fast_k = 100 * ((df['close'] - low_min) / price_range)
         
         res[self.k_col] = fast_k.rolling(window=self.smooth_k).mean()
         res[self.d_col] = res[self.k_col].rolling(window=self.d_period).mean()
-
-        if self.detect_divergence:
-            zigzag_params = {'deviation': self.zigzag_deviation, 'timeframe': None}
-            self._zigzag_indicator = ZigzagIndicator(df, params=zigzag_params)
-            zigzag_instance = self._zigzag_indicator.calculate()
-            df_with_zigzag = zigzag_instance.df
-            res[zigzag_instance.col_pivots] = df_with_zigzag[zigzag_instance.col_pivots]
-            res[zigzag_instance.col_prices] = df_with_zigzag[zigzag_instance.col_prices]
             
         return res
 
@@ -68,17 +64,29 @@ class StochasticIndicator(BaseIndicator):
         
         if self.timeframe:
             final_results = stoch_results.reindex(base_df.index, method='ffill')
-            for col in final_results.columns: self.df[col] = final_results[col]
+            self.df[self.k_col] = final_results[self.k_col]
+            self.df[self.d_col] = final_results[self.d_col]
         else:
-            for col in stoch_results.columns: self.df[col] = stoch_results[col]
+            self.df[self.k_col] = stoch_results[self.k_col]
+            self.df[self.d_col] = stoch_results[self.d_col]
             
         return self
     
     def _find_divergences(self, valid_df: pd.DataFrame) -> List[Dict[str, Any]]:
-        if not self.detect_divergence or self._zigzag_indicator is None: return []
-        pivot_col = self._zigzag_indicator.col_pivots; price_col = self._zigzag_indicator.col_prices
+        """Finds divergences by consuming pre-calculated ZigZag columns."""
+        if not self.detect_divergence: return []
+
+        tf_suffix = f'_{self.timeframe}' if self.timeframe else ''
+        pivot_col = f'zigzag_pivots_{self.zigzag_deviation}{tf_suffix}'
+        price_col = f'zigzag_prices_{self.zigzag_deviation}{tf_suffix}'
+        
+        if not all(col in valid_df.columns for col in [pivot_col, price_col]):
+             logger.warning(f"[{self.__class__.__name__}] ZigZag columns not found for divergence detection.")
+             return []
+
         pivots_df = valid_df[valid_df[pivot_col] != 0]
         if len(pivots_df) < 2: return []
+        
         last_pivot = pivots_df.iloc[-1]
         previous_pivots = pivots_df.iloc[-self.divergence_lookback:-1]
         divergences = []
@@ -97,11 +105,14 @@ class StochasticIndicator(BaseIndicator):
     def analyze(self) -> Dict[str, Any]:
         valid_df = self.df.dropna(subset=[self.k_col, self.d_col])
         if len(valid_df) < 2: return {"status": "Insufficient Data"}
+        
         last = valid_df.iloc[-1]; prev = valid_df.iloc[-2]
         k, d, prev_k, prev_d = last[self.k_col], last[self.d_col], prev[self.k_col], prev[self.d_col]
+        
         position = "Neutral"
         if k > self.overbought and d > self.overbought: position = "Overbought"
         elif k < self.oversold and d < self.oversold: position = "Oversold"
+        
         signal = "Hold"
         if prev_k <= prev_d and k > d:
             strength = "Strong" if k < self.oversold + 10 else "Normal"
@@ -109,7 +120,18 @@ class StochasticIndicator(BaseIndicator):
         elif prev_k >= prev_d and k < d:
             strength = "Strong" if k > self.overbought - 10 else "Normal"
             signal = f"{strength} Bearish Crossover"
+            
         k_slope = k - prev_k
         d_slope = d - prev_d
         divergences = self._find_divergences(valid_df)
-        return { "status": "OK", "timeframe": self.timeframe or 'Base', "values": {"k": round(k, 2), "d": round(d, 2)}, "analysis": { "position": position, "crossover_signal": signal, "momentum": {"k_slope": round(k_slope, 2), "d_slope": round(d_slope, 2)}, "divergences": divergences } }
+        
+        return {
+            "status": "OK", "timeframe": self.timeframe or 'Base',
+            "values": {"k": round(k, 2), "d": round(d, 2)},
+            "analysis": {
+                "position": position,
+                "crossover_signal": signal,
+                "momentum": {"k_slope": round(k_slope, 2), "d_slope": round(d_slope, 2)},
+                "divergences": divergences
+            }
+        }
