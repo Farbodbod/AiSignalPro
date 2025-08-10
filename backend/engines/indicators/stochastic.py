@@ -9,12 +9,13 @@ logger = logging.getLogger(__name__)
 
 class StochasticIndicator(BaseIndicator):
     """
-    Stochastic Oscillator - Definitive, MTF, and Divergence-Detection World-Class Version (v3.1 - No Internal Deps)
-    ---------------------------------------------------------------------------------------------------------------
+    Stochastic Oscillator - Definitive, World-Class Version (v4.0 - Final Architecture)
+    -----------------------------------------------------------------------------------
     This advanced version provides a multi-faceted analysis of momentum by consuming
     pre-calculated ZigZag columns for its powerful divergence detection feature.
+    It adheres to the final AiSignalPro architecture.
     """
-    dependencies = ['atr']
+    dependencies = ['zigzag'] # ✨ FIX: Correct dependency is 'zigzag'
 
     def __init__(self, df: pd.DataFrame, **kwargs):
         super().__init__(df, **kwargs)
@@ -51,26 +52,21 @@ class StochasticIndicator(BaseIndicator):
         return res
 
     def calculate(self) -> 'StochasticIndicator':
-        base_df = self.df
-        if self.timeframe:
-            rules = {'open': 'first', 'high': 'max', 'low': 'min', 'close': 'last'}
-            calc_df = base_df.resample(self.timeframe, label='right', closed='right').apply(rules).dropna()
-        else:
-            calc_df = base_df.copy()
+        """
+        ✨ FINAL ARCHITECTURE: No resampling. Just pure calculation.
+        """
+        df_for_calc = self.df
 
-        if len(calc_df) < self.k_period + self.d_period + self.smooth_k:
+        if len(df_for_calc) < self.k_period + self.d_period + self.smooth_k:
             logger.warning(f"Not enough data for Stochastic on {self.timeframe or 'base'}.")
+            self.df[self.k_col] = np.nan
+            self.df[self.d_col] = np.nan
             return self
 
-        stoch_results = self._calculate_stochastic(calc_df)
+        stoch_results = self._calculate_stochastic(df_for_calc)
         
-        if self.timeframe:
-            final_results = stoch_results.reindex(base_df.index, method='ffill')
-            self.df[self.k_col] = final_results[self.k_col]
-            self.df[self.d_col] = final_results[self.d_col]
-        else:
-            self.df[self.k_col] = stoch_results[self.k_col]
-            self.df[self.d_col] = stoch_results[self.d_col]
+        self.df[self.k_col] = stoch_results[self.k_col]
+        self.df[self.d_col] = stoch_results[self.d_col]
             
         return self
     
@@ -105,6 +101,7 @@ class StochasticIndicator(BaseIndicator):
         return divergences
 
     def analyze(self) -> Dict[str, Any]:
+        """Provides a multi-faceted analysis of momentum and potential reversals."""
         valid_df = self.df.dropna(subset=[self.k_col, self.d_col])
         if len(valid_df) < 2: return {"status": "Insufficient Data"}
         
