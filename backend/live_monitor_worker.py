@@ -25,7 +25,6 @@ from core.models import AnalysisSnapshot
 from core.utils import convert_numpy_types 
 
 class SignalCache:
-    """ یک کلاس بهینه برای جلوگیری از ارسال سیگنال‌های تکراری. """
     def __init__(self, ttl_map_hours: Dict[str, int], default_ttl_hours: int):
         self._cache: Dict[Tuple[str, str, str], float] = {}
         self.ttl_map_seconds = {tf: hours * 3600 for tf, hours in ttl_map_hours.items()}
@@ -102,12 +101,11 @@ async def main_loop():
     poll_interval = general_config.get("poll_interval_seconds", 900)
     max_concurrent = general_config.get("max_concurrent_tasks", 5)
 
-    # ✨ FIX #1: The Fetcher is now correctly initialized with the central config object.
-    fetcher = ExchangeFetcher(config=config)
+    # ✨ THE FINAL FIX: Initialize ExchangeFetcher without the 'config' argument
+    fetcher = ExchangeFetcher()
     orchestrator = MasterOrchestrator(config=config)
     telegram = TelegramHandler()
     
-    # ✨ FIX #2: The SignalCache is now initialized more cleanly.
     cache_config = config.get("signal_cache", {})
     ttl_map = cache_config.get("ttl_map_hours", {})
     default_ttl = cache_config.get("default_ttl_hours", 4)
