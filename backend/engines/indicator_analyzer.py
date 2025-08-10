@@ -9,15 +9,10 @@ logger = logging.getLogger(__name__)
 
 class IndicatorAnalyzer:
     """
-    The Self-Aware Analysis Engine for AiSignalPro (v6.0 - Legendary Edition)
-    --------------------------------------------------------------------------
-    This masterpiece of engineering is beyond a mere calculator. It features:
-    - Intelligent Incremental Calculations: Avoids re-calculating the entire
-      history on each run, boosting performance by over 99% in live monitoring.
-    - Dynamic Dependency Graph: Automatically resolves the correct calculation
-      order using a topological sort, making the system infinitely extensible.
-    - Data Health Monitoring: Actively checks the quality of the data and
-      indicator outputs before passing them to the strategies.
+    The Self-Aware Analysis Engine for AiSignalPro (v6.1 - Anti-Copy-Warning Edition)
+    ---------------------------------------------------------------------------------
+    This version fixes the critical SettingWithCopyWarning by ensuring all calculations
+    are performed on explicit copies of DataFrame slices, guaranteeing data integrity.
     """
     def __init__(self, df: pd.DataFrame, config: Dict[str, Any], timeframe: str, previous_df: Optional[pd.DataFrame] = None):
         if not isinstance(df, pd.DataFrame) or df.empty:
@@ -39,9 +34,7 @@ class IndicatorAnalyzer:
             'zigzag': ZigzagIndicator, 'fibonacci': FibonacciIndicator,
         }
         
-        # ✨ LEGENDARY UPGRADE: Dynamic Dependency Graph Resolution
         self._calculation_order = self._resolve_dependencies()
-        
         self._indicator_instances: Dict[str, BaseIndicator] = {}
         self.final_df = None
 
@@ -83,48 +76,52 @@ class IndicatorAnalyzer:
         """
         logger.info(f"Starting calculations for timeframe: {self.timeframe}")
         
-        # ✨ LEGENDARY UPGRADE: Intelligent Incremental Calculation
         if self.previous_df is not None and not self.previous_df.empty:
-            # Find where the new data starts
             last_common_index = self.previous_df.index.intersection(self.base_df.index)[-1]
             new_data_start_pos = self.base_df.index.get_loc(last_common_index) + 1
             
-            # Combine old results with new base data
             df_for_calc = self.previous_df.copy()
-            df_for_calc = pd.concat([df_for_calc, self.base_df.iloc[new_data_start_pos:]], axis=0, sort=False).ffill() # Ensure index continuity
-            # We only need to calculate for a small window before the new data for rolling calculations to be correct
-            recalc_window_start = max(0, new_data_start_pos - 200) # 200 bars is a safe buffer
+            df_for_calc = pd.concat([df_for_calc, self.base_df.iloc[new_data_start_pos:]], axis=0, sort=False).ffill()
+            recalc_window_start = max(0, new_data_start_pos - 200)
         else:
             df_for_calc = self.base_df.copy()
             recalc_window_start = 0
 
         for name in self._calculation_order:
-            # The logic remains the same, but it runs on a combined df and is more efficient
             params = self.config.get(name, {})
             if params.get('enabled', False):
                 try:
+                    # ✅ FIX: Pass the entire DataFrame first for context.
                     instance = self._indicator_classes[name](df_for_calc, params={'timeframe': self.timeframe, **params})
-                    # Re-calculate only the necessary portion
-                    instance.df = df_for_calc.iloc[recalc_window_start:]
+                    
+                    # ✅ FIX: Create an EXPLICIT COPY of the slice for calculation.
+                    # This prevents the SettingWithCopyWarning.
+                    calc_slice = df_for_calc.iloc[recalc_window_start:].copy()
+                    instance.df = calc_slice
+                    
+                    # Now, calculate() safely modifies the independent 'calc_slice'.
                     instance.calculate()
-                    # Merge results back
+                    
+                    # Merge the modified slice back into the main DataFrame. This now works correctly.
                     df_for_calc.update(instance.df)
+                    
+                    # Store the instance with its context for analysis phase
                     self._indicator_instances[name] = instance
+                    
                 except Exception as e:
                     logger.error(f"Failed to calculate indicator '{name}': {e}", exc_info=True)
 
-        self.final_df = df_for_calc.copy()
+        self.final_df = df_for_calc
         logger.info(f"Calculations for timeframe {self.timeframe} are complete.")
         return self
 
     def health_check(self) -> Dict[str, Any]:
-        """ ✨ LEGENDARY UPGRADE: Performs a health check on the final data. """
+        """ Performs a health check on the final data. """
         report = {"status": "HEALTHY", "issues": []}
         if self.final_df is None:
             report['status'] = "UNHEALTHY"; report['issues'].append("Final DataFrame is None.")
             return report
         
-        # Check for large time gaps in the index
         time_diffs = self.final_df.index.to_series().diff().dt.total_seconds().dropna()
         median_interval = time_diffs.median()
         if not median_interval: return report
@@ -134,14 +131,15 @@ class IndicatorAnalyzer:
             report['status'] = "WARNING"
             report['issues'].append(f"{len(large_gaps)} large time gaps detected in the data index.")
         
-        # Check for excessive NaNs in key indicators
         for name, instance in self._indicator_instances.items():
-            for col in instance.df.columns:
-                if col.startswith("ichi_") or col.startswith("bb_"): # Example key indicators
-                    nan_percentage = instance.df[col].isnull().mean() * 100
-                    if nan_percentage > 30: # If more than 30% of data is NaN
-                        report['status'] = "WARNING"
-                        report['issues'].append(f"Indicator '{name}' column '{col}' has {nan_percentage:.1f}% NaN values.")
+            if hasattr(instance, 'df') and instance.df is not None:
+                for col in instance.df.columns:
+                    # Check if column exists in final_df before accessing
+                    if col in self.final_df.columns:
+                        nan_percentage = self.final_df[col].isnull().mean() * 100
+                        if nan_percentage > 80: # Allow more NaNs, as some indicators need a long warm-up
+                            report['status'] = "WARNING"
+                            report['issues'].append(f"Indicator '{name}' column '{col}' has >80% NaN values.")
 
         return report
 
@@ -157,11 +155,13 @@ class IndicatorAnalyzer:
         for name in self._calculation_order:
             if name in self._indicator_instances:
                 instance = self._indicator_instances[name]
-                instance.df = self.final_df # Ensure instance has the final df
+                # ✅ FIX: Ensure the instance uses the final, fully updated DataFrame for analysis.
+                instance.df = self.final_df
                 try:
                     analysis = instance.analyze()
                     if analysis: summary[name] = analysis
                 except Exception as e:
+                    key_error_flag = isinstance(e, KeyError)
                     logger.error(f"Failed to analyze indicator '{name}': {e}", exc_info=True)
-                    summary[name] = {"error": str(e)}
+                    summary[name] = {"error": str(e), "is_key_error": key_error_flag}
         return summary
