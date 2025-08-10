@@ -1,19 +1,19 @@
 import pandas as pd
 import numpy as np
 import logging
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 from .base import BaseIndicator
+from .atr import AtrIndicator # FIX: Import AtrIndicator to access the static method
 
 logger = logging.getLogger(__name__)
 
 class ChandelierExitIndicator(BaseIndicator):
     """
-    Chandelier Exit - Definitive, World-Class Version (v3.1 - Final Architecture)
+    Chandelier Exit - Definitive, World-Class Version (v3.2 - Harmonized Edition)
     -----------------------------------------------------------------------------
-    This version adheres to the final AiSignalPro architecture. It performs its
-    calculations on the pre-resampled dataframe provided by the IndicatorAnalyzer,
-    making it a pure, efficient, and powerful trailing stop engine.
+    This version now correctly identifies its required ATR column using a standardized
+    naming convention, fixing the critical ValueError issue from previous versions.
     """
     dependencies = ['atr']
 
@@ -32,7 +32,6 @@ class ChandelierExitIndicator(BaseIndicator):
     def calculate(self) -> 'ChandelierExitIndicator':
         """
         ✨ FINAL ARCHITECTURE: No resampling. Just pure calculation.
-        Calculates the Chandelier Exit lines, assuming the ATR column is already present.
         """
         df_for_calc = self.df
         
@@ -42,8 +41,8 @@ class ChandelierExitIndicator(BaseIndicator):
             self.df[self.short_stop_col] = np.nan
             return self
 
-        atr_col_name = f'atr_{self.atr_period}'
-        if self.timeframe: atr_col_name += f'_{self.timeframe}'
+        # FIX: Use the standardized method to get the ATR column name
+        atr_col_name = AtrIndicator._get_atr_col_name(self.atr_period, self.timeframe)
         
         if atr_col_name not in df_for_calc.columns:
             raise ValueError(f"Required ATR column '{atr_col_name}' not found. Ensure ATR is calculated first by the Analyzer.")
