@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 
 class VwapBandsIndicator(BaseIndicator):
     """
-    VWAP Bands - Definitive, World-Class Version (v4.1 - Bias-Free)
+    VWAP Bands - Definitive, World-Class Version (v4.2 - Final & Harmonized)
     ----------------------------------------------------------------
     This advanced version of VWAP provides a flexible, period-based reset
     mechanism and enriches the analysis with statistical metrics like Z-score
@@ -25,6 +25,9 @@ class VwapBandsIndicator(BaseIndicator):
         self.std_dev_multiplier = float(self.params.get('std_dev_multiplier', 2.0))
         self.precision = int(self.params.get('precision', 5))
         
+        # ✨ اصلاح اصلی: اضافه کردن مقداردهی اولیه برای timeframe برای حل خطای AttributeError
+        self.timeframe = self.params.get('timeframe', None)
+
         # Suffix uses a simplified name for reset_period for cleaner columns
         tf_name = self.timeframe if self.timeframe else self.reset_period
         suffix = f'_{tf_name}_{self.std_dev_multiplier}'
