@@ -8,11 +8,12 @@ logger = logging.getLogger(__name__)
 
 class SignalAdapter:
     """
-    SignalAdapter - Definitive, World-Class Version (v4.1 - Final Sync)
+    SignalAdapter - Definitive, World-Class Version (v4.2 - Final Sync)
     --------------------------------------------------------------------
     This final version is fully synchronized with the MasterOrchestrator's
-    output and the project's definitive strategy names. It adds more transparency
-    to the signal messages by including confirmation details.
+    output, the project's definitive strategy names, and the final data
+
+    structures.
     """
     def __init__(self, signal_package: Dict[str, Any]):
         self.package = signal_package
@@ -26,20 +27,13 @@ class SignalAdapter:
         """
         Assigns a confidence score based on the final, world-class strategy names.
         """
-        # ✨ FIX: Updated with the final, definitive list of 12 strategy names
         priority_map = {
-            "SuperSignal Confluence": 99.0,
-            "ConfluenceSniper": 96.0,
-            "PivotConfluenceSniper": 95.0,
-            "DivergenceSniperPro": 94.0,
-            "WhaleReversal": 92.0,
-            "VolumeCatalystPro": 90.0,
-            "IchimokuHybridPro": 88.0,
-            "BreakoutHunter": 87.0,
-            "ChandelierTrendRider": 86.0,
-            "TrendRiderPro": 85.0,
-            "KeltnerMomentumBreakout": 84.0,
-            "VwapMeanReversion": 80.0,
+            "SuperSignal Confluence": 99.0, "ConfluenceSniper": 96.0,
+            "PivotConfluenceSniper": 95.0, "DivergenceSniperPro": 94.0,
+            "WhaleReversal": 92.0, "VolumeCatalystPro": 90.0,
+            "IchimokuHybridPro": 88.0, "BreakoutHunter": 87.0,
+            "ChandelierTrendRider": 86.0, "TrendRiderPro": 85.0,
+            "KeltnerMomentumBreakout": 84.0, "VwapMeanReversion": 80.0,
             "EmaCrossoverStrategy": 78.0
         }
         strategy_name = self.signal.get('strategy_name', '')
@@ -49,7 +43,8 @@ class SignalAdapter:
         """
         Calculates an expiry date for the signal based on its timeframe.
         """
-        ttl_map = {'5min': 1, '15min': 4, '1h': 8, '4h': 24, '1d': 72}
+        # ✨ FIX: Synchronized with exchange-compatible timeframe strings
+        ttl_map = {'5m': 2, '15m': 4, '1h': 8, '4h': 24, '1d': 72}
         hours_to_add = ttl_map.get(self.timeframe, 8)
         valid_until_utc = datetime.utcnow() + timedelta(hours=hours_to_add)
         tehran_tz = pytz.timezone("Asia/Tehran")
@@ -82,7 +77,6 @@ class SignalAdapter:
         """ Formats the confirmation details for transparency. """
         confirmations = self.signal.get('confirmations', {})
         if not confirmations: return "No details available."
-        
         lines = [f"    - {key.replace('_', ' ').title()}: `{value}`" for key, value in confirmations.items()]
         return "\n".join(lines)
 
@@ -115,8 +109,11 @@ class SignalAdapter:
         supports_str = "\n".join([f"    - `{s:,.4f}`" for s in supports[:3]]) if supports else "Not Available"
         resistances_str = "\n".join([f"    - `{r:,.4f}`" for r in resistances[:3]]) if resistances else "Not Available"
 
+        # Using the latest orchestrator version for the message header
+        version = self.full_analysis.get('version', '22.1') # Fallback to a recent version
+
         return (
-            f"🔥 **AiSignalPro - v{self.package.get('ai_version', '21.1')}** 🔥\n\n"
+            f"🔥 **AiSignalPro - Signal v{version}** 🔥\n\n"
             f"🪙 **{self.symbol}** | `{self.timeframe}`\n"
             f"📊 Signal: *{emoji} {direction_text}*\n"
             f"♟️ Strategy: _{strategy_name}_\n\n"
