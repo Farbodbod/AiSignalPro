@@ -14,6 +14,8 @@ class MfiIndicator(BaseIndicator):
     This version adheres to the final AiSignalPro architecture. Its calculate() method is purely
     focused on MFI. The analyze() method consumes pre-calculated ZigZag columns to detect divergences.
     """
+    dependencies = ['zigzag']
+
     def __init__(self, df: pd.DataFrame, **kwargs):
         super().__init__(df, **kwargs)
         self.params = kwargs.get('params', {})
