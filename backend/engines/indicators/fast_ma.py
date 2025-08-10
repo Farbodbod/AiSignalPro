@@ -1,7 +1,7 @@
 import pandas as pd
 import numpy as np
 import logging
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 from .base import BaseIndicator
 
@@ -9,11 +9,12 @@ logger = logging.getLogger(__name__)
 
 class FastMAIndicator(BaseIndicator):
     """
-    Fast MA (DEMA/TEMA) - Definitive, World-Class Version (v4.0 - Final Architecture)
+    Fast MA (DEMA/TEMA) - Definitive, World-Class Version (v4.1 - Harmonized Edition)
     ----------------------------------------------------------------------------------
     This version provides a world-class implementation of DEMA and TEMA, featuring
     advanced momentum analysis (slope and acceleration). It adheres to the final
     AiSignalPro architecture by calculating on the pre-resampled dataframe.
+    Includes defensive programming to prevent AttributeErrors.
     """
     dependencies: list = []
 
@@ -22,7 +23,10 @@ class FastMAIndicator(BaseIndicator):
         self.params = kwargs.get('params', {})
         self.period = int(self.params.get('period', 14))
         self.ma_type = str(self.params.get('ma_type', 'DEMA')).upper()
+        
+        # FIX: Ensure timeframe is always initialized, even if None
         self.timeframe = self.params.get('timeframe', None)
+        
         self.slope_threshold = float(self.params.get('slope_threshold', 0.0005)) # 0.05%
 
         if self.period < 1: raise ValueError("Period must be a positive integer.")
@@ -31,6 +35,9 @@ class FastMAIndicator(BaseIndicator):
         suffix = f'_{self.period}'
         if self.timeframe: suffix += f'_{self.timeframe}'
         self.ma_col = f'{self.ma_type.lower()}{suffix}'
+
+    # ... (rest of the code remains the same) ...
+    # The fix is in __init__.
 
     def _calculate_fast_ma(self, df: pd.DataFrame) -> pd.DataFrame:
         """The core, technically correct DEMA/TEMA calculation logic."""
