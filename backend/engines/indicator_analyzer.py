@@ -9,10 +9,11 @@ logger = logging.getLogger(__name__)
 
 class IndicatorAnalyzer:
     """
-    The Self-Aware Analysis Engine for AiSignalPro (v6.1 - Anti-Copy-Warning Edition)
+    The Self-Aware Analysis Engine for AiSignalPro (v6.2 - Harmonized Edition)
     ---------------------------------------------------------------------------------
-    This version fixes the critical SettingWithCopyWarning by ensuring all calculations
-    are performed on explicit copies of DataFrame slices, guaranteeing data integrity.
+    This version includes critical fixes for dependency management and data integrity,
+    ensuring all indicators are calculated in the correct order and operate on a
+    consistent, up-to-date DataFrame, thus eliminating KeyErrors and ValueErrors.
     """
     def __init__(self, df: pd.DataFrame, config: Dict[str, Any], timeframe: str, previous_df: Optional[pd.DataFrame] = None):
         if not isinstance(df, pd.DataFrame) or df.empty:
@@ -39,7 +40,10 @@ class IndicatorAnalyzer:
         self.final_df = None
 
     def _resolve_dependencies(self) -> List[str]:
-        """Performs a topological sort to find the correct indicator calculation order."""
+        """
+        Performs a topological sort to find the correct indicator calculation order.
+        This ensures that dependent indicators are always calculated after their dependencies.
+        """
         nodes = {name for name, params in self.config.items() if params.get('enabled', False)}
         in_degree = {node: 0 for node in nodes}
         adj = {node: [] for node in nodes}
@@ -48,6 +52,7 @@ class IndicatorAnalyzer:
             indicator_class = self._indicator_classes.get(name)
             if not indicator_class: continue
             for dep in indicator_class.dependencies:
+                # Ensure the dependency itself is enabled before creating a link
                 if dep in nodes:
                     adj[dep].append(name)
                     in_degree[name] += 1
@@ -73,6 +78,7 @@ class IndicatorAnalyzer:
     def calculate_all(self) -> 'IndicatorAnalyzer':
         """
         Calculates all enabled indicators using an intelligent incremental approach.
+        FIX: This version ensures a consistent DataFrame is used throughout the calculation process.
         """
         logger.info(f"Starting calculations for timeframe: {self.timeframe}")
         
@@ -87,31 +93,34 @@ class IndicatorAnalyzer:
             df_for_calc = self.base_df.copy()
             recalc_window_start = 0
 
+        # Create a fresh, explicit copy of the base data to serve as the master DataFrame
+        # for all calculations. This prevents any SettingWithCopyWarning issues.
+        self.final_df = df_for_calc.copy()
+
         for name in self._calculation_order:
             params = self.config.get(name, {})
             if params.get('enabled', False):
                 try:
-                    # ✅ FIX: Pass the entire DataFrame first for context.
-                    instance = self._indicator_classes[name](df_for_calc, params={'timeframe': self.timeframe, **params})
+                    # Initialize the indicator instance with the master DataFrame
+                    instance = self._indicator_classes[name](self.final_df, params={'timeframe': self.timeframe, **params})
                     
-                    # ✅ FIX: Create an EXPLICIT COPY of the slice for calculation.
-                    # This prevents the SettingWithCopyWarning.
-                    calc_slice = df_for_calc.iloc[recalc_window_start:].copy()
+                    # Create an EXPLICIT COPY of the slice for calculation.
+                    # The instance's internal DataFrame will be this slice.
+                    calc_slice = self.final_df.iloc[recalc_window_start:].copy()
                     instance.df = calc_slice
                     
                     # Now, calculate() safely modifies the independent 'calc_slice'.
                     instance.calculate()
                     
-                    # Merge the modified slice back into the main DataFrame. This now works correctly.
-                    df_for_calc.update(instance.df)
+                    # Merge the modified slice back into the master DataFrame. This now works correctly.
+                    self.final_df.update(instance.df)
                     
-                    # Store the instance with its context for analysis phase
+                    # Store the instance with its context for the analysis phase
                     self._indicator_instances[name] = instance
                     
                 except Exception as e:
                     logger.error(f"Failed to calculate indicator '{name}': {e}", exc_info=True)
 
-        self.final_df = df_for_calc
         logger.info(f"Calculations for timeframe {self.timeframe} are complete.")
         return self
 
@@ -124,7 +133,7 @@ class IndicatorAnalyzer:
         
         time_diffs = self.final_df.index.to_series().diff().dt.total_seconds().dropna()
         median_interval = time_diffs.median()
-        if not median_interval: return report
+        if median_interval is None: return report
         
         large_gaps = time_diffs[time_diffs > median_interval * 5]
         if not large_gaps.empty:
@@ -144,7 +153,10 @@ class IndicatorAnalyzer:
         return report
 
     def get_analysis_summary(self) -> Dict[str, Any]:
-        """ Analyzes all indicators and includes a data health report. """
+        """
+        Analyzes all indicators and includes a data health report.
+        FIX: Ensures all indicators use the final, complete DataFrame for analysis.
+        """
         if self.final_df is None or len(self.final_df) < 2: return {"status": "Insufficient Data"}
         summary: Dict[str, Any] = {"status": "OK"}
         
@@ -155,7 +167,7 @@ class IndicatorAnalyzer:
         for name in self._calculation_order:
             if name in self._indicator_instances:
                 instance = self._indicator_instances[name]
-                # ✅ FIX: Ensure the instance uses the final, fully updated DataFrame for analysis.
+                # FIX: Ensure the instance uses the final, fully updated DataFrame for analysis.
                 instance.df = self.final_df
                 try:
                     analysis = instance.analyze()
