@@ -9,8 +9,8 @@ logger = logging.getLogger(__name__)
 
 class RsiIndicator(BaseIndicator):
     """
-    RSI - Definitive, Multi-Signal, MTF & World-Class Version (v3.0 - No Internal Deps)
-    ------------------------------------------------------------------------------------
+    RSI - Definitive, World-Class Version (v4.0 - Final Architecture)
+    ------------------------------------------------------------------
     This is a comprehensive momentum analysis engine based on RSI, featuring a smoothed
     signal line, dynamic Bollinger Bands for OB/OS levels, and predictive divergence
     detection by consuming pre-calculated ZigZag columns.
@@ -62,25 +62,20 @@ class RsiIndicator(BaseIndicator):
         return res
 
     def calculate(self) -> 'RsiIndicator':
-        """Calculates RSI and its metrics, assuming ZigZag is pre-calculated if needed."""
-        base_df = self.df
-        if self.timeframe:
-            rules = {'open': 'first', 'high': 'max', 'low': 'min', 'close': 'last'}
-            calc_df = base_df.resample(self.timeframe, label='right', closed='right').apply(rules).dropna()
-        else:
-            calc_df = base_df.copy()
+        """
+        ✨ FINAL ARCHITECTURE: No resampling. Just pure calculation.
+        Calculates RSI and its metrics, assuming ZigZag is pre-calculated if needed.
+        """
+        df_for_calc = self.df
             
-        if len(calc_df) < max(self.period, self.bb_period):
+        if len(df_for_calc) < max(self.period, self.bb_period):
             logger.warning(f"Not enough data for RSI on {self.timeframe or 'base'}.")
             return self
 
-        rsi_results = self._calculate_rsi_metrics(calc_df)
+        rsi_results = self._calculate_rsi_metrics(df_for_calc)
         
-        if self.timeframe:
-            final_results = rsi_results.reindex(base_df.index, method='ffill')
-            for col in final_results.columns: self.df[col] = final_results[col]
-        else:
-            for col in rsi_results.columns: self.df[col] = rsi_results[col]
+        for col in rsi_results.columns:
+            self.df[col] = rsi_results[col]
             
         return self
     
