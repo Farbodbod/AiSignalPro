@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 
 class IndicatorAnalyzer:
     """
-    The Self-Aware Analysis Engine for AiSignalPro (v7.0 - Final, Harmonized, & Unified)
+    The Self-Aware Analysis Engine for AiSignalPro (v7.1 - Final, Harmonized, & Unified)
     ------------------------------------------------------------------------------------
     This definitive version eliminates all data integrity issues by adopting a single,
     consistent DataFrame for all calculations and analysis. It ensures correct
@@ -42,10 +42,14 @@ class IndicatorAnalyzer:
 
     def _resolve_dependencies(self) -> List[str]:
         """
-        Performs a topological sort to find the correct indicator calculation order.
-        This ensures that dependent indicators are always calculated after their dependencies.
+        Performs a topological sort with a specific rule: ATR (if enabled) is always first.
+        This ensures indicators that depend on ATR will always find the required column.
         """
         nodes = {name for name, params in self.config.items() if params.get('enabled', False)}
+        
+        if 'atr' in nodes:
+            nodes.remove('atr')
+            
         in_degree = {node: 0 for node in nodes}
         adj = {node: [] for node in nodes}
 
@@ -53,7 +57,7 @@ class IndicatorAnalyzer:
             indicator_class = self._indicator_classes.get(name)
             if not indicator_class: continue
             for dep in indicator_class.dependencies:
-                if dep in nodes:
+                if dep != 'atr' and dep in nodes:
                     adj[dep].append(name)
                     in_degree[name] += 1
         
@@ -71,6 +75,9 @@ class IndicatorAnalyzer:
         if len(sorted_order) != len(nodes):
             cycles = {n for n in nodes if in_degree[n] > 0}
             raise ValueError(f"Circular dependency detected in indicators: {cycles}")
+            
+        if 'atr' in self.config and self.config['atr'].get('enabled', False):
+            sorted_order.insert(0, 'atr')
         
         logger.info(f"Resolved calculation order: {sorted_order}")
         return sorted_order
@@ -82,26 +89,22 @@ class IndicatorAnalyzer:
         """
         logger.info(f"Starting calculations for timeframe: {self.timeframe}")
         
-        # ✨ FIX: The `final_df` is the only DataFrame used. No slices, no merges.
-        # This prevents all KeyErrors and data integrity issues.
-        
         for name in self._calculation_order:
             params = self.config.get(name, {})
             if params.get('enabled', False):
                 try:
-                    # Initialize the indicator instance with the ONLY master DataFrame
-                    # and let the indicator modify it directly.
                     instance = self._indicator_classes[name](self.final_df, params={'timeframe': self.timeframe, **params})
                     instance.calculate()
-                    
-                    # Store the instance for the analysis phase.
                     self._indicator_instances[name] = instance
                     
                 except Exception as e:
                     logger.error(f"Failed to calculate indicator '{name}': {e}", exc_info=True)
-                    # For stability, remove the failed instance to prevent errors in analyze()
                     if name in self._indicator_instances:
                         del self._indicator_instances[name]
+                    # Also, if a dependent indicator fails, we should remove it from the list
+                    # of nodes for further calculation to prevent cascaded errors.
+                    self._calculation_order = [item for item in self._calculation_order if item != name]
+
 
         logger.info(f"Calculations for timeframe {self.timeframe} are complete.")
         return self
@@ -119,10 +122,8 @@ class IndicatorAnalyzer:
         summary['health_report'] = self.health_check()
         
         for name in self._calculation_order:
-            # Check if the instance was successfully created in calculate_all
             if name in self._indicator_instances:
                 instance = self._indicator_instances[name]
-                # The instance is already working with self.final_df, so no need to reassign.
                 try:
                     analysis = instance.analyze()
                     if analysis: summary[name] = analysis
@@ -148,7 +149,6 @@ class IndicatorAnalyzer:
             report['status'] = "WARNING"
             report['issues'].append(f"{len(large_gaps)} large time gaps detected in the data index.")
         
-        # Check for NaN values in calculated columns
         for name in self._calculation_order:
             if name in self._indicator_instances:
                 instance = self._indicator_instances[name]
