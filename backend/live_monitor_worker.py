@@ -25,14 +25,15 @@ from core.models import AnalysisSnapshot
 from core.utils import convert_numpy_types 
 
 class SignalCache:
-    def __init__(self, ttl_map: Dict[str, int]):
+    """ یک کلاس بهینه برای جلوگیری از ارسال سیگنال‌های تکراری. """
+    def __init__(self, ttl_map_hours: Dict[str, int], default_ttl_hours: int):
         self._cache: Dict[Tuple[str, str, str], float] = {}
-        # تبدیل ساعت به ثانیه
-        self.ttl_map_seconds = {tf: hours * 3600 for tf, hours in ttl_map.items()}
+        self.ttl_map_seconds = {tf: hours * 3600 for tf, hours in ttl_map_hours.items()}
+        self.default_ttl_seconds = default_ttl_hours * 3600
 
     def is_duplicate(self, symbol: str, timeframe: str, direction: str) -> bool:
         key = (symbol, timeframe, direction)
-        ttl = self.ttl_map_seconds.get(timeframe, self.ttl_map_seconds.get('default_ttl_hours', 3600))
+        ttl = self.ttl_map_seconds.get(timeframe, self.default_ttl_seconds)
         if key in self._cache and (time.time() - self._cache[key]) < ttl:
             remaining_time = ((self._cache[key] + ttl) - time.time()) / 60
             logger.info(f"Duplicate signal {key} found. Cooldown active for {remaining_time:.1f} more minutes.")
@@ -101,12 +102,16 @@ async def main_loop():
     poll_interval = general_config.get("poll_interval_seconds", 900)
     max_concurrent = general_config.get("max_concurrent_tasks", 5)
 
-    fetcher = ExchangeFetcher(); orchestrator = MasterOrchestrator(config=config); telegram = TelegramHandler()
+    # ✨ FIX #1: The Fetcher is now correctly initialized with the central config object.
+    fetcher = ExchangeFetcher(config=config)
+    orchestrator = MasterOrchestrator(config=config)
+    telegram = TelegramHandler()
     
-    # ✨ FIX: Load TTL map from the config file
+    # ✨ FIX #2: The SignalCache is now initialized more cleanly.
     cache_config = config.get("signal_cache", {})
-    ttl_map = cache_config.get("ttl_map_hours", {'default_ttl_hours': 4})
-    signal_cache = SignalCache(ttl_map=ttl_map)
+    ttl_map = cache_config.get("ttl_map_hours", {})
+    default_ttl = cache_config.get("default_ttl_hours", 4)
+    signal_cache = SignalCache(ttl_map_hours=ttl_map, default_ttl_hours=default_ttl)
     
     version = orchestrator.ENGINE_VERSION
     
