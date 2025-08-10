@@ -14,6 +14,8 @@ class DivergenceIndicator(BaseIndicator):
     IndicatorAnalyzer. This eliminates redundant calculations and makes the system
     more robust and efficient.
     """
+    dependencies = ['rsi', 'zigzag']
+
     def __init__(self, df: pd.DataFrame, **kwargs):
         super().__init__(df, **kwargs)
         self.params = kwargs.get('params', {})
