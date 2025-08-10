@@ -14,6 +14,8 @@ class StochasticIndicator(BaseIndicator):
     This advanced version provides a multi-faceted analysis of momentum by consuming
     pre-calculated ZigZag columns for its powerful divergence detection feature.
     """
+    dependencies = ['atr']
+
     def __init__(self, df: pd.DataFrame, **kwargs):
         super().__init__(df, **kwargs)
         self.params = kwargs.get('params', {})
