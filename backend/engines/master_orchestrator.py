@@ -12,33 +12,25 @@ logger = logging.getLogger(__name__)
 
 class MasterOrchestrator:
     """
-    The strategic mastermind of the AiSignalPro project (v21.1 - Final & Complete)
-    This version is absolutely complete and perfectly synchronized with the final
-    strategy and indicator architecture of the project. No summarized parts.
+    The strategic mastermind of the AiSignalPro project (v22.1 - Final & Complete)
+    This version introduces stateful, incremental calculations for hyper-performance
+    and is absolutely complete with no summarized parts.
     """
     def __init__(self, config: Dict[str, Any]):
         self.config = config
-        
-        # The definitive, synchronized list of all 12 world-class strategy classes
         self._strategy_classes: List[Type[BaseStrategy]] = [
-            BreakoutHunter,
-            ChandelierTrendRider,
-            DivergenceSniperPro,
+            TrendRiderPro, VwapMeanReversion, DivergenceSniperPro, WhaleReversal,
+            VolumeCatalystPro, BreakoutHunter, IchimokuHybridPro, ChandelierTrendRider,
+            KeltnerMomentumBreakout, PivotConfluenceSniper, ConfluenceSniper,
             EmaCrossoverStrategy,
-            ConfluenceSniper,
-            IchimokuHybridPro,
-            KeltnerMomentumBreakout,
-            PivotConfluenceSniper,
-            TrendRiderPro,
-            VolumeCatalystPro,
-            WhaleReversal,
-            VwapMeanReversion,
         ]
-        
         self.gemini_handler = GeminiHandler()
         self.last_gemini_call_time = 0
-        self.ENGINE_VERSION = "21.1.0"
-        logger.info(f"MasterOrchestrator v{self.ENGINE_VERSION} (Final & Complete) initialized.")
+        self.ENGINE_VERSION = "22.1.0"
+        
+        self._last_state: Dict[str, pd.DataFrame] = {}
+        
+        logger.info(f"MasterOrchestrator v{self.ENGINE_VERSION} (Legendary & Stateful) initialized.")
 
     def _find_super_signal(self, signals: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
         min_confluence = self.config.get("general", {}).get("min_confluence_for_super_signal", 3)
@@ -87,7 +79,6 @@ class MasterOrchestrator:
         
         json_data = json.dumps(prompt_context, indent=2, ensure_ascii=False, default=str)
         
-        # ✨ The full, unabbreviated prompt
         prompt_template = f"""
 شما یک تحلیلگر ارشد و معامله‌گر کوانت (Quantitative Trader) با سال‌ها تجربه در بازارهای ارز دیجیتال هستید. شما به تحلیل‌های مبتنی بر داده، ساختار بازار و مدیریت ریسک تسلط کامل دارید.
 
@@ -117,16 +108,25 @@ class MasterOrchestrator:
         return ai_response
 
     def run_full_pipeline(self, df: pd.DataFrame, symbol: str, timeframe: str) -> Dict[str, Any]:
-        logger.info(f"Running primary analysis for {symbol} on {timeframe}...")
-        primary_analyzer = IndicatorAnalyzer(df, config=self.config.get('indicators', {}), timeframe=timeframe)
-        primary_analyzer.calculate_all()
-        primary_analysis = primary_analyzer.get_analysis_summary()
-
+        state_key = f"{symbol}_{timeframe}"
+        
+        previous_df_state = self._last_state.get(state_key)
+        analyzer = IndicatorAnalyzer(df, config=self.config.get('indicators', {}), timeframe=timeframe, previous_df=previous_df_state)
+        analyzer.calculate_all()
+        
+        self._last_state[state_key] = analyzer.final_df
+        
+        primary_analysis = analyzer.get_analysis_summary()
+        
         htf_timeframe = '4h'
-        logger.info(f"Running HTF analysis for {symbol} on {htf_timeframe}...")
-        htf_analyzer = IndicatorAnalyzer(df, config=self.config.get('indicators', {}), timeframe=htf_timeframe)
-        htf_analyzer.calculate_all()
-        htf_analysis = htf_analyzer.get_analysis_summary()
+        if timeframe == htf_timeframe:
+            htf_analysis = primary_analysis
+        else:
+            logger.info(f"Running HTF analysis for {symbol} on {htf_timeframe}...")
+            # Note: HTF analysis could also be stateful for ultimate optimization
+            htf_analyzer = IndicatorAnalyzer(df, config=self.config.get('indicators', {}), timeframe=htf_timeframe)
+            htf_analyzer.calculate_all()
+            htf_analysis = htf_analyzer.get_analysis_summary()
         
         valid_signals = []
         strategy_configs = self.config.get('strategies', {})
@@ -135,7 +135,7 @@ class MasterOrchestrator:
             strategy_config = strategy_configs.get(strategy_name, {})
             if strategy_config.get('enabled', True):
                 try:
-                    instance = sc(primary_analysis, strategy_config, htf_analysis=htf_analysis)
+                    instance = sc(primary_analysis, strategy_config, timeframe, htf_analysis=htf_analysis)
                     signal = instance.check_signal()
                     if signal:
                         signal['strategy_name'] = instance.strategy_name
@@ -144,14 +144,12 @@ class MasterOrchestrator:
                     logger.error(f"Error running strategy '{strategy_name}' on {timeframe}: {e}", exc_info=True)
         
         if not valid_signals:
-            logger.info(f"No valid signals found by any strategy for {symbol} {timeframe}.")
             return {"status": "NEUTRAL", "message": "No strategy conditions met.", "full_analysis": primary_analysis}
 
         min_rr = self.config.get("general", {}).get("min_risk_reward_ratio", 1.0)
         qualified_signals = [s for s in valid_signals if s.get('risk_reward_ratio', 0) >= min_rr]
         
         if not qualified_signals:
-            logger.info(f"Signals found for {symbol} {timeframe} but failed R/R quality check.")
             return {"status": "NEUTRAL", "message": "Signals found but failed R/R quality check.", "full_analysis": primary_analysis}
         
         best_signal = self._find_super_signal(qualified_signals)
@@ -167,10 +165,7 @@ class MasterOrchestrator:
             return {"status": "NEUTRAL", "message": "Signal was vetoed by AI analysis.", "full_analysis": primary_analysis}
 
         return {
-            "status": "SUCCESS",
-            "symbol": symbol,
-            "timeframe": timeframe,
-            "base_signal": best_signal,
-            "ai_confirmation": ai_confirmation,
+            "status": "SUCCESS", "symbol": symbol, "timeframe": timeframe,
+            "base_signal": best_signal, "ai_confirmation": ai_confirmation,
             "full_analysis": primary_analysis
         }
