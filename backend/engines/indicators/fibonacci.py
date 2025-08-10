@@ -14,6 +14,9 @@ class FibonacciIndicator(BaseIndicator):
     on-the-fly analysis engine, consuming pre-calculated ZigZag columns to identify
     the latest market swing and compute Fibonacci levels in real-time during analysis.
     """
+    
+    dependencies = ['zigzag']
+
     def __init__(self, df: pd.DataFrame, **kwargs):
         super().__init__(df, **kwargs)
         self.params = kwargs.get('params', {})
@@ -22,6 +25,8 @@ class FibonacciIndicator(BaseIndicator):
         self.extension_levels = sorted(self.params.get('extensions', [127.2, 161.8, 200, 261.8]))
         self.zigzag_deviation = float(self.params.get('zigzag_deviation', 3.0))
         self.golden_zone_levels = self.params.get('golden_zone', {'61.8%', '78.6%'})
+
+ 
 
     def calculate(self) -> 'FibonacciIndicator':
         """
