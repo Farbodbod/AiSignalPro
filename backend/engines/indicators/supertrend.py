@@ -4,16 +4,16 @@ import logging
 from typing import Dict, Any, Tuple
 
 from .base import BaseIndicator
+from .atr import AtrIndicator # FIX: Import AtrIndicator to access the static method
 
 logger = logging.getLogger(__name__)
 
 class SuperTrendIndicator(BaseIndicator):
     """
-    SuperTrend - Definitive, World-Class Version (v4.1 - Final Architecture)
+    SuperTrend - Definitive, World-Class Version (v4.2 - Harmonized Edition)
     ------------------------------------------------------------------------
-    This version adheres to the final AiSignalPro architecture. It performs its
-    calculations on the pre-resampled dataframe provided by the IndicatorAnalyzer,
-    making it a pure, efficient, and powerful trend analysis engine.
+    This version now correctly identifies its required ATR column using a standardized
+    naming convention, fixing the critical ValueError issue from previous versions.
     """
     dependencies = ['atr']
 
@@ -24,8 +24,6 @@ class SuperTrendIndicator(BaseIndicator):
         self.multiplier = float(self.params.get('multiplier', 3.0))
         self.timeframe = self.params.get('timeframe', None)
         
-        # Note: The ATR period for SuperTrend is typically the same as the SuperTrend period.
-        # We will use self.period to construct the expected ATR column name.
         self.atr_period = int(self.params.get('atr_period', self.period))
 
         suffix = f'_{self.period}_{self.multiplier}'
@@ -38,7 +36,6 @@ class SuperTrendIndicator(BaseIndicator):
         high = df['high'].to_numpy(); low = df['low'].to_numpy(); close = df['close'].to_numpy()
         atr = df[atr_col].to_numpy()
 
-        # Calculation can produce NaNs if ATR is NaN, handle this.
         with np.errstate(invalid='ignore'):
             hl2 = (high + low) / 2
             final_upper_band = hl2 + (multiplier * atr)
@@ -48,17 +45,16 @@ class SuperTrendIndicator(BaseIndicator):
         direction = np.full(len(df), 1)
 
         for i in range(1, len(df)):
-            # If previous supertrend is NaN, initialize based on current close vs lower band
             prev_st = supertrend[i-1]
             if np.isnan(prev_st):
-                prev_st = final_lower_band[i-1] # A reasonable starting point
+                prev_st = final_lower_band[i-1]
 
-            if final_upper_band[i] > prev_st or close[i-1] > prev_st:
+            if final_upper_band[i] < prev_st:
                 final_upper_band[i] = min(final_upper_band[i], prev_st)
             
-            if final_lower_band[i] < prev_st or close[i-1] < prev_st:
+            if final_lower_band[i] > prev_st:
                 final_lower_band[i] = max(final_lower_band[i], prev_st)
-
+                
             if close[i] > final_upper_band[i-1]:
                 direction[i] = 1
             elif close[i] < final_lower_band[i-1]:
@@ -82,8 +78,8 @@ class SuperTrendIndicator(BaseIndicator):
             self.df[self.direction_col] = np.nan
             return self
 
-        atr_col_name = f'atr_{self.atr_period}'
-        if self.timeframe: atr_col_name += f'_{self.timeframe}'
+        # FIX: Use the standardized method to get the ATR column name
+        atr_col_name = AtrIndicator._get_atr_col_name(self.atr_period, self.timeframe)
         
         if atr_col_name not in df_for_calc.columns:
             raise ValueError(f"Required ATR column '{atr_col_name}' not found for SuperTrend. Ensure ATR is calculated first by the Analyzer.")
