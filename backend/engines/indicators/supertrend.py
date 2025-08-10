@@ -16,6 +16,8 @@ class SuperTrendIndicator(BaseIndicator):
     column provided by the IndicatorAnalyzer, making it a pure, efficient, and
     robust trend analysis engine.
     """
+    dependencies = ['atr']
+
     def __init__(self, df: pd.DataFrame, **kwargs):
         super().__init__(df, **kwargs)
         self.params = kwargs.get('params', {})
