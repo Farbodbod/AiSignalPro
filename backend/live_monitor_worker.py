@@ -60,11 +60,21 @@ def save_analysis_snapshot(symbol: str, timeframe: str, package: Dict[str, Any])
     except Exception as e:
         logger.error(f"Failed to save AnalysisSnapshot for {symbol} {timeframe}: {e}", exc_info=True)
 
-async def analyze_and_alert(semaphore: asyncio.Semaphore, fetcher: ExchangeFetcher, orchestrator: MasterOrchestrator, telegram: TelegramHandler, cache: SignalCache, symbol: str, timeframe: str):
+async def analyze_and_alert(
+    semaphore: asyncio.Semaphore, 
+    fetcher: ExchangeFetcher, 
+    orchestrator: MasterOrchestrator, 
+    telegram: TelegramHandler, 
+    cache: SignalCache, 
+    symbol: str, 
+    timeframe: str,
+    kline_limit: int # ✨ پارامتر جدید برای تعداد کندل‌ها
+):
     async with semaphore:
         try:
             logger.info(f"Fetching data for {symbol} on {timeframe}...")
-            df, source = await fetcher.get_first_successful_klines(symbol, timeframe, limit=500)
+            # ✨ استفاده از پارامتر جدید به جای عدد ثابت
+            df, source = await fetcher.get_first_successful_klines(symbol, timeframe, limit=kline_limit)
             if df is None or df.empty or len(df) < 200:
                 logger.warning(f"Could not fetch sufficient data for {symbol} on {timeframe}.")
                 return
@@ -100,8 +110,9 @@ async def main_loop():
     timeframes = general_config.get("timeframes_to_analyze", ['1h'])
     poll_interval = general_config.get("poll_interval_seconds", 900)
     max_concurrent = general_config.get("max_concurrent_tasks", 5)
+    # ✨ خواندن تعداد کندل‌ها از کانفیگ
+    kline_limit = general_config.get("fetcher_limit", 500)
 
-    # ✨ THE FINAL FIX: Initialize ExchangeFetcher without the 'config' argument
     fetcher = ExchangeFetcher()
     orchestrator = MasterOrchestrator(config=config)
     telegram = TelegramHandler()
@@ -113,7 +124,11 @@ async def main_loop():
     
     version = orchestrator.ENGINE_VERSION
     
-    logger.info("="*50); logger.info(f"  AiSignalPro Live Monitoring Worker (v{version}) has started!"); logger.info(f"  Monitoring {len(symbols)} symbols on {len(timeframes)} timeframes."); logger.info(f"  Concurrency limit set to {max_concurrent} tasks."); logger.info("="*50)
+    logger.info("="*50); logger.info(f"  AiSignalPro Live Monitoring Worker (v{version}) has started!"); 
+    logger.info(f"  Monitoring {len(symbols)} symbols on {len(timeframes)} timeframes."); 
+    logger.info(f"  Concurrency limit set to {max_concurrent} tasks.");
+    logger.info(f"  Fetching {kline_limit} candles for each analysis."); # ✨ لاگ جدید برای شفافیت
+    logger.info("="*50)
     await telegram.send_message_async(f"✅ *AiSignalPro Bot (v{version}) is now LIVE!*")
     
     semaphore = asyncio.Semaphore(max_concurrent)
@@ -122,7 +137,12 @@ async def main_loop():
     while True:
         cycle_count += 1
         logger.info(f"--- Starting new monitoring cycle #{cycle_count} ---")
-        tasks = [analyze_and_alert(semaphore, fetcher, orchestrator, telegram, signal_cache, symbol, timeframe) for symbol in symbols for timeframe in timeframes]
+        # ✨ پاس دادن تعداد کندل‌ها به وظیفه تحلیل
+        tasks = [
+            analyze_and_alert(semaphore, fetcher, orchestrator, telegram, signal_cache, symbol, timeframe, kline_limit) 
+            for symbol in symbols 
+            for timeframe in timeframes
+        ]
         await asyncio.gather(*tasks)
         logger.info(f"--- Cycle #{cycle_count} finished. Sleeping for {poll_interval} seconds... ---")
         await asyncio.sleep(poll_interval)
