@@ -16,6 +16,8 @@ class StructureIndicator(BaseIndicator):
     analysis of the price's position within the market structure, fully supporting
     the AiSignalPro architecture.
     """
+    dependencies = ['zigzag']
+
     def __init__(self, df: pd.DataFrame, **kwargs):
         super().__init__(df, **kwargs)
         self.params = kwargs.get('params', {})
