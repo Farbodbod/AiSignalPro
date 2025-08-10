@@ -3,46 +3,35 @@ import numpy as np
 import logging
 from typing import Dict, Any, List, Optional
 
-# اطمینان حاصل کنید که این اندیکاتورها از فایل‌های مربوطه و در نسخه‌های نهایی خود وارد شده‌اند
 from .base import BaseIndicator
-from .zigzag import ZigzagIndicator # وابستگی برای تشخیص واگرایی
 
 logger = logging.getLogger(__name__)
 
 class WilliamsRIndicator(BaseIndicator):
     """
-    Williams %R - Definitive, MTF, and Divergence-Detection World-Class Version
-    ----------------------------------------------------------------------------
-    This advanced version provides a multi-faceted analysis of momentum, including:
-    - Predictive Regular and Hidden divergence detection via ZigZag dependency.
-    - Momentum analysis via the slope of the %R line.
-    - Bias-free and robust analysis for automated systems.
-    - Full integration with the AiSignalPro MTF architecture.
+    Williams %R - Definitive, MTF, and Divergence-Detection World-Class Version (v3.0 - No Internal Deps)
+    ------------------------------------------------------------------------------------------------------
+    This advanced version provides a multi-faceted analysis of momentum by consuming
+    pre-calculated ZigZag columns for its powerful, fully-implemented divergence detection feature.
     """
     def __init__(self, df: pd.DataFrame, **kwargs):
         super().__init__(df, **kwargs)
-        # --- Parameters ---
         self.params = kwargs.get('params', {})
         self.period = int(self.params.get('period', 14))
         self.overbought = float(self.params.get('overbought', -20.0))
         self.oversold = float(self.params.get('oversold', -80.0))
         self.timeframe = self.params.get('timeframe', None)
-        
-        # --- Divergence Detection Parameters ---
         self.detect_divergence = bool(self.params.get('detect_divergence', True))
         self.zigzag_deviation = float(self.params.get('zigzag_deviation', 3.0))
         self.divergence_lookback = int(self.params.get('divergence_lookback', 5))
         
-        # --- Dynamic Column Naming ---
         suffix = f'_{self.period}'
         if self.timeframe: suffix += f'_{self.timeframe}'
         self.wr_col = f'wr{suffix}'
-        self._zigzag_indicator: Optional[ZigzagIndicator] = None
 
     def _calculate_wr(self, df: pd.DataFrame) -> pd.DataFrame:
         """The core, technically correct Williams %R calculation logic."""
         res = pd.DataFrame(index=df.index)
-        
         highest_high = df['high'].rolling(window=self.period).max()
         lowest_low = df['low'].rolling(window=self.period).min()
         
@@ -51,67 +40,81 @@ class WilliamsRIndicator(BaseIndicator):
         
         # Default to -50 (mid-point) if range is zero
         res[self.wr_col] = ((numerator / denominator) * -100).fillna(-50)
-        
-        # Dependency for Divergence
-        if self.detect_divergence:
-            zigzag_params = {'deviation': self.zigzag_deviation, 'timeframe': None}
-            self._zigzag_indicator = ZigzagIndicator(df, params=zigzag_params)
-            df_with_zigzag = self._zigzag_indicator.calculate()
-            res[self._zigzag_indicator.col_pivots] = df_with_zigzag[self._zigzag_indicator.col_pivots]
-            res[self._zigzag_indicator.col_prices] = df_with_zigzag[self._zigzag_indicator.col_prices]
-            
         return res
 
     def calculate(self) -> 'WilliamsRIndicator':
+        """Calculates Williams %R, assuming ZigZag is pre-calculated if needed."""
         base_df = self.df
         if self.timeframe:
-            # ... (Standard MTF Resampling Logic) ...
             rules = {'open': 'first', 'high': 'max', 'low': 'min', 'close': 'last'}
             calc_df = base_df.resample(self.timeframe, label='right', closed='right').apply(rules).dropna()
         else:
             calc_df = base_df.copy()
 
-        if len(calc_df) < self.period: logger.warning(f"Not enough data for Williams %R on {self.timeframe or 'base'}."); return self
+        if len(calc_df) < self.period:
+            logger.warning(f"Not enough data for Williams %R on {self.timeframe or 'base'}.")
+            self.df[self.wr_col] = np.nan
+            return self
 
         wr_results = self._calculate_wr(calc_df)
         
         if self.timeframe:
-            # ... (Standard MTF Map Back Logic) ...
             final_results = wr_results.reindex(base_df.index, method='ffill')
-            for col in final_results.columns: self.df[col] = final_results[col]
+            self.df[self.wr_col] = final_results[self.wr_col]
         else:
-            for col in wr_results.columns: self.df[col] = wr_results[col]
+            self.df[self.wr_col] = wr_results[self.wr_col]
             
         return self
     
     def _find_divergences(self, valid_df: pd.DataFrame) -> List[Dict[str, Any]]:
-        # ... (Divergence detection logic using ZigZag, same as in MfiIndicator/Stochastic) ...
-        # This part will compare price pivots with Williams %R pivots.
-        return [] # Placeholder for brevity, the logic is identical to MFI's
+        """Finds divergences by consuming pre-calculated ZigZag columns."""
+        if not self.detect_divergence: return []
+
+        tf_suffix = f'_{self.timeframe}' if self.timeframe else ''
+        pivot_col = f'zigzag_pivots_{self.zigzag_deviation}{tf_suffix}'
+        price_col = f'zigzag_prices_{self.zigzag_deviation}{tf_suffix}'
+        
+        if not all(col in valid_df.columns for col in [pivot_col, price_col]):
+             logger.warning(f"[{self.__class__.__name__}] ZigZag columns not found for divergence detection.")
+             return []
+
+        pivots_df = valid_df[valid_df[pivot_col] != 0]
+        if len(pivots_df) < 2: return []
+        
+        last_pivot = pivots_df.iloc[-1]
+        previous_pivots = pivots_df.iloc[-self.divergence_lookback:-1]
+        divergences = []
+        for i in range(len(previous_pivots)):
+            prev_pivot = previous_pivots.iloc[i]
+            price1, wr1 = prev_pivot[price_col], prev_pivot[self.wr_col]
+            price2, wr2 = last_pivot[price_col], last_pivot[self.wr_col]
+            if prev_pivot[pivot_col] == 1 and last_pivot[pivot_col] == 1:
+                if price2 > price1 and wr2 < wr1: divergences.append({'type': 'Regular Bearish'})
+                if price2 < price1 and wr2 > wr1: divergences.append({'type': 'Hidden Bearish'})
+            elif prev_pivot[pivot_col] == -1 and last_pivot[pivot_col] == -1:
+                if price2 < price1 and wr2 > wr1: divergences.append({'type': 'Regular Bullish'})
+                if price2 > price1 and wr2 < wr1: divergences.append({'type': 'Hidden Bullish'})
+        return divergences
 
     def analyze(self) -> Dict[str, Any]:
+        """Provides a multi-faceted analysis of momentum and potential reversals."""
         valid_df = self.df.dropna(subset=[self.wr_col])
         if len(valid_df) < 2: return {"status": "Insufficient Data"}
 
-        # ✨ Bias-Free Analysis
         last = valid_df.iloc[-1]; prev = valid_df.iloc[-2]
         last_wr = last[self.wr_col]; prev_wr = prev[self.wr_col]
 
-        # --- 1. Positional Analysis ---
         position = "Neutral"
         if last_wr >= self.overbought: position = "Overbought"
         elif last_wr <= self.oversold: position = "Oversold"
             
-        # --- 2. Crossover Signal Analysis ---
         signal = "Hold"
         if prev_wr <= self.oversold and last_wr > self.oversold: signal = "Oversold Exit (Buy)"
         elif prev_wr >= self.overbought and last_wr < self.overbought: signal = "Overbought Exit (Sell)"
 
-        # --- 3. Momentum Analysis (Slope) ---
         slope = last_wr - prev_wr
         momentum = "Rising" if slope > 0 else "Falling" if slope < 0 else "Flat"
         
-        # --- 4. Divergence Analysis ---
         divergences = self._find_divergences(valid_df)
         
         return {
