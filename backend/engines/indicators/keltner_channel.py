@@ -9,12 +9,12 @@ logger = logging.getLogger(__name__)
 
 class KeltnerChannelIndicator(BaseIndicator):
     """
-    Keltner Channel - Definitive, MTF, and World-Class Version (v3.0 - No Internal Deps)
-    ------------------------------------------------------------------------------------
-    This version adheres to the final AiSignalPro architecture. It does not
-    calculate its own dependencies. Instead, it consumes the pre-calculated ATR
-    column provided by the IndicatorAnalyzer, making it a pure, efficient, and
-    robust calculation engine for volatility channels and squeezes.
+    Keltner Channel - Definitive, World-Class Version (v4.0 - Final Architecture)
+    -----------------------------------------------------------------------------
+    This version adheres to the final AiSignalPro architecture. It performs its
+    calculations on the pre-resampled dataframe provided by the IndicatorAnalyzer,
+    making it a pure, efficient, and powerful engine for analyzing volatility
+    channels and squeezes.
     """
     dependencies = ['atr']
 
@@ -36,55 +36,42 @@ class KeltnerChannelIndicator(BaseIndicator):
 
     def calculate(self) -> 'KeltnerChannelIndicator':
         """
-        Calculates Keltner Channels based on Typical Price, assuming the ATR column is already present.
+        ✨ FINAL ARCHITECTURE: No resampling. Just pure calculation.
+        The dataframe received is already at the correct timeframe.
         """
-        base_df = self.df
-        if self.timeframe:
-            if not isinstance(base_df.index, pd.DatetimeIndex): raise TypeError("DatetimeIndex required for MTF.")
-            rules = {'open': 'first', 'high': 'max', 'low': 'min', 'close': 'last'}
-            calc_df = base_df.resample(self.timeframe, label='right', closed='right').apply(rules).dropna()
-        else:
-            calc_df = base_df.copy()
-
-        if len(calc_df) < max(self.ema_period, self.atr_period):
+        df_for_calc = self.df
+        
+        if len(df_for_calc) < max(self.ema_period, self.atr_period):
             logger.warning(f"Not enough data for Keltner Channel on {self.timeframe or 'base'}.")
+            for col in [self.upper_col, self.lower_col, self.middle_col, self.bandwidth_col]:
+                self.df[col] = np.nan
             return self
 
-        # ✨ THE MIRACLE FIX: No internal dependency calls.
-        # It now expects the ATR column to have been pre-calculated by the Analyzer.
         atr_col_name = f'atr_{self.atr_period}'
         if self.timeframe: atr_col_name += f'_{self.timeframe}'
         
-        if atr_col_name not in calc_df.columns:
-            raise ValueError(f"Required ATR column '{atr_col_name}' not found for Keltner Channel calculation. Ensure ATR is calculated first by the Analyzer.")
+        if atr_col_name not in df_for_calc.columns:
+            raise ValueError(f"Required ATR column '{atr_col_name}' not found. Ensure ATR is calculated first by the Analyzer.")
         
-        # --- Core Keltner Calculation ---
-        typical_price = (calc_df['high'] + calc_df['low'] + calc_df['close']) / 3
+        typical_price = (df_for_calc['high'] + df_for_calc['low'] + df_for_calc['close']) / 3
         middle_band = typical_price.ewm(span=self.ema_period, adjust=False).mean()
-        atr_value = calc_df[atr_col_name] * self.atr_multiplier
+        atr_value = df_for_calc[atr_col_name] * self.atr_multiplier
         
         upper_band = middle_band + atr_value
         lower_band = middle_band - atr_value
         bandwidth = ((upper_band - lower_band) / middle_band.replace(0, np.nan)) * 100
 
-        results_df = pd.DataFrame(index=calc_df.index)
-        results_df[self.upper_col] = upper_band
-        results_df[self.lower_col] = lower_band
-        results_df[self.middle_col] = middle_band
-        results_df[self.bandwidth_col] = bandwidth
-
-        if self.timeframe:
-            final_results = results_df.reindex(base_df.index, method='ffill')
-            for col in final_results.columns: self.df[col] = final_results[col]
-        else:
-            for col in results_df.columns: self.df[col] = results_df[col]
+        self.df[self.upper_col] = upper_band
+        self.df[self.lower_col] = lower_band
+        self.df[self.middle_col] = middle_band
+        self.df[self.bandwidth_col] = bandwidth
         
         return self
 
     def analyze(self) -> Dict[str, Any]:
         """
-        Provides deep analysis of price action relative to the Keltner Channel,
-        including breakout, touch, and squeeze detection.
+        Provides deep analysis of price action relative to the Keltner Channel.
+        This powerful analysis logic remains unchanged.
         """
         required_cols = [self.upper_col, self.lower_col, self.middle_col, self.bandwidth_col]
         valid_df = self.df.dropna(subset=required_cols)
@@ -102,9 +89,9 @@ class KeltnerChannelIndicator(BaseIndicator):
         elif close < lower:
             position, message = "Breakdown Below", "Price closed strongly below the lower band."
         elif high >= upper:
-            position, message = "Touching Upper Band", "Price tested the upper band, potential reversal or breakout."
+            position, message = "Touching Upper Band", "Price tested the upper band."
         elif low <= lower:
-            position, message = "Touching Lower Band", "Price tested the lower band, potential reversal or breakdown."
+            position, message = "Touching Lower Band", "Price tested the lower band."
             
         recent_bandwidth = valid_df[self.bandwidth_col].tail(self.squeeze_period)
         is_in_squeeze = last[self.bandwidth_col] <= recent_bandwidth.min()
