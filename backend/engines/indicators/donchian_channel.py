@@ -16,6 +16,8 @@ class DonchianChannelIndicator(BaseIndicator):
     pre-calculated ATR column provided by the IndicatorAnalyzer for its optional
     volatility filter.
     """
+    dependencies = ['atr']
+
     def __init__(self, df: pd.DataFrame, **kwargs):
         super().__init__(df, **kwargs)
         self.params = kwargs.get('params', {})
