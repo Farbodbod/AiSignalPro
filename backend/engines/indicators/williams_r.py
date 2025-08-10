@@ -14,6 +14,8 @@ class WilliamsRIndicator(BaseIndicator):
     This advanced version provides a multi-faceted analysis of momentum by consuming
     pre-calculated ZigZag columns for its powerful, fully-implemented divergence detection feature.
     """
+    dependencies = ['zigzag']
+
     def __init__(self, df: pd.DataFrame, **kwargs):
         super().__init__(df, **kwargs)
         self.params = kwargs.get('params', {})
