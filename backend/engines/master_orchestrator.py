@@ -113,7 +113,7 @@ class MasterOrchestrator:
         
         htf_timeframe = '4h'
         # ✅ FIX: Added a guard clause to prevent HTF analysis on insufficient data
-        min_htf_rows = self.config.get("general", {}).get("min_rows_for_htf", 250)
+        min_htf_rows = self.config.get("general", {}).get("min_rows_for_htf", 500)
 
         if timeframe == htf_timeframe:
             htf_analysis = primary_analysis
