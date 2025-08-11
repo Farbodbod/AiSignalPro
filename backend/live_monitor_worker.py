@@ -22,7 +22,7 @@ from engines.master_orchestrator import MasterOrchestrator
 from engines.signal_adapter import SignalAdapter
 from engines.telegram_handler import TelegramHandler
 from core.models import AnalysisSnapshot
-from core.utils import convert_numpy_types 
+from core.utils import convert_numpy_types
 
 class SignalCache:
     def __init__(self, ttl_map_hours: Dict[str, int], default_ttl_hours: int):
@@ -75,7 +75,6 @@ async def analyze_and_alert(
             logger.info(f"Fetching {kline_limit} klines for {symbol} on {timeframe}...")
             df, source = await fetcher.get_first_successful_klines(symbol, timeframe, limit=kline_limit)
             
-            # ✅ FIX: Increased the minimum required rows for analysis
             min_rows_for_analysis = 200 
             if df is None or df.empty or len(df) < min_rows_for_analysis:
                 logger.warning(f"Could not fetch sufficient data for analysis on {symbol} on {timeframe}. Got {len(df) if df is not None else 0} rows, require {min_rows_for_analysis}.")
@@ -115,9 +114,9 @@ async def main_loop():
     
     # ✅ FIX: Define a mapping for kline limits per timeframe for optimized fetching
     kline_limit_map = general_config.get("kline_limit_map", {
-        "1m": 250, "5m": 250, "15m": 250, "1h": 250, "4h": 250, "1d": 250
+        "1m": 400, "5m": 400, "15m": 400, "1h": 400, "4h": 400, "1d": 400
     })
-    default_kline_limit = general_config.get("fetcher_limit", 250) # Fallback
+    default_kline_limit = general_config.get("fetcher_limit", 400) # Fallback
 
     fetcher = ExchangeFetcher()
     orchestrator = MasterOrchestrator(config=config)
@@ -133,7 +132,7 @@ async def main_loop():
     logger.info("="*50); logger.info(f"  AiSignalPro Live Monitoring Worker (v{version}) has started!"); 
     logger.info(f"  Monitoring {len(symbols)} symbols on {len(timeframes)} timeframes."); 
     logger.info(f"  Concurrency limit set to {max_concurrent} tasks.");
-    logger.info(f"  Using dynamic, formula-based kline limits for fetching.");
+    logger.info(f"  Using dynamic, robust kline limits for fetching.");
     logger.info("="*50)
     await telegram.send_message_async(f"✅ *AiSignalPro Bot (v{version}) is now LIVE!*")
     
