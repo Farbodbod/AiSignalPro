@@ -1,7 +1,7 @@
 import pandas as pd
 import numpy as np
 import logging
-from typing import Dict, Any
+from typing import Dict, Any, Tuple
 
 from .base import BaseIndicator
 
@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 
 class ZigzagIndicator(BaseIndicator):
     """
-    ZigZag Indicator - Definitive, World-Class Version (v4.0 - Final Architecture)
+    ZigZag Indicator - Definitive, World-Class Version (v4.1 - Final Architecture)
     -------------------------------------------------------------------------------
     This version adheres to the final AiSignalPro architecture. It performs its
     complex, non-repainting calculations on the pre-resampled dataframe provided
@@ -43,68 +43,83 @@ class ZigzagIndicator(BaseIndicator):
                   df[col] = pd.to_numeric(df[col], errors='coerce')
         return df.dropna(subset=required_cols)
 
-    def _get_pivots(self, df: pd.DataFrame, deviation_threshold: float):
+    def _get_pivots(self, df: pd.DataFrame, deviation_threshold: float) -> Tuple[np.ndarray, np.ndarray]:
         """The complete, non-repainting pivot detection logic."""
-        highs = df['high'].values; lows = df['low'].values
-        pivots = np.zeros(len(df), dtype=int); prices = np.zeros(len(df), dtype=float)
-        if len(df) == 0: return pivots, prices
+        highs = df['high'].values
+        lows = df['low'].values
+        pivots = np.zeros(len(df), dtype=int)
+        prices = np.zeros(len(df), dtype=float)
         
-        last_pivot_idx = 0; last_pivot_price = highs[0]; trend = 0
+        if len(df) == 0:
+            return pivots, prices
+
+        last_pivot_idx = 0
+        last_pivot_price = highs[0]
+        trend = 0  # 0 = undecided, 1 = uptrend, -1 = downtrend
 
         for i in range(1, len(df)):
             current_high, current_low = highs[i], lows[i]
             if trend == 0:
                 if current_high > last_pivot_price * (1 + deviation_threshold / 100):
-                    trend = 1; pivots[last_pivot_idx] = -1; prices[last_pivot_idx] = lows[last_pivot_idx]
-                    last_pivot_price = current_high; last_pivot_idx = i
+                    trend = 1
+                    pivots[last_pivot_idx] = -1  # The last pivot was a trough
+                    prices[last_pivot_idx] = lows[last_pivot_idx]
+                    last_pivot_price = current_high
+                    last_pivot_idx = i
                 elif current_low < last_pivot_price * (1 - deviation_threshold / 100):
-                    trend = -1; pivots[last_pivot_idx] = 1; prices[last_pivot_idx] = highs[last_pivot_idx]
-                    last_pivot_price = current_low; last_pivot_idx = i
-            elif trend == 1:
+                    trend = -1
+                    pivots[last_pivot_idx] = 1  # The last pivot was a peak
+                    prices[last_pivot_idx] = highs[last_pivot_idx]
+                    last_pivot_price = current_low
+                    last_pivot_idx = i
+            elif trend == 1:  # In an uptrend, looking for a peak
                 if current_high > last_pivot_price:
-                    last_pivot_price = current_high; last_pivot_idx = i
+                    last_pivot_price = current_high
+                    last_pivot_idx = i
                 elif current_low < last_pivot_price * (1 - deviation_threshold / 100):
-                    pivots[last_pivot_idx] = 1; prices[last_pivot_idx] = last_pivot_price
-                    trend = -1; last_pivot_price = current_low; last_pivot_idx = i
-            elif trend == -1:
+                    pivots[last_pivot_idx] = 1  # Confirmed the peak
+                    prices[last_pivot_idx] = last_pivot_price
+                    trend = -1
+                    last_pivot_price = current_low
+                    last_pivot_idx = i
+            elif trend == -1:  # In a downtrend, looking for a trough
                 if current_low < last_pivot_price:
-                    last_pivot_price = current_low; last_pivot_idx = i
+                    last_pivot_price = current_low
+                    last_pivot_idx = i
                 elif current_high > last_pivot_price * (1 + deviation_threshold / 100):
-                    pivots[last_pivot_idx] = -1; prices[last_pivot_idx] = last_pivot_price
-                    trend = 1; last_pivot_price = current_high; last_pivot_idx = i
+                    pivots[last_pivot_idx] = -1  # Confirmed the trough
+                    prices[last_pivot_idx] = last_pivot_price
+                    trend = 1
+                    last_pivot_price = current_high
+                    last_pivot_idx = i
         
-        if trend != 0 and pivots[last_pivot_idx] == 0:
-            pivots[last_pivot_idx] = trend
-            prices[last_pivot_idx] = last_pivot_price
         return pivots, prices
 
     def calculate(self) -> 'ZigzagIndicator':
-        """
-        ✨ FINAL ARCHITECTURE: No resampling. Just pure calculation.
-        """
+        """ ✨ FINAL ARCHITECTURE: No resampling. Just pure calculation. """
         df_for_calc = self.df
         
         validated_df = self._validate_input(df_for_calc)
         pivots, prices = self._get_pivots(validated_df, self.deviation)
         
+        # Assign the results directly to the main dataframe
         self.df[self.col_pivots] = pivots
-        self.df[self.col_prices] = prices.round(5)
+        self.df[self.col_prices] = prices
         
         return self
 
     def analyze(self) -> dict:
-        """
-        Provides a deep, bias-free analysis of the market structure.
-        """
-        # Drop NaNs to handle the start of the series correctly
-        valid_df = self.df.dropna(subset=[self.col_pivots, self.col_prices])
+        """Provides a deep, bias-free analysis of the market structure."""
+        required_cols = [self.col_pivots, self.col_prices, 'close']
+        valid_df = self.df.dropna(subset=required_cols)
         pivots_df = valid_df[valid_df[self.col_pivots] != 0]
         
         if len(pivots_df) < 2:
-            return {"status": "Awaiting Pivots", "timeframe": self.timeframe or 'Base'}
+            return {"status": "Awaiting Pivots", "timeframe": self.timeframe or 'Base', "analysis": {}}
 
-        # ✨ BIAS-FREE FIX: Use the last closed candle for current price analysis
-        if len(self.df) < 2: return {"status": "Insufficient Data"}
+        if len(self.df) < 2:
+            return {"status": "Insufficient Data", "timeframe": self.timeframe or 'Base', "analysis": {}}
+            
         current_price = self.df.iloc[-2]['close']
 
         last_pivot = pivots_df.iloc[-1]
@@ -114,9 +129,9 @@ class ZigzagIndicator(BaseIndicator):
         
         bos_signal = 'None'
         if last_type == 'peak' and current_price > last_price:
-            bos_signal = 'Bullish BOS' # Break of Structure
+            bos_signal = 'Bullish BOS'
         elif last_type == 'trough' and current_price < last_price:
-            bos_signal = 'Bearish BOS' # Break of Structure
+            bos_signal = 'Bearish BOS'
 
         def to_safe_json(value):
             if hasattr(value, 'strftime'): return value.strftime('%Y-%m-%d %H:%M:%S')
@@ -125,8 +140,10 @@ class ZigzagIndicator(BaseIndicator):
         return {
             "status": "OK",
             "timeframe": self.timeframe or 'Base',
-            "last_pivot": {"type": last_type, "price": round(last_price, 5), "time": to_safe_json(last_pivot.name)},
-            "previous_pivot": {"type": 'peak' if prev_pivot[self.col_pivots] == 1 else 'trough', "price": round(prev_pivot[self.col_prices], 5), "time": to_safe_json(prev_pivot.name)},
-            "market_structure_signal": bos_signal,
-            "signal": "bullish" if last_type == 'trough' else "bearish"
+            "analysis": {
+                "last_pivot": {"type": last_type, "price": round(last_price, 5), "time": to_safe_json(last_pivot.name)},
+                "previous_pivot": {"type": 'peak' if prev_pivot[self.col_pivots] == 1 else 'trough', "price": round(prev_pivot[self.col_prices], 5), "time": to_safe_json(prev_pivot.name)},
+                "market_structure_signal": bos_signal,
+                "signal": "bullish" if last_type == 'trough' else "bearish"
+            }
         }
