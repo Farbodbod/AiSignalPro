@@ -6,9 +6,10 @@ logger = logging.getLogger(__name__)
 
 class BaseStrategy(ABC):
     """
-    World-Class Base Strategy - (v3.4 - Robust Getter & Anti-Fragile)
-    This version features a hardened get_indicator method that acts as a
-    smart guard, ensuring strategies never receive failed or incomplete indicator data.
+    World-Class Base Strategy - (v3.5 - Toolkit Restored & Complete)
+    This definitive version restores the essential helper methods (_get_candlestick_confirmation
+    and _get_volume_confirmation) to the toolkit, making the base class fully
+    featured and complete for all dependent strategies.
     """
     strategy_name: str = "BaseStrategy"
 
@@ -17,19 +18,17 @@ class BaseStrategy(ABC):
         self.config = config or {}
         self.htf_analysis = htf_analysis or {}
         self.primary_timeframe = primary_timeframe
-        self.price_data = self.analysis.get('price_data') # Can be None if analysis fails early
+        self.price_data = self.analysis.get('price_data')
         self.df = self.analysis.get('final_df')
 
     @abstractmethod
     def check_signal(self) -> Optional[Dict[str, Any]]:
         pass
 
+    # --- TOOLKIT: HELPER METHODS FOR STRATEGIES ---
+
     def get_indicator(self, name: str, analysis_source: Optional[Dict] = None, **kwargs) -> Optional[Dict[str, Any]]:
-        """
-        ✅ BULLETPROOF 'Safe Getter' for indicator data.
-        It checks for existence, validity (not None), and absence of error status
-        before returning the data.
-        """
+        """ Bulletproof 'Safe Getter' for indicator data. """
         if kwargs:
             logger.warning(f"Strategy '{self.strategy_name}' called get_indicator with unexpected arguments: {kwargs}. These are being ignored.")
         
@@ -44,7 +43,35 @@ class BaseStrategy(ABC):
 
         return indicator_data
     
-    # ... ( بقیه متدهای این کلاس مانند _get_trend_confirmation و _calculate_smart_risk_management بدون تغییر باقی می‌مانند ) ...
+    # ✅ FIX: Restored the _get_candlestick_confirmation helper method.
+    def _get_candlestick_confirmation(self, direction: str, min_reliability: str = 'Medium') -> Optional[Dict[str, Any]]:
+        """ Safely checks for a confirming candlestick pattern. """
+        pattern_analysis = self.get_indicator('patterns')
+        if not pattern_analysis: return None
+        
+        reliability_map = {'Low': 0, 'Medium': 1, 'Strong': 2}
+        min_reliability_score = reliability_map.get(min_reliability, 1)
+        
+        target_pattern_list = 'bullish_patterns' if direction.upper() == "BUY" else 'bearish_patterns'
+        found_patterns = pattern_analysis['analysis'].get(target_pattern_list, [])
+        
+        for pattern in found_patterns:
+            if reliability_map.get(pattern.get('reliability'), 0) >= min_reliability_score:
+                return pattern # Return the first matching strong pattern
+        return None
+
+    # ✅ FIX: Restored the _get_volume_confirmation helper method.
+    def _get_volume_confirmation(self) -> bool:
+        """ Safely checks for whale activity. """
+        whale_analysis = self.get_indicator('whales')
+        if not whale_analysis: return False
+        
+        min_spike_score = self.config.get('min_whale_spike_score', 1.5)
+        is_whale_activity = whale_analysis.get('analysis', {}).get('is_whale_activity', False)
+        spike_score = whale_analysis.get('analysis', {}).get('spike_score', 0)
+        
+        return is_whale_activity and spike_score >= min_spike_score
+
     def _get_trend_confirmation(self, direction: str, timeframe: str) -> bool:
         adx_analysis = self.get_indicator('adx', analysis_source=self.htf_analysis)
         supertrend_analysis = self.get_indicator('supertrend', analysis_source=self.htf_analysis)
@@ -83,4 +110,3 @@ class BaseStrategy(ABC):
         if not targets: return {"stop_loss": round(stop_loss, 5), "targets": [], "risk_reward_ratio": 0}
         actual_rr = round(abs(targets[0] - entry_price) / risk_amount, 2)
         return {"stop_loss": round(stop_loss, 5), "targets": [round(t, 5) for t in targets], "risk_reward_ratio": actual_rr}
-
