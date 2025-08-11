@@ -9,14 +9,9 @@ logger = logging.getLogger(__name__)
 
 class IndicatorAnalyzer:
     """
-    The Self-Aware Analysis Engine for AiSignalPro (v7.0 - Legendary & Final Architecture)
-    --------------------------------------------------------------------------------------
-    This masterpiece of engineering is beyond a mere calculator. It features:
-    - Centralized Resampling: Handles all timeframe conversions cleanly.
-    - Dynamic Dependency Graph: Automatically resolves the correct calculation
-      order using a topological sort, making the system infinitely extensible.
-    - Data Health Monitoring: Actively checks the quality of the data and
-      indicator outputs before passing them to the strategies.
+    The Self-Aware Analysis Engine for AiSignalPro (v7.1 - Harmonized & Stable)
+    This version includes the corrected indicator name mapping to align perfectly
+    with the configuration file, eliminating naming-related KeyErrors.
     """
     def __init__(self, df: pd.DataFrame, config: Dict[str, Any], timeframe: str):
         if not isinstance(df, pd.DataFrame) or df.empty:
@@ -33,7 +28,9 @@ class IndicatorAnalyzer:
             'divergence': DivergenceIndicator, 'pivots': PivotPointIndicator, 'structure': StructureIndicator,
             'whales': WhaleIndicator, 'ema_cross': EMACrossIndicator, 'vwap_bands': VwapBandsIndicator,
             'chandelier_exit': ChandelierExitIndicator, 'donchian_channel': DonchianChannelIndicator,
-            'fast_ma': FastMAIndicator, 'williams_r': WilliamsRIndicator, 'kelt_channel': KeltnerChannelIndicator,
+            'fast_ma': FastMAIndicator, 'williams_r': WilliamsRIndicator,
+            # ✅ FIX: Renamed 'kelt_channel' to 'keltner_channel' to match config.json
+            'keltner_channel': KeltnerChannelIndicator,
             'zigzag': ZigzagIndicator, 'fibonacci': FibonacciIndicator,
         }
         
@@ -50,7 +47,9 @@ class IndicatorAnalyzer:
 
         for name in nodes:
             indicator_class = self._indicator_classes.get(name)
-            if not indicator_class: continue
+            if not indicator_class:
+                logger.warning(f"Indicator '{name}' from config not found in _indicator_classes dict. Skipping.")
+                continue
             for dep in indicator_class.dependencies:
                 if dep in nodes:
                     adj[dep].append(name)
@@ -78,7 +77,6 @@ class IndicatorAnalyzer:
         """Calculates all enabled indicators in a dependency-aware order."""
         logger.info(f"Starting calculations for timeframe: {self.timeframe}")
         
-        # Centralized Resampling: Resampling happens ONCE at the beginning.
         if self.timeframe and isinstance(self.base_df.index, pd.DatetimeIndex):
             rules = {'open': 'first', 'high': 'max', 'low': 'min', 'close': 'last', 'volume': 'sum'}
             df_for_calc = self.base_df.resample(self.timeframe, label='right', closed='right').apply(rules).dropna()
@@ -92,16 +90,13 @@ class IndicatorAnalyzer:
                     instance_params = {k:v for k,v in params.items() if k != 'enabled'}
                     instance_params['timeframe'] = self.timeframe
                     
-                    # Indicators receive the pre-resampled dataframe and just calculate.
                     instance = self._indicator_classes[name](df_for_calc, params=instance_params).calculate()
                     
-                    # The dataframe is updated with new columns for the next indicator.
                     df_for_calc = instance.df
                     self._indicator_instances[name] = instance
                 except Exception as e:
                     logger.error(f"Failed to calculate indicator '{name}' on {self.timeframe}: {e}", exc_info=True)
         
-        # Map all results back to the original base_df index in one go if MTF
         if self.timeframe:
             self.final_df = self.base_df.copy()
             indicator_cols = [col for col in df_for_calc.columns if col not in self.base_df.columns]
@@ -148,7 +143,7 @@ class IndicatorAnalyzer:
         for name in self._calculation_order:
             if name in self._indicator_instances:
                 instance = self._indicator_instances[name]
-                instance.df = self.final_df # Ensure instance has the final, complete df
+                instance.df = self.final_df 
                 try:
                     analysis = instance.analyze()
                     if analysis: summary[name] = analysis
