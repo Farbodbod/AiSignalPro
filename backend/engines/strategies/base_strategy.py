@@ -6,9 +6,9 @@ logger = logging.getLogger(__name__)
 
 class BaseStrategy(ABC):
     """
-    World-Class Base Strategy - (v3.4 - Robust Getter)
-    This version features a hardened get_indicator method that can tolerate
-    extra keyword arguments, preventing TypeErrors from legacy strategy calls.
+    World-Class Base Strategy - (v3.4 - Robust Getter & Anti-Fragile)
+    This version features a hardened get_indicator method that acts as a
+    smart guard, ensuring strategies never receive failed or incomplete indicator data.
     """
     strategy_name: str = "BaseStrategy"
 
@@ -17,8 +17,8 @@ class BaseStrategy(ABC):
         self.config = config or {}
         self.htf_analysis = htf_analysis or {}
         self.primary_timeframe = primary_timeframe
-        self.price_data = self.analysis.get('price_data', {})
-        self.df = primary_analysis.get('final_df')
+        self.price_data = self.analysis.get('price_data') # Can be None if analysis fails early
+        self.df = self.analysis.get('final_df')
 
     @abstractmethod
     def check_signal(self) -> Optional[Dict[str, Any]]:
@@ -26,15 +26,16 @@ class BaseStrategy(ABC):
 
     def get_indicator(self, name: str, analysis_source: Optional[Dict] = None, **kwargs) -> Optional[Dict[str, Any]]:
         """
-        ✅ FIX: Bulletproof 'Safe Getter' for indicator data (v2).
-        Added **kwargs to gracefully handle and ignore any unexpected arguments
-        (like 'timeframe') passed from older strategy implementations.
+        ✅ BULLETPROOF 'Safe Getter' for indicator data.
+        It checks for existence, validity (not None), and absence of error status
+        before returning the data.
         """
-        # Log a warning if unexpected arguments are passed, to help with future cleanup.
         if kwargs:
             logger.warning(f"Strategy '{self.strategy_name}' called get_indicator with unexpected arguments: {kwargs}. These are being ignored.")
-
+        
         source = analysis_source if analysis_source is not None else self.analysis
+        if not source: return None
+
         indicator_data = source.get(name)
         
         if not indicator_data or not isinstance(indicator_data, dict): return None
@@ -43,7 +44,7 @@ class BaseStrategy(ABC):
 
         return indicator_data
     
-    # ... ( بقیه متدهای این کلاس بدون تغییر باقی می‌مانند ) ...
+    # ... ( بقیه متدهای این کلاس مانند _get_trend_confirmation و _calculate_smart_risk_management بدون تغییر باقی می‌مانند ) ...
     def _get_trend_confirmation(self, direction: str, timeframe: str) -> bool:
         adx_analysis = self.get_indicator('adx', analysis_source=self.htf_analysis)
         supertrend_analysis = self.get_indicator('supertrend', analysis_source=self.htf_analysis)
@@ -82,3 +83,4 @@ class BaseStrategy(ABC):
         if not targets: return {"stop_loss": round(stop_loss, 5), "targets": [], "risk_reward_ratio": 0}
         actual_rr = round(abs(targets[0] - entry_price) / risk_amount, 2)
         return {"stop_loss": round(stop_loss, 5), "targets": [round(t, 5) for t in targets], "risk_reward_ratio": actual_rr}
+
