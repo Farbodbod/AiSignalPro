@@ -17,17 +17,17 @@
     "max_concurrent_tasks": 5,
     "gemini_cooldown_seconds": 300,
     "min_confluence_for_super_signal": 3,
-    "min_risk_reward_ratio": 2,
-    "fetcher_limit": 500,
-    "min_rows_for_htf": 500,
+    "min_risk_reward_ratio": 1.5,
+    "fetcher_limit": 300,
+    "min_rows_for_htf": 300,
     "kline_limit_map": {
       "comment": "Based on the formula: P_max * 2, where P_max=120 (from Bollinger Squeeze). Result=240. We use 250 as a safe, rounded-up value.",
-      "1m": 500,
-      "5m": 500,
-      "15m": 500,
-      "1h": 500,
-      "4h": 500,
-      "1d": 500
+      "1m": 300,
+      "5m": 300,
+      "15m": 300,
+      "1h": 300,
+      "4h": 300,
+      "1d": 300
     }
   },
   "signal_cache": {
