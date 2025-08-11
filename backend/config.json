@@ -15,10 +15,20 @@
     ],
     "poll_interval_seconds": 900,
     "max_concurrent_tasks": 5,
-    "fetcher_limit": 500,
     "gemini_cooldown_seconds": 300,
     "min_confluence_for_super_signal": 3,
-    "min_risk_reward_ratio": 1.5
+    "min_risk_reward_ratio": 1.5,
+    "fetcher_limit": 250,
+    "min_rows_for_htf": 250,
+    "kline_limit_map": {
+      "comment": "Based on the formula: P_max * 2, where P_max=120 (from Bollinger Squeeze). Result=240. We use 250 as a safe, rounded-up value.",
+      "1m": 250,
+      "5m": 250,
+      "15m": 250,
+      "1h": 250,
+      "4h": 250,
+      "1d": 250
+    }
   },
   "signal_cache": {
     "default_ttl_hours": 8,
