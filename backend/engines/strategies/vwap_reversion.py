@@ -6,11 +6,10 @@ logger = logging.getLogger(__name__)
 
 class VwapMeanReversion(BaseStrategy):
     """
-    VwapMeanReversion - (v2.0 - Anti-Fragile Edition)
+    VwapMeanReversion - (v2.2 - Corrected HTF Logic)
     --------------------------------------------------------------------------------------
-    This version is hardened against data failures. It fetches all required
-    indicator data upfront and verifies its integrity before executing the
-    core trading logic, making it robust and reliable.
+    This version corrects the Higher-Timeframe (HTF) filter logic for mean-reversion
+    signals, ensuring they are correctly invalidated against strong opposing trends.
     """
     strategy_name: str = "VwapMeanReversion"
 
@@ -27,24 +26,25 @@ class VwapMeanReversion(BaseStrategy):
             "atr_sl_multiplier": float(self.config.get("atr_sl_multiplier", 1.5)),
             "min_rr_ratio": float(self.config.get("min_risk_reward_ratio", 1.0)),
             "require_candle_confirmation": bool(self.config.get("require_candle_confirmation", True)),
+            "htf_confirmation_enabled": bool(self.config.get("htf_confirmation_enabled", True)),
+            "htf_timeframe": str(self.config.get("htf_timeframe", "4h")),
         }
 
     def _get_oscillator_confirmation(self, direction: str, cfg: Dict[str, Any], rsi_data: Optional[Dict[str, Any]], wr_data: Optional[Dict[str, Any]]) -> bool:
         """The heart of the strategy: the Oscillator Confirmation Engine."""
+        # This helper method remains unchanged
         rsi_confirm = False
         if cfg['use_rsi'] and rsi_data:
             rsi_val = rsi_data.get('values', {}).get('rsi')
             if rsi_val is not None:
                 if direction == "BUY" and rsi_val < cfg['rsi_oversold']: rsi_confirm = True
                 elif direction == "SELL" and rsi_val > cfg['rsi_overbought']: rsi_confirm = True
-
         wr_confirm = False
         if cfg['use_williams_r'] and wr_data:
             wr_val = wr_data.get('values', {}).get('wr')
             if wr_val is not None:
                 if direction == "BUY" and wr_val < cfg['williams_r_oversold']: wr_confirm = True
                 elif direction == "SELL" and wr_val > cfg['williams_r_overbought']: wr_confirm = True
-        
         if cfg['oscillator_logic'] == "AND":
             checks = []
             if cfg['use_rsi']: checks.append(rsi_confirm)
@@ -56,44 +56,37 @@ class VwapMeanReversion(BaseStrategy):
 
     def check_signal(self) -> Optional[Dict[str, Any]]:
         cfg = self._get_signal_config()
-        
-        # --- ✅ 1. Anti-Fragile Data Check ---
-        if not self.price_data:
-            return None
-            
-        # Safely get all required and optional indicator data.
+        if not self.price_data: return None
         vwap_data = self.get_indicator('vwap_bands')
         atr_data = self.get_indicator('atr')
-        rsi_data = self.get_indicator('rsi') # Fetched even if optional, for cleaner code
-        wr_data = self.get_indicator('williams_r') # Fetched even if optional
+        rsi_data = self.get_indicator('rsi')
+        wr_data = self.get_indicator('williams_r')
+        if not all([vwap_data, atr_data]): return None
 
-        # The core logic requires vwap and atr. If they fail, exit gracefully.
-        if not all([vwap_data, atr_data]):
-            logger.debug(f"[{self.strategy_name}] Skipped: Missing core VWAP or ATR data.")
-            return None
-
-        # --- 2. Get Primary Signal (Logic is 100% preserved) ---
         vwap_analysis = vwap_data.get('analysis', {}); vwap_position = vwap_analysis.get('position')
         signal_direction = None
         if "Below" in vwap_position: signal_direction = "BUY"
         elif "Above" in vwap_position: signal_direction = "SELL"
         else: return None
         
-        logger.info(f"[{self.strategy_name}] Initial Trigger: Price is overextended {signal_direction} from VWAP.")
         confirmations = {"trigger": f"Price {vwap_position}"}
 
-        # --- 3. Confirmation Funnel (Logic is 100% preserved) ---
-        if not self._get_oscillator_confirmation(signal_direction, cfg, rsi_data, wr_data):
-            return None
+        if not self._get_oscillator_confirmation(signal_direction, cfg, rsi_data, wr_data): return None
         confirmations['oscillator_filter'] = f"Passed (Logic: {cfg['oscillator_logic']})"
 
         if cfg['require_candle_confirmation']:
             confirming_pattern = self._get_candlestick_confirmation(signal_direction, min_reliability='Medium')
-            if not confirming_pattern:
-                return None
+            if not confirming_pattern: return None
             confirmations['candlestick_filter'] = f"Passed (Pattern: {confirming_pattern.get('name')})"
 
-        # --- 4. Risk Management (Logic is 100% preserved) ---
+        # ✅ FIX: Corrected Higher-Timeframe Confirmation Logic for Reversals
+        if cfg['htf_confirmation_enabled']:
+            opposite_direction = "SELL" if signal_direction == "BUY" else "BUY"
+            if self._get_trend_confirmation(opposite_direction, cfg['htf_timeframe']):
+                logger.info(f"[{self.strategy_name}] Signal REJECTED: Mean-reversion attempt against a strong opposing HTF trend.")
+                return None
+            confirmations['htf_filter'] = f"Passed (No strong opposing trend on {cfg['htf_timeframe']})"
+
         entry_price = self.price_data.get('close')
         vwap_values = vwap_data.get('values', {})
         if not entry_price: return None
@@ -119,8 +112,7 @@ class VwapMeanReversion(BaseStrategy):
             if risk_amount > 1e-9:
                 risk_params['risk_reward_ratio'] = round(abs(vwap_line - entry_price) / risk_amount, 2)
         
-        if not risk_params or risk_params.get("risk_reward_ratio", 0) < cfg['min_rr_ratio']:
-            return None
+        if not risk_params or risk_params.get("risk_reward_ratio", 0) < cfg['min_rr_ratio']: return None
         confirmations['rr_check'] = f"Passed (R/R to VWAP: {risk_params.get('risk_reward_ratio')})"
         
         logger.info(f"✨✨ [{self.strategy_name}] VWAP MEAN REVERSION SIGNAL CONFIRMED! ✨✨")
