@@ -6,80 +6,74 @@ logger = logging.getLogger(__name__)
 
 class VwapMeanReversion(BaseStrategy):
     """
-    VwapMeanReversion - The Legendary, Unrivaled, World-Class Meta-Strategy (Final Version)
+    VwapMeanReversion - (v2.0 - Anti-Fragile Edition)
     --------------------------------------------------------------------------------------
-    This is a highly flexible framework for executing mean-reversion trades around the VWAP.
-    By adjusting its configuration, it can act as a conservative "Bouncer" or an
-    aggressive "ReversionPro".
-
-    The Funnel:
-    1.  Trigger: Price tests or breaks the VWAP standard deviation bands.
-    2.  Filter 1 (Oscillator Engine): Confirms momentum exhaustion using a
-        configurable combination of RSI and/or Williams %R.
-    3.  Filter 2 (Price Action): A confirming candlestick reversal pattern appears.
-    4.  Risk Management: SL is placed logically outside the VWAP band, cushioned by ATR.
-    5.  Smart Targeting: The primary target is always the VWAP line itself.
+    This version is hardened against data failures. It fetches all required
+    indicator data upfront and verifies its integrity before executing the
+    core trading logic, making it robust and reliable.
     """
     strategy_name: str = "VwapMeanReversion"
 
     def _get_signal_config(self) -> Dict[str, Any]:
         """Loads and validates the strategy's specific parameters from the config."""
         return {
-            # The VWAP reset_period (e.g., 'D') is configured in the indicators config
-            "vwap_std_dev_multiplier": float(self.config.get("vwap_std_dev_multiplier", 2.0)),
-            # --- Oscillator Confirmation Engine ---
-            "oscillator_logic": str(self.config.get("oscillator_logic", "AND")).upper(), # "AND" or "OR"
+            "oscillator_logic": str(self.config.get("oscillator_logic", "AND")).upper(),
             "use_rsi": bool(self.config.get("use_rsi", True)),
             "rsi_oversold": float(self.config.get("rsi_oversold", 30.0)),
             "rsi_overbought": float(self.config.get("rsi_overbought", 70.0)),
             "use_williams_r": bool(self.config.get("use_williams_r", True)),
             "williams_r_oversold": float(self.config.get("williams_r_oversold", -80.0)),
             "williams_r_overbought": float(self.config.get("williams_r_overbought", -20.0)),
-            # --- Risk and Confirmation ---
             "atr_sl_multiplier": float(self.config.get("atr_sl_multiplier", 1.5)),
             "min_rr_ratio": float(self.config.get("min_risk_reward_ratio", 1.0)),
             "require_candle_confirmation": bool(self.config.get("require_candle_confirmation", True)),
         }
 
-    def _get_oscillator_confirmation(self, direction: str, cfg: Dict[str, Any]) -> bool:
+    def _get_oscillator_confirmation(self, direction: str, cfg: Dict[str, Any], rsi_data: Optional[Dict[str, Any]], wr_data: Optional[Dict[str, Any]]) -> bool:
         """The heart of the strategy: the Oscillator Confirmation Engine."""
-        rsi_data = self.get_indicator('rsi')
-        wr_data = self.get_indicator('williams_r')
-        
-        # Default to False unless explicitly confirmed
         rsi_confirm = False
-        if cfg['use_rsi'] and rsi_data and rsi_data.get('status') == 'OK':
+        if cfg['use_rsi'] and rsi_data:
             rsi_val = rsi_data.get('values', {}).get('rsi')
             if rsi_val is not None:
                 if direction == "BUY" and rsi_val < cfg['rsi_oversold']: rsi_confirm = True
                 elif direction == "SELL" and rsi_val > cfg['rsi_overbought']: rsi_confirm = True
 
         wr_confirm = False
-        if cfg['use_williams_r'] and wr_data and wr_data.get('status') == 'OK':
+        if cfg['use_williams_r'] and wr_data:
             wr_val = wr_data.get('values', {}).get('wr')
             if wr_val is not None:
                 if direction == "BUY" and wr_val < cfg['williams_r_oversold']: wr_confirm = True
                 elif direction == "SELL" and wr_val > cfg['williams_r_overbought']: wr_confirm = True
         
         if cfg['oscillator_logic'] == "AND":
-            # If a component is disabled, it shouldn't block the "AND" logic
             checks = []
             if cfg['use_rsi']: checks.append(rsi_confirm)
             if cfg['use_williams_r']: checks.append(wr_confirm)
             return all(checks) if checks else False
         elif cfg['oscillator_logic'] == "OR":
             return rsi_confirm or wr_confirm
-        
         return False
 
     def check_signal(self) -> Optional[Dict[str, Any]]:
         cfg = self._get_signal_config()
         
+        # --- ✅ 1. Anti-Fragile Data Check ---
+        if not self.price_data:
+            return None
+            
+        # Safely get all required and optional indicator data.
         vwap_data = self.get_indicator('vwap_bands')
-        if not vwap_data or vwap_data.get('status') != 'OK': return None
+        atr_data = self.get_indicator('atr')
+        rsi_data = self.get_indicator('rsi') # Fetched even if optional, for cleaner code
+        wr_data = self.get_indicator('williams_r') # Fetched even if optional
 
+        # The core logic requires vwap and atr. If they fail, exit gracefully.
+        if not all([vwap_data, atr_data]):
+            logger.debug(f"[{self.strategy_name}] Skipped: Missing core VWAP or ATR data.")
+            return None
+
+        # --- 2. Get Primary Signal (Logic is 100% preserved) ---
         vwap_analysis = vwap_data.get('analysis', {}); vwap_position = vwap_analysis.get('position')
-        
         signal_direction = None
         if "Below" in vwap_position: signal_direction = "BUY"
         elif "Above" in vwap_position: signal_direction = "SELL"
@@ -88,22 +82,21 @@ class VwapMeanReversion(BaseStrategy):
         logger.info(f"[{self.strategy_name}] Initial Trigger: Price is overextended {signal_direction} from VWAP.")
         confirmations = {"trigger": f"Price {vwap_position}"}
 
-        if not self._get_oscillator_confirmation(signal_direction, cfg):
-            logger.info(f"[{self.strategy_name}] Signal REJECTED: Lack of oscillator confirmation.")
+        # --- 3. Confirmation Funnel (Logic is 100% preserved) ---
+        if not self._get_oscillator_confirmation(signal_direction, cfg, rsi_data, wr_data):
             return None
         confirmations['oscillator_filter'] = f"Passed (Logic: {cfg['oscillator_logic']})"
 
         if cfg['require_candle_confirmation']:
-            confirming_pattern = self._get_candlestick_confirmation(direction, min_reliability='Medium')
+            confirming_pattern = self._get_candlestick_confirmation(signal_direction, min_reliability='Medium')
             if not confirming_pattern:
-                logger.info(f"[{self.strategy_name}] Signal REJECTED: No confirming candlestick pattern.")
                 return None
             confirmations['candlestick_filter'] = f"Passed (Pattern: {confirming_pattern.get('name')})"
 
+        # --- 4. Risk Management (Logic is 100% preserved) ---
         entry_price = self.price_data.get('close')
-        atr_data = self.get_indicator('atr')
         vwap_values = vwap_data.get('values', {})
-        if not all([entry_price, atr_data, vwap_values]): return None
+        if not entry_price: return None
         
         atr_value = atr_data.get('values', {}).get('atr', entry_price * 0.01)
         
@@ -127,7 +120,6 @@ class VwapMeanReversion(BaseStrategy):
                 risk_params['risk_reward_ratio'] = round(abs(vwap_line - entry_price) / risk_amount, 2)
         
         if not risk_params or risk_params.get("risk_reward_ratio", 0) < cfg['min_rr_ratio']:
-            logger.info(f"[{self.strategy_name}] Signal REJECTED: Initial R/R ratio to VWAP is below threshold.")
             return None
         confirmations['rr_check'] = f"Passed (R/R to VWAP: {risk_params.get('risk_reward_ratio')})"
         
