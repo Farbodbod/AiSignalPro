@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 
 class RsiIndicator(BaseIndicator):
     """
-    RSI - Definitive, World-Class Version (v4.0 - Final Architecture)
+    RSI - Definitive, World-Class Version (v4.1 - Final Architecture)
     ------------------------------------------------------------------
     This is a comprehensive momentum analysis engine based on RSI, featuring a smoothed
     signal line, dynamic Bollinger Bands for OB/OS levels, and predictive divergence
@@ -70,6 +70,9 @@ class RsiIndicator(BaseIndicator):
             
         if len(df_for_calc) < max(self.period, self.bb_period):
             logger.warning(f"Not enough data for RSI on {self.timeframe or 'base'}.")
+            # Create empty columns to prevent KeyErrors downstream
+            for col in [self.rsi_col, self.rsi_signal_col, self.dyn_upper_col, self.dyn_lower_col]:
+                if hasattr(self, col): self.df[col] = np.nan
             return self
 
         rsi_results = self._calculate_rsi_metrics(df_for_calc)
@@ -88,7 +91,7 @@ class RsiIndicator(BaseIndicator):
         price_col = f'zigzag_prices_{self.zigzag_deviation}{tf_suffix}'
         
         if not all(col in valid_df.columns for col in [pivot_col, price_col]):
-             logger.warning(f"[{self.__class__.__name__}] ZigZag columns not found for divergence detection.")
+             logger.warning(f"[{self.__class__.__name__}] ZigZag columns not found for divergence detection on {self.timeframe}.")
              return []
 
         pivots_df = valid_df[valid_df[pivot_col] != 0]
@@ -120,8 +123,8 @@ class RsiIndicator(BaseIndicator):
         last = valid_df.iloc[-1]; prev = valid_df.iloc[-2]
         last_rsi = last[self.rsi_col]
 
-        ob_level = last[self.dyn_upper_col] if self.use_dynamic_levels else self.fixed_overbought
-        os_level = last[self.dyn_lower_col] if self.use_dynamic_levels else self.fixed_oversold
+        ob_level = last[self.dyn_upper_col] if self.use_dynamic_levels and self.dyn_upper_col in last and pd.notna(last[self.dyn_upper_col]) else self.fixed_overbought
+        os_level = last[self.dyn_lower_col] if self.use_dynamic_levels and self.dyn_lower_col in last and pd.notna(last[self.dyn_lower_col]) else self.fixed_oversold
         
         position = "Neutral"
         if last_rsi > ob_level: position = "Overbought"
