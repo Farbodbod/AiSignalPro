@@ -13,9 +13,9 @@
       "1h",
       "4h"
     ],
-    "poll_interval_seconds": 300,
+    "poll_interval_seconds": 900,
     "max_concurrent_tasks": 5,
-    "fetcher_limit": 500,
+    "fetcher_limit": 300,
     "gemini_cooldown_seconds": 300,
     "min_confluence_for_super_signal": 3,
     "min_risk_reward_ratio": 1.5
