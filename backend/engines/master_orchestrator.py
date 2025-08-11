@@ -12,9 +12,9 @@ logger = logging.getLogger(__name__)
 
 class MasterOrchestrator:
     """
-    The strategic mastermind of the AiSignalPro project (v22.1 - Final & Complete)
-    This version introduces stateful, incremental calculations for hyper-performance
-    and is absolutely complete with no summarized parts.
+    The strategic mastermind of the AiSignalPro project (v22.2 - Aligned Architecture)
+    This version is aligned with the stateless IndicatorAnalyzer v7.0, removing
+    the now-obsolete stateful calculation logic for full compatibility.
     """
     def __init__(self, config: Dict[str, Any]):
         self.config = config
@@ -26,11 +26,11 @@ class MasterOrchestrator:
         ]
         self.gemini_handler = GeminiHandler()
         self.last_gemini_call_time = 0
-        self.ENGINE_VERSION = "22.1.0"
+        self.ENGINE_VERSION = "22.2.0"
         
-        self._last_state: Dict[str, pd.DataFrame] = {}
+        # ✅ FIX: Removed self._last_state as it's incompatible with IndicatorAnalyzer v7.0
         
-        logger.info(f"MasterOrchestrator v{self.ENGINE_VERSION} (Legendary & Stateful) initialized.")
+        logger.info(f"MasterOrchestrator v{self.ENGINE_VERSION} (Legendary & Stateless-Aligned) initialized.")
 
     def _find_super_signal(self, signals: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
         min_confluence = self.config.get("general", {}).get("min_confluence_for_super_signal", 3)
@@ -108,13 +108,9 @@ class MasterOrchestrator:
         return ai_response
 
     def run_full_pipeline(self, df: pd.DataFrame, symbol: str, timeframe: str) -> Dict[str, Any]:
-        state_key = f"{symbol}_{timeframe}"
-        
-        previous_df_state = self._last_state.get(state_key)
-        analyzer = IndicatorAnalyzer(df, config=self.config.get('indicators', {}), timeframe=timeframe, previous_df=previous_df_state)
+        # ✅ FIX: Removed all logic related to previous_df_state to align with IndicatorAnalyzer v7.0
+        analyzer = IndicatorAnalyzer(df, config=self.config.get('indicators', {}), timeframe=timeframe)
         analyzer.calculate_all()
-        
-        self._last_state[state_key] = analyzer.final_df
         
         primary_analysis = analyzer.get_analysis_summary()
         
@@ -123,7 +119,7 @@ class MasterOrchestrator:
             htf_analysis = primary_analysis
         else:
             logger.info(f"Running HTF analysis for {symbol} on {htf_timeframe}...")
-            # Note: HTF analysis could also be stateful for ultimate optimization
+            # ✅ FIX: HTF analyzer is also called in a stateless manner.
             htf_analyzer = IndicatorAnalyzer(df, config=self.config.get('indicators', {}), timeframe=htf_timeframe)
             htf_analyzer.calculate_all()
             htf_analysis = htf_analyzer.get_analysis_summary()
