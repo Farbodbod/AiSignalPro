@@ -8,11 +8,10 @@ logger = logging.getLogger(__name__)
 
 class FibonacciIndicator(BaseIndicator):
     """
-    Fibonacci Analysis Suite - Definitive, MTF & World-Class Version (v3.0 - No Internal Deps)
-    -----------------------------------------------------------------------------------------
-    This version adheres to the final AiSignalPro architecture. It acts as a pure
-    on-the-fly analysis engine, consuming pre-calculated ZigZag columns to identify
-    the latest market swing and compute Fibonacci levels in real-time during analysis.
+    Fibonacci Analysis Suite - Definitive, World-Class Version (v3.1 - Bugfix)
+    -------------------------------------------------------------------------
+    This version includes a critical bug fix in the Golden Zone detection logic
+    and adheres to the final AiSignalPro architecture as a pure analysis engine.
     """
     
     dependencies = ['zigzag']
@@ -24,15 +23,14 @@ class FibonacciIndicator(BaseIndicator):
         self.retracement_levels = sorted(self.params.get('retracements', [0, 23.6, 38.2, 50, 61.8, 78.6, 100]))
         self.extension_levels = sorted(self.params.get('extensions', [127.2, 161.8, 200, 261.8]))
         self.zigzag_deviation = float(self.params.get('zigzag_deviation', 3.0))
-        self.golden_zone_levels = self.params.get('golden_zone', {'61.8%', '78.6%'})
-
- 
+        
+        # ✨ FINAL FIX: Normalize the golden_zone_levels once during initialization for efficiency and correctness.
+        raw_golden_zone = self.params.get('golden_zone', {'61.8%', '78.6%'})
+        self.golden_zone_levels = {str(level).replace('%', '') for level in raw_golden_zone}
 
     def calculate(self) -> 'FibonacciIndicator':
         """
-        ✨ FINAL ARCHITECTURE: This indicator is a pure analyzer.
-        It does not calculate any new columns itself. It relies on columns
-        pre-calculated by the IndicatorAnalyzer.
+        ✨ FINAL ARCHITECTURE: This indicator is a pure analyzer. It does no calculations here.
         """
         return self
 
@@ -41,7 +39,6 @@ class FibonacciIndicator(BaseIndicator):
         Performs a full, on-the-fly Fibonacci analysis based on the latest
         pre-calculated ZigZag pivots.
         """
-        # --- 1. Construct required column names and validate their existence ---
         tf_suffix = f'_{self.timeframe}' if self.timeframe else ''
         pivot_col = f'zigzag_pivots_{self.zigzag_deviation}{tf_suffix}'
         price_col = f'zigzag_prices_{self.zigzag_deviation}{tf_suffix}'
@@ -50,7 +47,6 @@ class FibonacciIndicator(BaseIndicator):
             logger.warning(f"[{self.__class__.__name__}] Missing ZigZag columns for analysis on timeframe {self.timeframe}.")
             return {"status": "Error: Missing Dependency Columns"}
 
-        # --- 2. Find last swing from ZigZag pivots ---
         valid_df = self.df.dropna(subset=[pivot_col, price_col])
         pivots_df = valid_df[valid_df[pivot_col] != 0]
 
@@ -75,7 +71,6 @@ class FibonacciIndicator(BaseIndicator):
         if swing_trend == "Neutral":
             return {'status': 'Neutral Swing', 'swing_trend': swing_trend, 'swing_details': swing_info}
 
-        # --- 3. Calculate Fibonacci Levels ---
         levels = []
         for level in self.retracement_levels:
             price = end_price - (price_diff * (level / 100.0))
@@ -84,7 +79,6 @@ class FibonacciIndicator(BaseIndicator):
             price = end_price + (price_diff * ((level - 100) / 100.0))
             levels.append({"level": f"{level}%", "price": round(price, 5), "type": "Extension"})
         
-        # --- 4. Analyze current price position (Bias-Free) ---
         if len(self.df) < 2: return {"status": "Insufficient Data"}
         current_price = self.df.iloc[-2]['close']
         
@@ -97,7 +91,9 @@ class FibonacciIndicator(BaseIndicator):
             upper_level, lower_level = sorted_levels[i], sorted_levels[i+1]
             if min(lower_level['price'], upper_level['price']) <= current_price <= max(lower_level['price'], upper_level['price']):
                 position = f"Between {lower_level['level']} and {upper_level['level']}"
-                if self.golden_zone_levels.issubset({level.replace('%','') for level in [lower_level['level'], upper_level['level']]}):
+                # The comparison now works correctly
+                current_zone_levels = {lvl['level'].replace('%', '') for lvl in [upper_level, lower_level]}
+                if self.golden_zone_levels.issubset(current_zone_levels):
                     in_golden_zone = True
                 break
         
