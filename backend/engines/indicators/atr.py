@@ -9,10 +9,11 @@ logger = logging.getLogger(__name__)
 
 class AtrIndicator(BaseIndicator):
     """
-    ATR Indicator - Definitive, World-Class Version (v4.1 - Harmonized Edition)
-    ---------------------------------------------------------------------------
-    This version includes a standardized naming convention for its output columns,
-    ensuring seamless integration with other dependent indicators like SuperTrend and Chandelier Exit.
+    ATR Indicator - Hybrid Real-Time + Batch Version (v5.0 Global)
+    --------------------------------------------------------------
+    - Supports both historical batch calculation and real-time incremental updates
+    - Wilder's smoothing for accuracy in real-time environments
+    - Standardized column naming for cross-indicator compatibility
     """
     dependencies: list = []
 
@@ -27,71 +28,90 @@ class AtrIndicator(BaseIndicator):
             'high_max': 5.0
         })
 
-        # FIX: Use the new standardized method for column names
         self.atr_col = self._get_atr_col_name(self.period, self.timeframe)
         self.atr_pct_col = f'atr_pct_{self.period}'
-        if self.timeframe: self.atr_pct_col += f'_{self.timeframe}'
-        
+        if self.timeframe:
+            self.atr_pct_col += f'_{self.timeframe}'
+
+        # --- Real-Time state variables ---
+        self.prev_close = None
+        self.atr_rt = None
+        self._tr_sum = 0.0
+        self._initial_count = 0
+
     @staticmethod
     def _get_atr_col_name(period: int, timeframe: Optional[str] = None) -> str:
-        """
-        Provides a standardized way to generate the ATR column name.
-        This method will be used by all dependent indicators to ensure consistency.
-        """
         name = f'atr_{period}'
         if timeframe:
             name += f'_{timeframe}'
         return name
 
+    # ===== Batch Calculation =====
     def calculate(self) -> 'AtrIndicator':
-        """
-        ✨ FINAL ARCHITECTURE: No resampling. Just pure calculation.
-        """
         df_for_calc = self.df
-        
+
         if len(df_for_calc) < self.period:
             logger.warning(f"Not enough data for ATR on timeframe {self.timeframe or 'base'}.")
             self.df[self.atr_col] = np.nan
             self.df[self.atr_pct_col] = np.nan
             return self
-            
-        # --- Vectorized Calculation on the pre-resampled dataframe ---
+
         tr = pd.concat([
             df_for_calc['high'] - df_for_calc['low'],
             np.abs(df_for_calc['high'] - df_for_calc['close'].shift(1)),
             np.abs(df_for_calc['low'] - df_for_calc['close'].shift(1))
         ], axis=1).max(axis=1)
+
         atr = tr.ewm(alpha=1/self.period, adjust=False).mean()
-        
+
         safe_close = df_for_calc['close'].replace(0, np.nan)
         atr_pct = (atr / safe_close) * 100
-        
-        # Add the final columns directly to the dataframe
+
         self.df[self.atr_col] = atr
         self.df[self.atr_pct_col] = atr_pct
-        
+
         return self
 
+    # ===== Real-Time Update =====
+    def update_realtime(self, high: float, low: float, close: float) -> Optional[float]:
+        if self.prev_close is None:
+            tr = high - low
+        else:
+            tr = max(high - low, abs(high - self.prev_close), abs(low - self.prev_close))
+
+        self.prev_close = close
+
+        if self._initial_count < self.period:
+            self._tr_sum += tr
+            self._initial_count += 1
+            if self._initial_count == self.period:
+                self.atr_rt = self._tr_sum / self.period
+            return self.atr_rt
+
+        self.atr_rt = (self.atr_rt * (self.period - 1) + tr) / self.period
+        return self.atr_rt
+
+    # ===== Analysis =====
     def analyze(self) -> Dict[str, Any]:
-        """
-        Provides an intelligent classification of the current market volatility.
-        """
         required_cols = [self.atr_col, self.atr_pct_col]
         valid_df = self.df.dropna(subset=required_cols)
-        
+
         if len(valid_df) < 1:
             return {"status": "Insufficient Data", "timeframe": self.timeframe or 'Base'}
-        
+
         last_row = valid_df.iloc[-1]
         last_atr_val = last_row[self.atr_col]
         last_atr_pct = last_row[self.atr_pct_col]
-        
-        # --- Volatility Level Analysis ---
+
         t = self.volatility_thresholds
-        if last_atr_pct <= t['low_max']: volatility_level = "Low"
-        elif last_atr_pct <= t['normal_max']: volatility_level = "Normal"
-        elif last_atr_pct <= t['high_max']: volatility_level = "High"
-        else: volatility_level = "Extreme"
+        if last_atr_pct <= t['low_max']:
+            volatility_level = "Low"
+        elif last_atr_pct <= t['normal_max']:
+            volatility_level = "Normal"
+        elif last_atr_pct <= t['high_max']:
+            volatility_level = "High"
+        else:
+            volatility_level = "Extreme"
 
         return {
             "status": "OK",
