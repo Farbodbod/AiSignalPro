@@ -9,11 +9,11 @@ logger = logging.getLogger(__name__)
 
 class WilliamsRIndicator(BaseIndicator):
     """
-    Williams %R - Definitive, World-Class Version (v4.1 - Harmonized Edition)
+    Williams %R - Definitive, World-Class Version (v4.1 - Final Architecture)
     -------------------------------------------------------------------------
-    This version includes defensive programming to ensure core parameters are always
-    available, preventing AttributeErrors and ensuring smooth operation within
-    the IndicatorAnalyzer's architecture.
+    This advanced version provides a multi-faceted analysis of momentum by consuming
+    pre-calculated ZigZag columns for its powerful divergence detection feature.
+    It adheres to the final AiSignalPro architecture.
     """
     dependencies = ['zigzag']
 
@@ -23,10 +23,7 @@ class WilliamsRIndicator(BaseIndicator):
         self.period = int(self.params.get('period', 14))
         self.overbought = float(self.params.get('overbought', -20.0))
         self.oversold = float(self.params.get('oversold', -80.0))
-        
-        # FIX: Ensure timeframe is always initialized, even if None
         self.timeframe = self.params.get('timeframe', None)
-        
         self.detect_divergence = bool(self.params.get('detect_divergence', True))
         self.zigzag_deviation = float(self.params.get('zigzag_deviation', 3.0))
         self.divergence_lookback = int(self.params.get('divergence_lookback', 5))
@@ -35,9 +32,6 @@ class WilliamsRIndicator(BaseIndicator):
         if self.timeframe: suffix += f'_{self.timeframe}'
         self.wr_col = f'wr{suffix}'
 
-    # ... (rest of the code remains the same) ...
-    # The fix is in __init__.
-    
     def _calculate_wr(self, df: pd.DataFrame) -> pd.DataFrame:
         """The core, technically correct Williams %R calculation logic."""
         res = pd.DataFrame(index=df.index)
