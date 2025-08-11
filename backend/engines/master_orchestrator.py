@@ -12,10 +12,9 @@ logger = logging.getLogger(__name__)
 
 class MasterOrchestrator:
     """
-    The strategic mastermind of the AiSignalPro project (v22.2 - Aligned & Complete)
-    This is the final, complete, and fully synchronized version. It operates in a
-    stateless manner, perfectly aligned with IndicatorAnalyzer v7.0, and includes
-    the engine version in its output for the SignalAdapter.
+    The strategic mastermind of the AiSignalPro project (v22.3 - Robust HTF)
+    This version adds a guard clause for Higher-Timeframe (HTF) analysis to ensure
+    it only runs when sufficient base data is available, increasing system stability.
     """
     def __init__(self, config: Dict[str, Any]):
         self.config = config
@@ -27,9 +26,9 @@ class MasterOrchestrator:
         ]
         self.gemini_handler = GeminiHandler()
         self.last_gemini_call_time = 0
-        self.ENGINE_VERSION = "22.2.0"
+        self.ENGINE_VERSION = "22.3.0"
         
-        logger.info(f"MasterOrchestrator v{self.ENGINE_VERSION} (Legendary & Stateless-Aligned) initialized.")
+        logger.info(f"MasterOrchestrator v{self.ENGINE_VERSION} (Legendary & Robust HTF) initialized.")
 
     def _find_super_signal(self, signals: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
         min_confluence = self.config.get("general", {}).get("min_confluence_for_super_signal", 3)
@@ -113,8 +112,14 @@ class MasterOrchestrator:
         primary_analysis = analyzer.get_analysis_summary()
         
         htf_timeframe = '4h'
+        # ✅ FIX: Added a guard clause to prevent HTF analysis on insufficient data
+        min_htf_rows = self.config.get("general", {}).get("min_rows_for_htf", 250)
+
         if timeframe == htf_timeframe:
             htf_analysis = primary_analysis
+        elif len(df) < min_htf_rows:
+            logger.warning(f"Skipping HTF analysis for {symbol} on {htf_timeframe}. Insufficient base data rows: {len(df)} < {min_htf_rows}")
+            htf_analysis = {} # Provide an empty dict to prevent downstream errors
         else:
             logger.info(f"Running HTF analysis for {symbol} on {htf_timeframe}...")
             htf_analyzer = IndicatorAnalyzer(df, config=self.config.get('indicators', {}), timeframe=htf_timeframe)
@@ -138,10 +143,8 @@ class MasterOrchestrator:
         
         if not valid_signals:
             return {
-                "status": "NEUTRAL", 
-                "message": "No strategy conditions met.", 
-                "full_analysis": primary_analysis,
-                "engine_version": self.ENGINE_VERSION
+                "status": "NEUTRAL", "message": "No strategy conditions met.", 
+                "full_analysis": primary_analysis, "engine_version": self.ENGINE_VERSION
             }
 
         min_rr = self.config.get("general", {}).get("min_risk_reward_ratio", 1.0)
@@ -149,10 +152,8 @@ class MasterOrchestrator:
         
         if not qualified_signals:
             return {
-                "status": "NEUTRAL", 
-                "message": "Signals found but failed R/R quality check.", 
-                "full_analysis": primary_analysis,
-                "engine_version": self.ENGINE_VERSION
+                "status": "NEUTRAL", "message": "Signals found but failed R/R quality check.", 
+                "full_analysis": primary_analysis, "engine_version": self.ENGINE_VERSION
             }
         
         best_signal = self._find_super_signal(qualified_signals)
@@ -166,15 +167,12 @@ class MasterOrchestrator:
         ai_confirmation = self._get_ai_confirmation(best_signal, symbol, timeframe)
         if ai_confirmation is None:
             return {
-                "status": "NEUTRAL", 
-                "message": "Signal was vetoed by AI analysis.", 
-                "full_analysis": primary_analysis,
-                "engine_version": self.ENGINE_VERSION
+                "status": "NEUTRAL", "message": "Signal was vetoed by AI analysis.", 
+                "full_analysis": primary_analysis, "engine_version": self.ENGINE_VERSION
             }
 
         return {
             "status": "SUCCESS", "symbol": symbol, "timeframe": timeframe,
             "base_signal": best_signal, "ai_confirmation": ai_confirmation,
-            "full_analysis": primary_analysis,
-            "engine_version": self.ENGINE_VERSION
+            "full_analysis": primary_analysis, "engine_version": self.ENGINE_VERSION
         }
