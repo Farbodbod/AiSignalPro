@@ -15,7 +15,8 @@ class AdxIndicator(BaseIndicator):
     calculations on the pre-resampled dataframe provided by the IndicatorAnalyzer,
     making it a pure, efficient, and powerful trend analysis engine.
     """
-    dependencies: list = [] # ADX has no internal dependencies on other indicators
+    dependencies = ['atr']
+
 
     def __init__(self, df: pd.DataFrame, **kwargs):
         super().__init__(df, **kwargs)
