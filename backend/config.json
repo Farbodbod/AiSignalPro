@@ -84,16 +84,16 @@
   },
   "strategies": {
     "TrendRiderPro": { "enabled": true, "min_adx_strength": 25.0, "htf_confirmation_enabled": true, "htf_timeframe": "4h" },
-    "VwapMeanReversion": { "enabled": true, "oscillator_logic": "AND", "use_rsi": true, "rsi_oversold": 30, "use_williams_r": true, "williams_r_oversold": -80, "min_rr_ratio": 1.0 },
+    "VwapMeanReversion": { "enabled": true, "oscillator_logic": "AND", "use_rsi": true, "rsi_oversold": 30, "use_williams_r": true, "williams_r_oversold": -80, "min_rr_ratio": 1.0, "htf_confirmation_enabled": true, "htf_timeframe": "4h" },
     "DivergenceSniperPro": { "enabled": true, "htf_confirmation_enabled": true, "htf_timeframe": "4h", "volume_confirmation_enabled": true, "candlestick_confirmation_enabled": true },
-    "WhaleReversal": { "enabled": true, "proximity_percent": 0.5, "min_rr_ratio": 1.5, "htf_confirmation_enabled": false },
-    "VolumeCatalystPro": { "enabled": true, "cci_threshold": 100.0, "min_rr_ratio": 1.5, "htf_confirmation_enabled": true },
-    "BreakoutHunter": { "enabled": true, "min_rr_ratio": 1.5, "htf_confirmation_enabled": true },
-    "IchimokuHybridPro": { "enabled": true, "min_score_to_signal": 5, "min_adx_strength": 23.0, "min_rr_ratio": 1.5 },
-    "ChandelierTrendRider": { "enabled": true, "min_adx_strength": 25.0, "min_rr_ratio": 1.2 },
-    "KeltnerMomentumBreakout": { "enabled": true, "min_adx_strength": 25.0, "cci_threshold": 100.0, "min_rr_ratio": 1.5 },
-    "PivotConfluenceSniper": { "enabled": true, "confluence_proximity_percent": 0.3, "min_rr_ratio": 1.5 },
-    "ConfluenceSniper": { "enabled": true, "fib_levels_to_watch": ["61.8%", "78.6%"], "min_rr_ratio": 1.5 },
-    "EmaCrossoverStrategy": { "enabled": true, "use_volume_filter": true, "rvol_threshold": 1.5 }
+    "WhaleReversal": { "enabled": true, "proximity_percent": 0.5, "min_rr_ratio": 1.5, "htf_confirmation_enabled": true, "htf_timeframe": "4h" },
+    "VolumeCatalystPro": { "enabled": true, "cci_threshold": 100.0, "min_rr_ratio": 1.5, "htf_confirmation_enabled": true, "htf_timeframe": "4h" },
+    "BreakoutHunter": { "enabled": true, "min_rr_ratio": 1.5, "htf_confirmation_enabled": true, "htf_timeframe": "4h" },
+    "IchimokuHybridPro": { "enabled": true, "min_score_to_signal": 5, "min_adx_strength": 23.0, "min_rr_ratio": 1.5, "htf_confirmation_enabled": true, "htf_timeframe": "4h" },
+    "ChandelierTrendRider": { "enabled": true, "min_adx_strength": 25.0, "min_rr_ratio": 1.2, "htf_confirmation_enabled": true, "htf_timeframe": "4h" },
+    "KeltnerMomentumBreakout": { "enabled": true, "min_adx_strength": 25.0, "cci_threshold": 100.0, "min_rr_ratio": 1.5, "htf_confirmation_enabled": true, "htf_timeframe": "4h" },
+    "PivotConfluenceSniper": { "enabled": true, "confluence_proximity_percent": 0.3, "min_rr_ratio": 1.5, "htf_confirmation_enabled": true, "htf_timeframe": "4h" },
+    "ConfluenceSniper": { "enabled": true, "fib_levels_to_watch": ["61.8%", "78.6%"], "min_rr_ratio": 1.5, "htf_confirmation_enabled": true, "htf_timeframe": "4h" },
+    "EmaCrossoverStrategy": { "enabled": true, "use_volume_filter": true, "rvol_threshold": 1.5, "htf_confirmation_enabled": true, "htf_timeframe": "4h" }
   }
 }
