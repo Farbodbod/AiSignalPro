@@ -68,15 +68,17 @@ async def analyze_and_alert(
     cache: SignalCache, 
     symbol: str, 
     timeframe: str,
-    kline_limit: int # ✨ پارامتر جدید برای تعداد کندل‌ها
+    kline_limit: int
 ):
     async with semaphore:
         try:
-            logger.info(f"Fetching data for {symbol} on {timeframe}...")
-            # ✨ استفاده از پارامتر جدید به جای عدد ثابت
+            logger.info(f"Fetching {kline_limit} klines for {symbol} on {timeframe}...")
             df, source = await fetcher.get_first_successful_klines(symbol, timeframe, limit=kline_limit)
-            if df is None or df.empty or len(df) < 200:
-                logger.warning(f"Could not fetch sufficient data for {symbol} on {timeframe}.")
+            
+            # ✅ FIX: Increased the minimum required rows for analysis
+            min_rows_for_analysis = 200 
+            if df is None or df.empty or len(df) < min_rows_for_analysis:
+                logger.warning(f"Could not fetch sufficient data for analysis on {symbol} on {timeframe}. Got {len(df) if df is not None else 0} rows, require {min_rows_for_analysis}.")
                 return
 
             logger.info(f"Data for {symbol} on {timeframe} fetched from {source}. Running full pipeline...")
@@ -110,8 +112,12 @@ async def main_loop():
     timeframes = general_config.get("timeframes_to_analyze", ['1h'])
     poll_interval = general_config.get("poll_interval_seconds", 900)
     max_concurrent = general_config.get("max_concurrent_tasks", 5)
-    # ✨ خواندن تعداد کندل‌ها از کانفیگ
-    kline_limit = general_config.get("fetcher_limit", 500)
+    
+    # ✅ FIX: Define a mapping for kline limits per timeframe for optimized fetching
+    kline_limit_map = general_config.get("kline_limit_map", {
+        "1m": 250, "5m": 250, "15m": 250, "1h": 250, "4h": 250, "1d": 250
+    })
+    default_kline_limit = general_config.get("fetcher_limit", 250) # Fallback
 
     fetcher = ExchangeFetcher()
     orchestrator = MasterOrchestrator(config=config)
@@ -127,7 +133,7 @@ async def main_loop():
     logger.info("="*50); logger.info(f"  AiSignalPro Live Monitoring Worker (v{version}) has started!"); 
     logger.info(f"  Monitoring {len(symbols)} symbols on {len(timeframes)} timeframes."); 
     logger.info(f"  Concurrency limit set to {max_concurrent} tasks.");
-    logger.info(f"  Fetching {kline_limit} candles for each analysis."); # ✨ لاگ جدید برای شفافیت
+    logger.info(f"  Using dynamic, formula-based kline limits for fetching.");
     logger.info("="*50)
     await telegram.send_message_async(f"✅ *AiSignalPro Bot (v{version}) is now LIVE!*")
     
@@ -137,12 +143,18 @@ async def main_loop():
     while True:
         cycle_count += 1
         logger.info(f"--- Starting new monitoring cycle #{cycle_count} ---")
-        # ✨ پاس دادن تعداد کندل‌ها به وظیفه تحلیل
-        tasks = [
-            analyze_and_alert(semaphore, fetcher, orchestrator, telegram, signal_cache, symbol, timeframe, kline_limit) 
-            for symbol in symbols 
-            for timeframe in timeframes
-        ]
+        
+        tasks = []
+        for symbol in symbols:
+            for timeframe in timeframes:
+                # ✅ FIX: Dynamically get the limit for the current timeframe
+                kline_limit = kline_limit_map.get(timeframe, default_kline_limit)
+                task = analyze_and_alert(
+                    semaphore, fetcher, orchestrator, telegram, signal_cache, 
+                    symbol, timeframe, kline_limit
+                )
+                tasks.append(task)
+
         await asyncio.gather(*tasks)
         logger.info(f"--- Cycle #{cycle_count} finished. Sleeping for {poll_interval} seconds... ---")
         await asyncio.sleep(poll_interval)
