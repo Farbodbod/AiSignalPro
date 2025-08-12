@@ -17,11 +17,12 @@
     "max_concurrent_tasks": 5,
     "gemini_cooldown_seconds": 300,
     "min_confluence_for_super_signal": 3,
-    "min_risk_reward_ratio": 2,
+    "min_risk_reward_ratio": 2.0,
     "fetcher_limit": 300,
     "min_rows_for_htf": 300,
+    "account_equity": 10000,
     "kline_limit_map": {
-      "comment": "Based on the formula: P_max * 2, where P_max=120 (from Bollinger Squeeze). Result=240. We use 250 as a safe, rounded-up value.",
+      "comment": "Based on the formula: P_max * 2, where P_max=120 (from Bollinger Squeeze). Result=240. We use 300 as a very safe value.",
       "1m": 300,
       "5m": 300,
       "15m": 300,
@@ -58,7 +59,14 @@
   "indicators": {
     "adx": { "enabled": true, "period": 14, "atr_period": 14 },
     "atr": { "enabled": true, "period": 14 },
-    "bollinger": { "enabled": true, "period": 20, "std_dev": 2.0, "squeeze_lookback": 120, "squeeze_threshold": 1.1 },
+    "bollinger": {
+      "enabled": true,
+      "period": 20,
+      "std_dev": 2.0,
+      "squeeze_lookback": 120,
+      "squeeze_stats_period": 240,
+      "squeeze_std_multiplier": 1.5
+    },
     "cci": { "enabled": true, "period": 20, "use_adaptive_thresholds": true, "adaptive_multiplier": 2.0 },
     "chandelier_exit": { "enabled": true, "atr_period": 14, "atr_multiplier": 3.0 },
     "donchian_channel": { "enabled": true, "period": 20, "use_atr_filter": true, "atr_period": 14 },
@@ -89,8 +97,32 @@
     "WhaleReversal": { "enabled": true, "proximity_percent": 0.5, "min_rr_ratio": 1.5, "htf_confirmation_enabled": true, "htf_timeframe": "4h" },
     "VolumeCatalystPro": { "enabled": true, "cci_threshold": 100.0, "min_rr_ratio": 1.5, "htf_confirmation_enabled": true, "htf_timeframe": "4h" },
     "BreakoutHunter": { "enabled": true, "min_rr_ratio": 1.5, "htf_confirmation_enabled": true, "htf_timeframe": "4h" },
-    "IchimokuHybridPro": { "enabled": true, "min_score_to_signal": 5, "min_adx_strength": 23.0, "min_rr_ratio": 1.5, "htf_confirmation_enabled": true, "htf_timeframe": "4h" },
-    "ChandelierTrendRider": { "enabled": true, "min_adx_strength": 25.0, "min_rr_ratio": 1.2, "htf_confirmation_enabled": true, "htf_timeframe": "4h" },
+    "IchimokuHybridPro": {
+      "enabled": true,
+      "min_score_to_signal": 8,
+      "min_adx_strength": 25.0,
+      "min_rr_ratio": 1.5,
+      "htf_confirmation_enabled": true,
+      "htf_timeframe": "4h",
+      "sl_mode": "kumo",
+      "weights": {
+        "price_above_kumo": 2,
+        "tk_cross_strong": 3,
+        "future_kumo_aligned": 2,
+        "chikou_is_free": 2,
+        "kumo_twist_aligned": 1
+      }
+    },
+    "ChandelierTrendRider": {
+      "enabled": true,
+      "min_adx_strength": 25.0,
+      "htf_confirmation_enabled": true,
+      "htf_timeframe": "4h",
+      "target_atr_multiples": [ 2.0, 4.0, 6.0 ],
+      "risk_per_trade_percent": 0.01,
+      "assumed_fees_pct": 0.001,
+      "assumed_slippage_pct": 0.0005
+    },
     "KeltnerMomentumBreakout": { "enabled": true, "min_adx_strength": 25.0, "cci_threshold": 100.0, "min_rr_ratio": 1.5, "htf_confirmation_enabled": true, "htf_timeframe": "4h" },
     "PivotConfluenceSniper": { "enabled": true, "confluence_proximity_percent": 0.3, "min_rr_ratio": 1.5, "htf_confirmation_enabled": true, "htf_timeframe": "4h" },
     "ConfluenceSniper": { "enabled": true, "fib_levels_to_watch": ["61.8%", "78.6%"], "min_rr_ratio": 1.5, "htf_confirmation_enabled": true, "htf_timeframe": "4h" },
