@@ -55,14 +55,11 @@ class ChandelierTrendRider(BaseStrategy):
             logger.debug(f"[{self.strategy_name}] Skipped: Missing one or more required indicators.")
             return None
 
-        # --- ✅ Pillar 1: Volatility Engine ---
+        # --- Pillar 1: Volatility Engine ---
         # A valid trend signal must emerge from a period of low volatility.
-        # We look for a "squeeze release": it was in a squeeze recently, but isn't now.
+        # We look for a "Squeeze Release" event.
         if not bollinger_data['analysis'].get('is_squeeze_release', False):
-            # Note: The indicator 'bollinger.py' must be upgraded to provide 'is_squeeze_release'
-            # For now, we check if it is NOT in a squeeze.
-            if bollinger_data['analysis'].get('is_in_squeeze', True):
-                return None
+            return None
         
         # --- 2. Get Primary Trigger from SuperTrend Crossover ---
         st_signal = supertrend_data.get('analysis', {}).get('signal')
@@ -73,7 +70,7 @@ class ChandelierTrendRider(BaseStrategy):
         
         confirmations = {"entry_trigger": "SuperTrend Crossover after Squeeze"}
 
-        # --- ✅ Pillar 2: Multi-Factor Confirmation Engine ---
+        # --- Pillar 2: Multi-Factor Confirmation Engine ---
         adx_strength = adx_data.get('values', {}).get('adx', 0)
         dmi_plus = adx_data.get('values', {}).get('plus_di', 0)
         dmi_minus = adx_data.get('values', {}).get('minus_di', 0)
@@ -83,6 +80,7 @@ class ChandelierTrendRider(BaseStrategy):
                            (signal_direction == "SELL" and dmi_minus > dmi_plus)
         
         if not (is_trend_strong and is_dir_confirmed):
+            logger.debug(f"[{self.strategy_name}] Signal REJECTED: ADX/DMI confirmation failed.")
             return None
         confirmations['adx_dmi_filter'] = f"Passed (ADX: {adx_strength:.2f}, Dir Confirmed)"
 
@@ -92,7 +90,7 @@ class ChandelierTrendRider(BaseStrategy):
                 return None
             confirmations['htf_filter'] = f"Passed (Aligned with {cfg['htf_timeframe']})"
 
-        # --- ✅ Pillar 3 & 4: Dynamic Risk & Position Sizing Engine ---
+        # --- Pillar 3 & 4: Dynamic Risk & Position Sizing Engine ---
         entry_price = self.price_data.get('close')
         if not entry_price: return None
         
@@ -103,8 +101,7 @@ class ChandelierTrendRider(BaseStrategy):
 
         # Calculate dynamic targets based on ATR multiples
         targets = []
-        risk_per_unit_no_rr = abs(entry_price - stop_loss)
-        if risk_per_unit_no_rr > 0:
+        if atr_value > 0:
             for multiple in cfg['target_atr_multiples']:
                 if signal_direction == "BUY":
                     targets.append(entry_price + (atr_value * multiple))
@@ -114,6 +111,7 @@ class ChandelierTrendRider(BaseStrategy):
         if not targets: return None
         
         # Calculate final R/R to the first target, including costs
+        risk_per_unit_no_rr = abs(entry_price - stop_loss)
         fee_cost = entry_price * cfg['assumed_fees_pct']
         slippage_cost = entry_price * cfg['assumed_slippage_pct']
         total_risk_per_unit = risk_per_unit_no_rr + fee_cost + slippage_cost
@@ -121,20 +119,19 @@ class ChandelierTrendRider(BaseStrategy):
         final_rr = reward_per_unit / total_risk_per_unit if total_risk_per_unit > 0 else 0
         
         # Calculate precise position size
-        # NOTE: This assumes `self.config` has an 'account_equity' field.
         account_equity = float(self.config.get("general", {}).get("account_equity", 10000)) # Default 10k equity
         risk_amount_usd = account_equity * cfg['risk_per_trade_percent']
         position_size = risk_amount_usd / total_risk_per_unit if total_risk_per_unit > 0 else 0
 
         logger.info(f"✨✨ [{self.strategy_name}] TREND RIDER MIRACLE SIGNAL CONFIRMED! ✨✨")
         
-        # We package everything into the final signal
+        # Package everything into the final signal
         return {
             "direction": signal_direction,
             "entry_price": entry_price,
             "stop_loss": stop_loss,
-            "targets": targets,
+            "targets": [round(t, 5) for t in targets],
             "risk_reward_ratio": round(final_rr, 2),
-            "position_size_units": round(position_size, 8), # Rounded to standard crypto precision
+            "position_size_units": round(position_size, 8),
             "confirmations": confirmations
         }
