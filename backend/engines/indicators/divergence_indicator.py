@@ -1,59 +1,52 @@
 import pandas as pd
 import logging
 from typing import Dict, Any, List, Optional
+
 from .base import BaseIndicator
+from .zigzag import ZigzagIndicator # For standardized column naming
+from .rsi import RsiIndicator # For standardized column naming
 
 logger = logging.getLogger(__name__)
 
 class DivergenceIndicator(BaseIndicator):
     """
-    Divergence Engine - Definitive, MTF & World-Class Version (v3.0 - No Internal Deps)
+    Divergence Engine - (v4.0 - Multi-Version Aware)
     -----------------------------------------------------------------------------------
-    This version adheres to the final AiSignalPro architecture. It acts as a pure
-    analysis engine, consuming pre-calculated RSI and ZigZag columns provided by the
-    IndicatorAnalyzer. This eliminates redundant calculations and makes the system
-    more robust and efficient.
+    This version is fully compatible with the IndicatorAnalyzer v9.0's Multi-Version
+    Engine. It intelligently reads its dependency configurations for both RSI and
+    ZigZag to request and use the specific versions it needs.
     """
-    dependencies = ['rsi', 'zigzag']
+    # ✅ MIRACLE UPGRADE: Dependencies are now declared in config.
+    dependencies: list = []
 
     def __init__(self, df: pd.DataFrame, **kwargs):
         super().__init__(df, **kwargs)
         self.params = kwargs.get('params', {})
         self.timeframe = self.params.get('timeframe', None)
-        self.zigzag_deviation = float(self.params.get('zigzag_deviation', 3.0))
-        self.rsi_period = int(self.params.get('rsi_period', 14))
         self.lookback_pivots = int(self.params.get('lookback_pivots', 5))
         self.min_bar_distance = int(self.params.get('min_bar_distance', 5))
 
+        # ✅ MIRACLE UPGRADE: The indicator now reads its specific dependency configs.
+        dep_configs = self.params.get('dependencies', {})
+        self.zigzag_dependency_params = dep_configs.get('zigzag', {'deviation': 3.0})
+        self.rsi_dependency_params = dep_configs.get('rsi', {'period': 14})
+
     def calculate(self) -> 'DivergenceIndicator':
-        """
-        ✨ FINAL ARCHITECTURE: This indicator is a pure analyzer.
-        It does not calculate any new columns itself. It relies on columns
-        pre-calculated by the IndicatorAnalyzer. The `calculate` method
-        is now a simple pass-through.
-        """
-        # All required data (RSI, Zigzag) is expected to be on self.df already.
-        # This method's only job is to return the instance.
+        """ This is a pure analyzer; it relies on pre-calculated columns. """
         return self
 
     def analyze(self) -> Dict[str, Any]:
-        """
-        Analyzes the pre-calculated RSI and ZigZag data for divergences.
-        """
-        # ✨ THE MIRACLE FIX: Dynamically construct the required column names
-        # This creates a robust "contract" with the IndicatorAnalyzer.
-        tf_suffix = f'_{self.timeframe}' if self.timeframe else ''
-        
-        rsi_col = f'rsi_{self.rsi_period}{tf_suffix}'
-        pivots_col = f'zigzag_pivots_{self.zigzag_deviation}{tf_suffix}'
-        prices_col = f'zigzag_prices_{self.zigzag_deviation}{tf_suffix}'
+        """ Analyzes the pre-calculated RSI and ZigZag data for divergences. """
+        # ✅ MIRACLE UPGRADE: Dynamically construct the required column names via contracts.
+        rsi_col = RsiIndicator.get_col_name(self.rsi_dependency_params, self.timeframe)
+        pivots_col = ZigzagIndicator.get_pivots_col_name(self.zigzag_dependency_params, self.timeframe)
+        prices_col = ZigzagIndicator.get_prices_col_name(self.zigzag_dependency_params, self.timeframe)
 
         required_cols = [rsi_col, pivots_col, prices_col]
         if any(col not in self.df.columns for col in required_cols):
-            logger.warning(f"[{self.__class__.__name__}] Missing one or more required columns for analysis on timeframe {self.timeframe}. Required: {required_cols}")
-            return {"status": "Error: Missing Dependency Columns", "signals": []}
+            logger.warning(f"[{self.__class__.__name__}] Missing one or more required columns on {self.timeframe}. Required: {required_cols}")
+            return {"status": "Error: Missing Dependency Columns"}
 
-        # The core divergence finding logic remains unchanged, as it was already powerful.
         valid_df = self.df.dropna(subset=required_cols)
         pivots_df = valid_df[valid_df[pivots_col] != 0]
 
@@ -67,7 +60,6 @@ class DivergenceIndicator(BaseIndicator):
         for i in range(len(previous_pivots)):
             prev_pivot = previous_pivots.iloc[i]
             
-            # Ensure index is valid before using .get_loc
             if last_pivot.name not in self.df.index or prev_pivot.name not in self.df.index:
                 continue
 
@@ -96,3 +88,4 @@ class DivergenceIndicator(BaseIndicator):
                 })
                 
         return {"status": "OK", "signals": signals, "timeframe": self.timeframe or 'Base'}
+
