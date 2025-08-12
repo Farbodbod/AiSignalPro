@@ -9,14 +9,13 @@ logger = logging.getLogger(__name__)
 
 class AdxIndicator(BaseIndicator):
     """
-    ADX Indicator - Definitive, World-Class Version (v4.0 - Final Architecture)
+    ADX Indicator - (v4.1 - Miracle Ready)
     ---------------------------------------------------------------------------
-    This version adheres to the final AiSignalPro architecture. It performs its
-    calculations on the pre-resampled dataframe provided by the IndicatorAnalyzer,
-    making it a pure, efficient, and powerful trend analysis engine.
+    This world-class version is a pure and powerful trend analysis engine.
+    It correctly provides the raw ADX, +DI, and -DI values, making it fully
+    compatible with advanced, multi-factor confirmation strategies.
     """
-    dependencies = ['atr']
-
+    dependencies: list = [] # ADX calculates its own ATR internally for precision
 
     def __init__(self, df: pd.DataFrame, **kwargs):
         super().__init__(df, **kwargs)
@@ -34,23 +33,20 @@ class AdxIndicator(BaseIndicator):
         self.minus_di_col = f'minus_di{suffix}'
 
     def calculate(self) -> 'AdxIndicator':
-        """
-        ✨ FINAL ARCHITECTURE: No resampling. Just pure calculation.
-        The dataframe received is already at the correct timeframe.
-        """
+        """ Calculates ADX, +DI, and -DI using vectorized operations. """
         df_for_calc = self.df
         
-        if len(df_for_calc) < self.period:
+        if len(df_for_calc) < self.period * 2: # ADX needs more data to stabilize
             logger.warning(f"Not enough data for ADX on timeframe {self.timeframe or 'base'}.")
             for col in [self.adx_col, self.plus_di_col, self.minus_di_col]:
                 self.df[col] = np.nan
             return self
 
-        # --- Vectorized Calculations on the pre-resampled dataframe ---
+        # This vectorized calculation is efficient and correct.
         tr = pd.concat([
             df_for_calc['high'] - df_for_calc['low'],
-            np.abs(df_for_calc['high'] - df_for_calc['close'].shift(1)),
-            np.abs(df_for_calc['low'] - df_for_calc['close'].shift(1))
+            abs(df_for_calc['high'] - df_for_calc['close'].shift(1)),
+            abs(df_for_calc['low'] - df_for_calc['close'].shift(1))
         ], axis=1).max(axis=1)
         atr = tr.ewm(alpha=1/self.period, adjust=False).mean()
 
@@ -68,11 +64,10 @@ class AdxIndicator(BaseIndicator):
         minus_di = (minus_dm_smooth / safe_atr) * 100
         
         di_sum = (plus_di + minus_di).replace(0, np.nan)
-        di_diff = np.abs(plus_di - minus_di)
+        di_diff = abs(plus_di - minus_di)
         dx = (di_diff / di_sum) * 100
         adx = dx.ewm(alpha=1/self.period, adjust=False).mean()
         
-        # Add the final columns directly to the dataframe
         self.df[self.adx_col] = adx
         self.df[self.plus_di_col] = plus_di
         self.df[self.minus_di_col] = minus_di
@@ -80,15 +75,12 @@ class AdxIndicator(BaseIndicator):
         return self
 
     def analyze(self) -> Dict[str, Any]:
-        """
-        Provides a deep analysis of trend strength, direction, and momentum.
-        This powerful analysis logic remains unchanged.
-        """
+        """ Provides a deep analysis of trend strength, direction, and momentum. """
         required_cols = [self.adx_col, self.plus_di_col, self.minus_di_col]
         valid_df = self.df.dropna(subset=required_cols)
         
         if len(valid_df) < 2:
-            return {"status": "Insufficient Data", "timeframe": self.timeframe or 'Base'}
+            return {"status": "Insufficient Data"}
         
         last = valid_df.iloc[-1]
         prev = valid_df.iloc[-2]
