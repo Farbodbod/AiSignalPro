@@ -30,19 +30,33 @@
     "atr": { "enabled": true, "period": 14 },
     "bollinger": { "enabled": true, "period": 20, "std_dev": 2.0, "squeeze_stats_period": 240, "squeeze_std_multiplier": 1.5 },
     "cci": { "enabled": true, "period": 20 },
-    "chandelier_exit": { "enabled": true, "atr_period": 22, "atr_multiplier": 3.0 },
+    "chandelier_exit": { 
+      "enabled": true, 
+      "atr_period": 22,  
+      "atr_multiplier": 3.0 
+    },
     "donchian_channel": { "enabled": true, "period": 20 },
     "ema_cross": { "enabled": true, "short_period": 9, "long_period": 21 },
     "fast_ma": { "enabled": true, "period": 200, "ma_type": "DEMA" },
     "ichimoku": { "enabled": true },
-    "keltner_channel": { "enabled": true, "ema_period": 20, "atr_period": 10 },
+    "keltner_channel": { 
+      "enabled": true, 
+      "ema_period": 20, 
+      "atr_period": 10, 
+      "atr_multiplier": 2.0 
+    },
     "macd": { "enabled": true, "fast_period": 12, "slow_period": 26, "signal_period": 9 },
     "patterns": { "enabled": true },
     "pivots": { "enabled": true },
     "rsi": { "enabled": true, "period": 14 },
     "stochastic": { "enabled": true, "k_period": 14, "d_period": 3 },
     "structure": { "enabled": true, "zigzag_deviation": 3.0, "zone_proximity_pct": 0.1 },
-    "supertrend": { "enabled": true, "period": 10, "multiplier": 3.0 },
+    "supertrend": { 
+      "enabled": true, 
+      "period": 10, 
+      "multiplier": 3.0,
+      "atr_period": 14 
+    },
     "vwap_bands": { "enabled": true },
     "whales": { "enabled": true, "period": 20, "stdev_multiplier": 2.5, "climactic_multiplier": 4.0 },
     "williams_r": { "enabled": true, "period": 14 },
