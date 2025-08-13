@@ -25,7 +25,7 @@ class WhaleReversal(BaseStrategy):
             "candlestick_pattern": 2
         },
         "adaptive_proximity_multiplier": 0.5, # Proximity zone is 0.5 * ATR
-        "min_rr_ratio": 2.0,
+        "min_rr_ratio": 1.5,
         "htf_confirmation_enabled": True,
         "htf_map": { "5m": "15m", "15m": "1h", "1h": "4h", "4h": "1d" },
         "htf_confirmations": {
