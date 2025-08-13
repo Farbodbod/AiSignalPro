@@ -13,13 +13,13 @@
 
     "kline_limit_map": {
       "comment": "Default candle count for initial fetch per timeframe. The main controller.",
-      "1m": 600, "5m": 600, "15m": 600, "1h": 600, "4h": 600, "1d": 600
+      "1m": 500, "5m": 500, "15m": 500, "1h": 500, "4h": 500, "1d": 500
     },
     
-    "fetcher_limit": 600,
+    "fetcher_limit": 500,
     
     
-    "min_rows_for_htf": 580
+    "min_rows_for_htf": 480
   },
   "signal_cache": {
     "default_ttl_hours": 8,
