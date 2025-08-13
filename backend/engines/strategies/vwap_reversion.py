@@ -16,7 +16,7 @@ class VwapMeanReversion(BaseStrategy):
     # The default_config remains the same and is correct.
     default_config = {
         "max_adx_for_reversion": 25.0,
-        "min_rr_ratio": 1.8,
+        "min_rr_ratio": 2.0,
         "oscillator_logic": "AND",
         "use_rsi": True, "rsi_oversold": 30.0, "rsi_overbought": 70.0,
         "use_williams_r": True, "williams_r_oversold": -80.0, "williams_r_overbought": -20.0,
