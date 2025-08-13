@@ -57,11 +57,11 @@
   },
   "strategies": {
     "TrendRiderPro": { "enabled": true, "default_params": { "min_adx_strength": 25.0, "tactical_tp_rr_ratio": 2.0 }, "timeframe_overrides": { "5m": { "min_adx_strength": 22.0 }, "1d": { "min_adx_strength": 28.0 } } },
-    "VwapMeanReversion": { "enabled": true, "max_adx_for_reversion": 25.0, "min_rr_ratio": 1.8 },
+    "VwapMeanReversion": { "enabled": true, "max_adx_for_reversion": 25.0, "min_rr_ratio": 2.0 },
     "DivergenceSniperPro": { "enabled": true, "min_structure_strength": 3, "volatility_regimes": { "low_atr_pct_threshold": 1.5, "low_vol_sl_multiplier": 1.0, "high_vol_sl_multiplier": 1.5 } },
     "WhaleReversal": { "enabled": true, "min_reversal_score": 7, "adaptive_proximity_multiplier": 0.5 },
     "VolumeCatalystPro": { "enabled": true, "min_quality_score": 7, "atr_sl_multiplier": 1.0 },
-    "BreakoutHunter": { "enabled": true, "min_breakout_score": 6, "rr_requirements": { "low_score_threshold": 7, "high_rr": 2.5, "default_rr": 1.5 } },
+    "BreakoutHunter": { "enabled": true, "min_breakout_score": 6, "rr_requirements": { "low_score_threshold": 7, "high_rr": 2.5, "default_rr": 2.0 } },
     "IchimokuHybridPro": { "enabled": true, "default_params": { "min_total_score": 12, "sl_mode": "adaptive" }, "timeframe_overrides": { "5m": { "min_total_score": 10 }, "1d": { "min_total_score": 14 } } },
     "ChandelierTrendRider": { "enabled": true, "session_filter": { "enabled": true, "active_hours_utc": [ [8, 16], [13, 21] ] } },
     "KeltnerMomentumBreakout": { "enabled": true, "min_momentum_score": 4 },
