@@ -1,4 +1,4 @@
-# core/views.py (نسخه نهایی و کامل - داشبورد چندوجهی)
+# core/views.py (نسخه نهایی و کامل با فرمت هوشمند)
 
 import logging
 from django.http import JsonResponse
@@ -36,21 +36,28 @@ def get_composite_signal_view(request):
         return JsonResponse({"status": "ERROR", "message": "An internal server error occurred."}, status=500)
 
 
-# --- ✅ MIRACLE UPGRADE: تابع جدید برای ساخت داشبورد فرماندهی چندوجهی ---
+# --- تابع جدید برای داشبورد فرماندهی (با منطق اصلاح شده) ---
 @api_view(['GET'])
 def get_full_dashboard_analysis(request, symbol: str):
     """
     این ویو، یک داشبورد فرماندهی کامل برای یک نماد خاص ایجاد می‌کند.
-    این داشبورد همیشه تحلیل کامل تمام تایم‌فریم‌ها را نشان می‌دهد و اگر
-    سیگنالی وجود داشته باشد، آن را نیز در کنار تحلیل مربوطه قرار می‌دهد.
     """
+    
+    # ✅ SURGICAL FIX: Upgraded symbol formatting logic
     formatted_symbol = symbol.upper().replace('-', '/')
+    # If no slash is present, try to intelligently add one based on common quote currencies.
+    if '/' not in formatted_symbol:
+        common_bases = ['USDT', 'BUSD', 'USDC', 'BTC', 'ETH', 'USD']
+        for base in common_bases:
+            if formatted_symbol.endswith(base):
+                asset = formatted_symbol[:-len(base)]
+                formatted_symbol = f"{asset}/{base}"
+                break
     
     try:
         configured_timeframes = ["5m", "15m", "1h", "4h", "1d"]
         snapshots = AnalysisSnapshot.objects.filter(symbol=formatted_symbol)
         
-        # دیکشنری برای نگهداری داده‌های هر تایم فریم
         snapshot_map = {snap.timeframe: snap for snap in snapshots}
 
         dashboard_data = {}
@@ -58,21 +65,14 @@ def get_full_dashboard_analysis(request, symbol: str):
             snapshot = snapshot_map.get(tf)
             
             if snapshot:
-                # اگر رکوردی برای این تایم فریم وجود داشت
-                
-                # همیشه تحلیل کامل را اضافه می‌کنیم
                 timeframe_data = {
                     "status": snapshot.status,
                     "full_analysis": snapshot.full_analysis
                 }
-                
-                # اگر سیگنال موفق بود، پکیج کامل آن را نیز اضافه می‌کنیم
                 if snapshot.status == "SUCCESS":
                     timeframe_data["signal_package"] = snapshot.signal_package
-                
                 dashboard_data[tf] = timeframe_data
             else:
-                # اگر هنوز هیچ رکوردی برای این تایم فریم ثبت نشده
                 dashboard_data[tf] = {"status": "NOT_FOUND", "message": "Analysis pending or not yet available."}
 
         return JsonResponse(dashboard_data, status=200, json_dumps_params={'ensure_ascii': False})
