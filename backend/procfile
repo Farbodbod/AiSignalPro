@@ -1,2 +1,2 @@
-web: gunicorn trading_app.wsgi --timeout 60
+web: gunicorn trading_app.wsgi --timeout 120
 worker: python -m engines.live_monitor_worker
