@@ -21,7 +21,7 @@ class IchimokuHybridPro(BaseStrategy):
         "min_total_score": 10,
         "market_regime_adx": 23,
         "sl_mode": "kumo",
-        "min_rr_ratio": 1.5,
+        "min_rr_ratio": 2.0,
         "weights_trending": {
             "price_vs_kumo": 2, "tk_cross_strong": 3, "future_kumo": 2,
             "chikou_free": 2, "kumo_twist": 1, "volume_spike": 1
