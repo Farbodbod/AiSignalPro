@@ -6,19 +6,16 @@ logger = logging.getLogger(__name__)
 
 class VwapMeanReversion(BaseStrategy):
     """
-    VwapMeanReversion - (v3.0 - Market Regime Edition)
+    VwapMeanReversion - (v3.1 - Hotfix & Final)
     --------------------------------------------------------------------------------------
-    This world-class version is now a market diagnostics expert. It features:
-    1.  Market Regime Filter: Uses ADX to detect strong trends and intelligently
-        disables itself, as mean-reversion is for ranging markets.
-    2.  Robust Oscillator Engine: Handles complex AND/OR logic for confirmations gracefully.
-    3.  Professional-Grade Risk Parameters: Enforces a higher default R/R ratio.
+    This definitive version fixes a critical AttributeError by correctly implementing
+    the _get_signal_config method, fully aligning it with the BaseStrategy v5.1 framework.
     """
     strategy_name: str = "VwapMeanReversion"
 
-    # ✅ MIRACLE UPGRADE: Default configuration for the new engines
+    # The default_config remains the same and is correct.
     default_config = {
-        "max_adx_for_reversion": 25.0, # Strategy is active only if ADX is below this
+        "max_adx_for_reversion": 25.0,
         "min_rr_ratio": 1.8,
         "oscillator_logic": "AND",
         "use_rsi": True, "rsi_oversold": 30.0, "rsi_overbought": 70.0,
@@ -32,9 +29,21 @@ class VwapMeanReversion(BaseStrategy):
             "adx": {"weight": 1, "min_strength": 25}
         }
     }
+    
+    # ✅ FIX: The missing _get_signal_config method is now correctly implemented.
+    def _get_signal_config(self) -> Dict[str, Any]:
+        """
+        Loads the strategy's configuration. This implementation is compatible
+        with the hierarchical structure of the BaseStrategy framework.
+        """
+        # For this strategy, we don't have timeframe_overrides, so we just use the main config.
+        # This standard pattern makes it future-proof.
+        base_configs = self.config.get("default_params", self.config) # Fallback for flat structure
+        tf_overrides = self.config.get("timeframe_overrides", {}).get(self.primary_timeframe, {})
+        return {**base_configs, **tf_overrides}
 
     def _get_oscillator_confirmation(self, direction: str, cfg: Dict, rsi_data: Optional[Dict], wr_data: Optional[Dict]) -> bool:
-        """ ✅ Upgraded: More robust oscillator confirmation engine. """
+        """ The robust oscillator confirmation engine. """
         rsi_confirm = False
         if cfg.get('use_rsi') and rsi_data:
             rsi_val = rsi_data.get('values', {}).get('rsi')
@@ -59,22 +68,18 @@ class VwapMeanReversion(BaseStrategy):
         return False
 
     def check_signal(self) -> Optional[Dict[str, Any]]:
-        cfg = self._get_signal_config()
+        cfg = self._get_signal_config() # This line will now work correctly.
         if not self.price_data: return None
 
-        # --- 1. Anti-Fragile Data Check ---
         indicators = {name: self.get_indicator(name) for name in ['vwap_bands', 'atr', 'adx', 'rsi', 'williams_r']}
         if not all([indicators.get('vwap_bands'), indicators.get('atr'), indicators.get('adx')]):
             return None
 
-        # --- ✅ 2. Pillar 1: Market Regime Filter ---
         adx_data = indicators['adx']
-        adx_strength = adx_data.get('values', {}).get('adx', 100) # Default to high ADX if data missing
+        adx_strength = adx_data.get('values', {}).get('adx', 100)
         if adx_strength > cfg.get('max_adx_for_reversion', 25.0):
-            logger.debug(f"[{self.strategy_name}] Skipped: Market is trending (ADX: {adx_strength:.2f}). Mean-reversion is disabled.")
             return None
 
-        # --- 3. Primary Trigger: VWAP Band Extension ---
         vwap_data = indicators['vwap_bands']
         vwap_position = vwap_data.get('analysis', {}).get('position')
         signal_direction = None
@@ -84,7 +89,6 @@ class VwapMeanReversion(BaseStrategy):
         
         confirmations = {"trigger": f"Price {vwap_position}", "market_regime": f"Ranging (ADX: {adx_strength:.2f})"}
 
-        # --- 4. Confirmation Funnel ---
         if not self._get_oscillator_confirmation(signal_direction, cfg, indicators['rsi'], indicators['williams_r']):
             return None
         confirmations['oscillator_filter'] = f"Passed (Logic: {cfg.get('oscillator_logic')})"
@@ -98,7 +102,6 @@ class VwapMeanReversion(BaseStrategy):
             if self._get_trend_confirmation(opposite_direction): return None
             confirmations['htf_filter'] = "Passed (No strong opposing trend)"
 
-        # --- 5. Risk Management & Final Checks ---
         entry_price = self.price_data.get('close')
         vwap_values = vwap_data.get('values', {})
         if not entry_price: return None
