@@ -10,10 +10,16 @@
     "account_equity": 10000,
     "assumed_fees_pct": 0.001,
     "assumed_slippage_pct": 0.0005,
+
     "kline_limit_map": {
-      "comment": "Default candle count for initial fetch per timeframe.",
+      "comment": "Default candle count for initial fetch per timeframe. The main controller.",
       "1m": 400, "5m": 400, "15m": 400, "1h": 400, "4h": 400, "1d": 400
-    }
+    },
+    
+    "fetcher_limit": 400,
+    
+    
+    "min_rows_for_htf": 380
   },
   "signal_cache": {
     "default_ttl_hours": 8,
@@ -50,7 +56,7 @@
     "divergence": { "enabled": true, "dependencies": { "rsi": { "period": 14 }, "zigzag": { "deviation": 3.0 } } }
   },
   "strategies": {
-    "TrendRiderPro": { "enabled": true },
+    "TrendRiderPro": { "enabled": true, "default_params": { "min_adx_strength": 25.0, "tactical_tp_rr_ratio": 2.0 }, "timeframe_overrides": { "5m": { "min_adx_strength": 22.0 }, "1d": { "min_adx_strength": 28.0 } } },
     "VwapMeanReversion": { "enabled": true, "max_adx_for_reversion": 25.0, "min_rr_ratio": 1.8 },
     "DivergenceSniperPro": { "enabled": true, "min_structure_strength": 3, "volatility_regimes": { "low_atr_pct_threshold": 1.5, "low_vol_sl_multiplier": 1.0, "high_vol_sl_multiplier": 1.5 } },
     "WhaleReversal": { "enabled": true, "min_reversal_score": 7, "adaptive_proximity_multiplier": 0.5 },
