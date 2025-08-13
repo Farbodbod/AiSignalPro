@@ -12,7 +12,7 @@
     "assumed_slippage_pct": 0.0005,
     "kline_limit_map": {
       "comment": "Default candle count for initial fetch per timeframe.",
-      "1m": 300, "5m": 300, "15m": 300, "1h": 300, "4h": 300, "1d": 300
+      "1m": 400, "5m": 400, "15m": 400, "1h": 400, "4h": 400, "1d": 400
     }
   },
   "signal_cache": {
@@ -27,55 +27,40 @@
   ],
   "indicators": {
     "adx": { "enabled": true, "period": 14 },
-    "atr": { "enabled": true, "period": 14 },
     "bollinger": { "enabled": true, "period": 20, "std_dev": 2.0, "squeeze_stats_period": 240, "squeeze_std_multiplier": 1.5 },
     "cci": { "enabled": true, "period": 20 },
-    "chandelier_exit": { 
-      "enabled": true, 
-      "atr_period": 22,  
-      "atr_multiplier": 3.0 
-    },
+    "chandelier_exit": { "enabled": true, "dependencies": { "atr": { "period": 22 } }, "atr_multiplier": 3.0 },
     "donchian_channel": { "enabled": true, "period": 20 },
     "ema_cross": { "enabled": true, "short_period": 9, "long_period": 21 },
     "fast_ma": { "enabled": true, "period": 200, "ma_type": "DEMA" },
     "ichimoku": { "enabled": true },
-    "keltner_channel": { 
-      "enabled": true, 
-      "ema_period": 20, 
-      "atr_period": 10, 
-      "atr_multiplier": 2.0 
-    },
+    "keltner_channel": { "enabled": true, "ema_period": 20, "dependencies": { "atr": { "period": 10 } }, "atr_multiplier": 2.0 },
     "macd": { "enabled": true, "fast_period": 12, "slow_period": 26, "signal_period": 9 },
     "patterns": { "enabled": true },
     "pivots": { "enabled": true },
     "rsi": { "enabled": true, "period": 14 },
     "stochastic": { "enabled": true, "k_period": 14, "d_period": 3 },
-    "structure": { "enabled": true, "zigzag_deviation": 3.0, "zone_proximity_pct": 0.1 },
-    "supertrend": { 
-      "enabled": true, 
-      "period": 10, 
-      "multiplier": 3.0,
-      "atr_period": 14 
-    },
+    "structure": { "enabled": true, "dependencies": { "zigzag": { "deviation": 3.0 } }, "zone_proximity_pct": 0.1 },
+    "supertrend": { "enabled": true, "period": 10, "multiplier": 3.0, "dependencies": { "atr": { "period": 14 } } },
     "vwap_bands": { "enabled": true },
     "whales": { "enabled": true, "period": 20, "stdev_multiplier": 2.5, "climactic_multiplier": 4.0 },
     "williams_r": { "enabled": true, "period": 14 },
     "zigzag": { "enabled": true, "deviation": 3.0 },
-    "fibonacci": { "enabled": true },
-    "divergence": { "enabled": true }
+    "fibonacci": { "enabled": true, "dependencies": { "zigzag": { "deviation": 3.0 } } },
+    "divergence": { "enabled": true, "dependencies": { "rsi": { "period": 14 }, "zigzag": { "deviation": 3.0 } } }
   },
   "strategies": {
     "TrendRiderPro": { "enabled": true },
-    "VwapMeanReversion": { "enabled": true, "max_adx_for_reversion": 28 },
-    "DivergenceSniperPro": { "enabled": true, "min_structure_strength": 2 },
-    "WhaleReversal": { "enabled": true, "min_reversal_score": 6 },
-    "VolumeCatalystPro": { "enabled": true },
-    "BreakoutHunter": { "enabled": true, "min_breakout_score": 5 },
-    "IchimokuHybridPro": { "enabled": true, "default_params": { "min_total_score": 12, "sl_mode": "adaptive" } },
-    "ChandelierTrendRider": { "enabled": true, "default_params": { "risk_per_trade_percent": 0.02 } },
-    "KeltnerMomentumBreakout": { "enabled": true, "min_momentum_score": 5 },
-    "PivotConfluenceSniper": { "enabled": true },
-    "ConfluenceSniper": { "enabled": true, "min_confluence_score": 6 },
-    "EmaCrossoverStrategy": { "enabled": true }
+    "VwapMeanReversion": { "enabled": true, "max_adx_for_reversion": 25.0, "min_rr_ratio": 1.8 },
+    "DivergenceSniperPro": { "enabled": true, "min_structure_strength": 3, "volatility_regimes": { "low_atr_pct_threshold": 1.5, "low_vol_sl_multiplier": 1.0, "high_vol_sl_multiplier": 1.5 } },
+    "WhaleReversal": { "enabled": true, "min_reversal_score": 7, "adaptive_proximity_multiplier": 0.5 },
+    "VolumeCatalystPro": { "enabled": true, "min_quality_score": 7, "atr_sl_multiplier": 1.0 },
+    "BreakoutHunter": { "enabled": true, "min_breakout_score": 6, "rr_requirements": { "low_score_threshold": 7, "high_rr": 2.5, "default_rr": 1.5 } },
+    "IchimokuHybridPro": { "enabled": true, "default_params": { "min_total_score": 12, "sl_mode": "adaptive" }, "timeframe_overrides": { "5m": { "min_total_score": 10 }, "1d": { "min_total_score": 14 } } },
+    "ChandelierTrendRider": { "enabled": true, "session_filter": { "enabled": true, "active_hours_utc": [ [8, 16], [13, 21] ] } },
+    "KeltnerMomentumBreakout": { "enabled": true, "min_momentum_score": 4 },
+    "PivotConfluenceSniper": { "enabled": true, "default_params": { "min_rr_ratio": 2.0 }, "timeframe_overrides": { "5m": { "atr_sl_multiplier": 1.2 }, "1d": { "min_rr_ratio": 2.5 } } },
+    "ConfluenceSniper": { "enabled": true, "min_confluence_score": 5 },
+    "EmaCrossoverStrategy": { "enabled": true, "master_trend_filter": { "enabled": true, "ma_period": 200 } }
   }
 }
