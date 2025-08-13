@@ -1,47 +1,82 @@
+# core/views.py (نسخه نهایی و کامل - داشبورد چندوجهی)
+
 import logging
 from django.http import JsonResponse
 from rest_framework.decorators import api_view
-from core.models import AnalysisSnapshot # ✨ ۱. ایمپورت مدل جدید
+from core.models import AnalysisSnapshot
 
 logger = logging.getLogger(__name__)
 
+# --- این تابع قدیمی شماست و بدون تغییر باقی می‌ماند ---
 @api_view(['GET'])
 def get_composite_signal_view(request):
     """
-    ✨ UPGRADE v19.0 - World-Class Architecture ✨
-    این نقطه پایانی API دیگر تحلیل زنده انجام نمی‌دهد.
-    این متد آخرین تحلیل ذخیره شده توسط ورکر را از دیتابیس می‌خواند.
-    این روش فوق‌العاده سریع، بهینه و مقیاس‌پذیر است.
+    این نقطه پایانی API آخرین تحلیل ذخیره شده برای یک جفت‌ارز و تایم‌فریم مشخص را
+    از دیتابیس می‌خواند.
     """
-    symbol = request.GET.get('symbol', 'BTC/USDT')
+    symbol = request.GET.get('symbol', 'BTC/USDT').upper().replace('-', '/')
     timeframe = request.GET.get('timeframe', '1h')
     
     try:
-        # ✨ ۲. کوئری ساده و سریع به دیتابیس
-        # ما به دنبال آخرین رکورد برای جفت‌ارز و تایم‌فریم مشخص شده می‌گردیم.
         snapshot = AnalysisSnapshot.objects.filter(symbol=symbol, timeframe=timeframe).first()
-
-        # ۳. بررسی نتیجه کوئری
         if snapshot:
-            # اگر رکوردی پیدا شد
-            if snapshot.status == "SUCCESS":
-                # اگر وضعیت موفقیت‌آمیز بود، پکیج کامل سیگنال را برمی‌گردانیم
-                # این پکیج شامل full_analysis نیز هست
-                return JsonResponse(snapshot.signal_package, status=200)
-            else: # اگر وضعیت NEUTRAL بود
-                # یک پاسخ خنثی به همراه تحلیل کامل برمی‌گردانیم
-                return JsonResponse({
-                    "status": "NEUTRAL",
-                    "message": "Market conditions did not meet any strategy criteria at last check.",
-                    "full_analysis": snapshot.full_analysis
-                }, status=200)
+            response_data = snapshot.signal_package if snapshot.status == "SUCCESS" else {
+                "status": "NEUTRAL",
+                "message": "Market conditions did not meet any strategy criteria at last check.",
+                "full_analysis": snapshot.full_analysis
+            }
+            return JsonResponse(response_data, status=200, json_dumps_params={'ensure_ascii': False})
         else:
-            # اگر هنوز هیچ رکوردی توسط ورکر برای این جفت‌ارز ذخیره نشده باشد
             return JsonResponse({
                 "status": "NOT_FOUND",
-                "message": "No analysis snapshot is available yet for this symbol/timeframe. Please wait for the next worker cycle."
+                "message": "No analysis snapshot is available yet for this symbol/timeframe."
             }, status=404)
-
     except Exception as e:
         logger.critical(f"CRITICAL ERROR in get_composite_signal_view for {symbol}: {e}", exc_info=True)
+        return JsonResponse({"status": "ERROR", "message": "An internal server error occurred."}, status=500)
+
+
+# --- ✅ MIRACLE UPGRADE: تابع جدید برای ساخت داشبورد فرماندهی چندوجهی ---
+@api_view(['GET'])
+def get_full_dashboard_analysis(request, symbol: str):
+    """
+    این ویو، یک داشبورد فرماندهی کامل برای یک نماد خاص ایجاد می‌کند.
+    این داشبورد همیشه تحلیل کامل تمام تایم‌فریم‌ها را نشان می‌دهد و اگر
+    سیگنالی وجود داشته باشد، آن را نیز در کنار تحلیل مربوطه قرار می‌دهد.
+    """
+    formatted_symbol = symbol.upper().replace('-', '/')
+    
+    try:
+        configured_timeframes = ["5m", "15m", "1h", "4h", "1d"]
+        snapshots = AnalysisSnapshot.objects.filter(symbol=formatted_symbol)
+        
+        # دیکشنری برای نگهداری داده‌های هر تایم فریم
+        snapshot_map = {snap.timeframe: snap for snap in snapshots}
+
+        dashboard_data = {}
+        for tf in configured_timeframes:
+            snapshot = snapshot_map.get(tf)
+            
+            if snapshot:
+                # اگر رکوردی برای این تایم فریم وجود داشت
+                
+                # همیشه تحلیل کامل را اضافه می‌کنیم
+                timeframe_data = {
+                    "status": snapshot.status,
+                    "full_analysis": snapshot.full_analysis
+                }
+                
+                # اگر سیگنال موفق بود، پکیج کامل آن را نیز اضافه می‌کنیم
+                if snapshot.status == "SUCCESS":
+                    timeframe_data["signal_package"] = snapshot.signal_package
+                
+                dashboard_data[tf] = timeframe_data
+            else:
+                # اگر هنوز هیچ رکوردی برای این تایم فریم ثبت نشده
+                dashboard_data[tf] = {"status": "NOT_FOUND", "message": "Analysis pending or not yet available."}
+
+        return JsonResponse(dashboard_data, status=200, json_dumps_params={'ensure_ascii': False})
+
+    except Exception as e:
+        logger.critical(f"CRITICAL ERROR in get_full_dashboard_analysis for {formatted_symbol}: {e}", exc_info=True)
         return JsonResponse({"status": "ERROR", "message": "An internal server error occurred."}, status=500)
