@@ -1,7 +1,7 @@
 import pandas as pd
 import numpy as np
 import logging
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 from .base import BaseIndicator
 
@@ -9,11 +9,11 @@ logger = logging.getLogger(__name__)
 
 class EMACrossIndicator(BaseIndicator):
     """
-    EMA Cross - Definitive, World-Class Version (v4.0 - Final Architecture)
+    EMA Cross - (v5.0 - Harmonized API)
     -------------------------------------------------------------------------
-    This version is a mini-strategy engine. It validates crossovers against
-    volume and trend alignment. It adheres to the final AiSignalPro architecture
-    by performing its calculations on the pre-resampled dataframe.
+    This version is now a first-class citizen of the universal engine. It includes
+    standardized `get_col_name` static methods, making it fully compatible
+    with strategy-specific configurations and future-proofing its architecture.
     """
     dependencies: list = []
 
@@ -30,61 +30,57 @@ class EMACrossIndicator(BaseIndicator):
         if self.short_period >= self.long_period:
             raise ValueError(f"Short period ({self.short_period}) must be less than long period ({self.long_period}).")
 
-        suffix = f'_{self.short_period}_{self.long_period}'
-        if self.timeframe: suffix += f'_{self.timeframe}'
-        self.short_ema_col = f'ema{suffix}_short'
-        self.long_ema_col = f'ema{suffix}_long'
-        self.signal_col = f'ema_cross_signal{suffix}'
-        self.rvol_col = f'rvol{suffix}_{self.rvol_period}'
+        # ✅ HARMONIZED: Column names are now generated using the official static methods
+        self.short_ema_col, self.long_ema_col, self.signal_col, self.rvol_col = EMACrossIndicator.get_col_names(self.params, self.timeframe)
 
-    def _calculate_metrics(self, df: pd.DataFrame) -> pd.DataFrame:
-        """The core logic for calculating EMAs, crossovers, and confirmation metrics."""
-        res = pd.DataFrame(index=df.index)
-        close = pd.to_numeric(df['close'], errors='coerce')
+    @staticmethod
+    def get_col_names(params: Dict[str, Any], timeframe: Optional[str] = None) -> tuple:
+        """ ✅ NEW: The official, standardized method for generating all column names. """
+        short_period = params.get('short_period', 9)
+        long_period = params.get('long_period', 21)
+        rvol_period = params.get('rvol_period', 20)
+
+        suffix = f'_{short_period}_{long_period}'
+        if timeframe: suffix += f'_{timeframe}'
         
-        res[self.short_ema_col] = close.ewm(span=self.short_period, adjust=False).mean()
-        res[self.long_ema_col] = close.ewm(span=self.long_period, adjust=False).mean()
-        prev_short = res[self.short_ema_col].shift(1)
-        prev_long = res[self.long_ema_col].shift(1)
-        bullish_cross = (prev_short <= prev_long) & (res[self.short_ema_col] > res[self.long_ema_col])
-        bearish_cross = (prev_short >= prev_long) & (res[self.short_ema_col] < res[self.long_ema_col])
-        res[self.signal_col] = np.where(bullish_cross, 1, np.where(bearish_cross, -1, 0))
-
-        if self.use_volume_filter:
-            if 'volume' in df.columns:
-                vol_ma = df['volume'].rolling(window=self.rvol_period).mean().replace(0, np.nan)
-                res[self.rvol_col] = df['volume'] / vol_ma
-            else:
-                res[self.rvol_col] = np.nan
-                logger.warning(f"Volume column not found for RVOL calculation on timeframe {self.timeframe or 'base'}.")
-            
-        return res
+        short_ema_col = f'ema{suffix}_short'
+        long_ema_col = f'ema{suffix}_long'
+        signal_col = f'ema_cross_signal{suffix}'
+        rvol_col = f'rvol{suffix}_{rvol_period}'
+        return short_ema_col, long_ema_col, signal_col, rvol_col
 
     def calculate(self) -> 'EMACrossIndicator':
-        """
-        ✨ FINAL ARCHITECTURE: No resampling. Just pure calculation.
-        The dataframe received is already at the correct timeframe.
-        """
+        """ Core calculation logic is unchanged and robust. """
         df_for_calc = self.df
         
         if len(df_for_calc) < self.long_period:
             logger.warning(f"Not enough data for EMA Cross on {self.timeframe or 'base'}.")
             return self
 
-        results = self._calculate_metrics(df_for_calc)
+        close = pd.to_numeric(df_for_calc['close'], errors='coerce')
         
-        for col in results.columns:
-            self.df[col] = results[col]
+        short_ema = close.ewm(span=self.short_period, adjust=False).mean()
+        long_ema = close.ewm(span=self.long_period, adjust=False).mean()
+        self.df[self.short_ema_col] = short_ema
+        self.df[self.long_ema_col] = long_ema
 
+        prev_short = short_ema.shift(1)
+        prev_long = long_ema.shift(1)
+        bullish_cross = (prev_short <= prev_long) & (short_ema > long_ema)
+        bearish_cross = (prev_short >= prev_long) & (short_ema < long_ema)
+        self.df[self.signal_col] = np.where(bullish_cross, 1, np.where(bearish_cross, -1, 0))
+
+        if self.use_volume_filter:
+            if 'volume' in df_for_calc.columns:
+                vol_ma = df_for_calc['volume'].rolling(window=self.rvol_period).mean().replace(0, np.nan)
+                self.df[self.rvol_col] = df_for_calc['volume'] / vol_ma
+            else:
+                self.df[self.rvol_col] = np.nan
         return self
 
     def analyze(self) -> Dict[str, Any]:
-        """
-        Provides a deep, context-rich analysis suitable for automated systems.
-        This powerful analysis logic remains unchanged.
-        """
+        """ Analysis logic is unchanged, deep, and robust. """
         required_cols = [self.short_ema_col, self.long_ema_col, self.signal_col]
-        
         valid_df = self.df.dropna(subset=required_cols)
         if len(valid_df) < 2: return {"status": "Insufficient Data"}
 
@@ -121,8 +117,7 @@ class EMACrossIndicator(BaseIndicator):
             "status": "OK", "timeframe": self.timeframe or 'Base',
             "values": { "short_ema": round(short_ema, 5), "long_ema": round(long_ema, 5), "rvol": round(last.get(self.rvol_col, 0), 2)},
             "analysis": {
-                "signal": final_signal,
-                "strength": strength,
+                "signal": final_signal, "strength": strength,
                 "primary_event": primary_event,
                 "confirmation": { "trend_is_aligned": trend_is_aligned, "volume_confirmed": volume_confirmed }
             }
