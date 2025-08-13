@@ -25,7 +25,7 @@ class VolumeCatalystPro(BaseStrategy):
         },
         "cci_threshold": 100.0,
         "atr_sl_multiplier": 1.0,
-        "min_rr_ratio": 1.5,
+        "min_rr_ratio": 2.0,
         "htf_confirmation_enabled": True,
         "htf_map": { "5m": "15m", "15m": "1h", "1h": "4h", "4h": "1d" },
         "htf_confirmations": {
