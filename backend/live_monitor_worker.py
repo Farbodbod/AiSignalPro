@@ -69,9 +69,9 @@ async def main_loop():
     general_config = config.get("general", {})
     symbols = general_config.get("symbols_to_monitor", ['BTC/USDT'])
     timeframes = general_config.get("timeframes_to_analyze", ['5m', '15m', '1h', '4h', '1d'])
-    poll_interval = general_config.get("poll_interval_seconds", 300)
-    max_concurrent = general_config.get("max_concurrent_tasks", 10)
-    default_kline_limit = general_config.get("fetcher_limit", 1200) # افزایش پیش‌فرض برای تحلیل HTF
+    poll_interval = general_config.get("poll_interval_seconds", 900)
+    max_concurrent = general_config.get("max_concurrent_tasks", 5)
+    default_kline_limit = general_config.get("fetcher_limit", 500) # افزایش پیش‌فرض برای تحلیل HTF
 
     # --- مقداردهی اولیه کلاس‌ها مانند قبل ---
     fetcher = ExchangeFetcher()
