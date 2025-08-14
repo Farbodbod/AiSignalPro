@@ -1,4 +1,4 @@
-# core/exchange_fetcher.py (v4.2 - Paginated Fetching Edition)
+# core/exchange_fetcher.py (v4.3 - Robust Pagination FIX)
 
 import asyncio
 import os
@@ -11,52 +11,44 @@ from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_excep
 
 logger = logging.getLogger(__name__)
 
-# --- ✨ ارتقا ۱: اضافه کردن محدودیت هر صرافی --- ✨
 EXCHANGE_CONFIG = {
-    'mexc': {'base_url': 'https://api.mexc.com', 'kline_endpoint': '/api/v3/klines', 'ticker_endpoint': '/api/v3/ticker/24hr', 'symbol_template': '{base}{quote}', 'timeframe_map': {'5m': '5m', '15m': '15m', '1h': '1h', '4h': '4h', '1d': '1d'}, 'rate_limit_delay': 0.5, 'max_limit_per_req': 200},
-    'kucoin': {'base_url': 'https://api.kucoin.com', 'kline_endpoint': '/api/v1/market/candles', 'ticker_endpoint': '/api/v1/market/stats', 'symbol_template': '{base}-{quote}', 'timeframe_map': {'5m': '5min', '15m': '15min', '1h': '1hour', '4h': '4hour', '1d': '1day'}, 'rate_limit_delay': 0.5, 'max_limit_per_req': 1500},
-    'okx': {'base_url': 'https://www.okx.com', 'kline_endpoint': '/api/v5/market/candles', 'ticker_endpoint': '/api/v5/market/ticker', 'symbol_template': '{base}-{quote}', 'timeframe_map': {'5m': '5m', '15m': '15m', '1h': '1H', '4h': '4H', '1d': '1D'}, 'rate_limit_delay': 0.2, 'max_limit_per_req': 300}, # محدودیت OKX معمولا ۳۰۰ است
+    'mexc': {'base_url': 'https://api.mexc.com', 'kline_endpoint': '/api/v3/klines', 'max_limit_per_req': 1000, 'symbol_template': '{base}{quote}', 'timeframe_map': {'5m': '5m', '15m': '15m', '1h': '1h', '4h': '4h', '1d': '1d'}, 'rate_limit_delay': 0.5},
+    'kucoin': {'base_url': 'https://api.kucoin.com', 'kline_endpoint': '/api/v1/market/candles', 'max_limit_per_req': 1500, 'symbol_template': '{base}-{quote}', 'timeframe_map': {'5m': '5min', '15m': '15min', '1h': '1hour', '4h': '4hour', '1d': '1day'}, 'rate_limit_delay': 0.5},
+    'okx': {'base_url': 'https://www.okx.com', 'kline_endpoint': '/api/v5/market/candles', 'max_limit_per_req': 300, 'symbol_template': '{base}-{quote}', 'timeframe_map': {'5m': '5m', '15m': '15m', '1h': '1H', '4h': '4H', '1d': '1D'}, 'rate_limit_delay': 0.2},
 }
-# (بقیه کانفیگ‌ها بدون تغییر)
 SYMBOL_MAP = {'BTC': {'base': 'BTC', 'quote': 'USDT'}, 'ETH': {'base': 'ETH', 'quote': 'USDT'}, 'XRP': {'base': 'XRP', 'quote': 'USDT'}, 'SOL': {'base': 'SOL', 'quote': 'USDT'}, 'DOGE': {'base': 'DOGE', 'quote': 'USDT'}}
 
 class ExchangeFetcher:
     def __init__(self, cache_ttl: int = 60):
-        headers = {'User-Agent': 'AiSignalPro/4.2.0', 'Accept': 'application/json'}
+        headers = {'User-Agent': 'AiSignalPro/4.3.0', 'Accept': 'application/json'}
         self.client = httpx.AsyncClient(headers=headers, timeout=20, follow_redirects=True)
         self.cache = {}
         self.cache_ttl = cache_ttl
-        logging.info("ExchangeFetcher (Paginated Fetching Edition v4.2) initialized.")
+        logging.info("ExchangeFetcher (Robust Pagination FIX v4.3) initialized.")
 
-    # توابع کمکی (_get_cache_key, _format_symbol, _format_timeframe, _safe_async_request, _normalize_kline_data)
-    # بدون تغییر باقی می‌مانند و عالی هستند.
-    def _get_cache_key(self, prefix: str, exchange: str, symbol: str, timeframe: Optional[str] = None) -> str:
-        key = f"{prefix}:{exchange}:{symbol}"
-        if timeframe: key += f":{timeframe}"
-        return key
     def _format_symbol(self, s: str, e: str) -> Optional[str]:
-        if s not in SYMBOL_MAP: base_symbol, quote_symbol = s.split('/')
-        else: base_symbol, quote_symbol = SYMBOL_MAP[s]['base'], SYMBOL_MAP[s]['quote']
+        base_symbol, quote_symbol = s.split('/')
         c = EXCHANGE_CONFIG.get(e)
         return c['symbol_template'].format(base=base_symbol, quote=quote_symbol).upper() if c else None
+
     def _format_timeframe(self, t: str, e: str) -> Optional[str]:
         c = EXCHANGE_CONFIG.get(e)
         return c.get('timeframe_map', {}).get(t) if c else None
-    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=6), retry=retry_if_exception_type((httpx.RequestError, httpx.HTTPStatusError)), reraise=True)
+
+    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=6), reraise=True)
     async def _safe_async_request(self, method: str, url: str, **kwargs) -> Optional[Any]:
         exchange_name = kwargs.pop('exchange_name', 'unknown')
         await asyncio.sleep(EXCHANGE_CONFIG.get(exchange_name, {}).get('rate_limit_delay', 1.0))
         response = await self.client.request(method, url, **kwargs)
         response.raise_for_status()
         return response.json()
+
     def _normalize_kline_data(self, data: List[list], source: str) -> List[Dict[str, Any]]:
         if not data: return []
         normalized_data = []
-        # OKX داده‌ها را از جدید به قدیم می‌دهد، پس باید برعکس شوند تا همیشه از قدیم به جدید باشند
-        if source == 'okx': data.reverse() 
+        if source == 'okx': data.reverse()
         for k in data:
             try:
-                # [timestamp, open, high, low, close, volume]
                 candle = {"timestamp": int(k[0]), "open": float(k[1]), "high": float(k[2]), "low": float(k[3]), "close": float(k[4]), "volume": float(k[5])}
                 normalized_data.append(candle)
             except (ValueError, TypeError, IndexError):
@@ -64,7 +56,6 @@ class ExchangeFetcher:
                 continue
         return normalized_data
 
-    # --- ✨ ارتقا ۲: بازنویسی کامل تابع دریافت کندل‌ها --- ✨
     async def get_klines_from_one_exchange(self, exchange: str, symbol: str, timeframe: str, limit: int = 500) -> Optional[List[Dict]]:
         config = EXCHANGE_CONFIG.get(exchange)
         formatted_symbol = self._format_symbol(symbol, exchange)
@@ -73,63 +64,48 @@ class ExchangeFetcher:
         if not all([config, formatted_symbol, formatted_timeframe]): return None
         
         all_normalized_data = []
-        current_limit = limit
+        remaining_limit = limit
         end_timestamp = None
         max_per_req = config.get('max_limit_per_req', 1000)
 
-        while len(all_normalized_data) < limit:
-            # تعیین تعداد کندل برای درخواست فعلی
-            fetch_limit = min(current_limit, max_per_req)
-            if fetch_limit <= 0: break
-
+        while remaining_limit > 0:
+            fetch_limit = min(remaining_limit, max_per_req)
             url = config['base_url'] + config['kline_endpoint']
             params = {'limit': fetch_limit}
 
-            # تنظیم پارامترها برای هر صرافی
             if exchange == 'okx':
                 params.update({'instId': formatted_symbol, 'bar': formatted_timeframe})
-                if end_timestamp: params['after'] = str(end_timestamp) # OKX از after برای گرفتن داده‌های قدیمی‌تر استفاده می‌کند
-            else: # MEXC, Kucoin
+                if end_timestamp: params['before'] = str(end_timestamp)
+            elif exchange == 'kucoin':
+                params.update({'symbol': formatted_symbol, 'type': formatted_timeframe})
+                if end_timestamp: params['endAt'] = int(end_timestamp / 1000)
+            else:
                 params.update({'symbol': formatted_symbol, 'interval': formatted_timeframe})
                 if end_timestamp: params['endTime'] = end_timestamp
             
-            if exchange == 'kucoin': params['type'] = params.pop('interval')
-            
             try:
                 raw_data = await self._safe_async_request('GET', url, params=params, exchange_name=exchange)
-            except Exception as e:
-                logger.warning(f"Request failed for {exchange} ({symbol}@{timeframe}): {e}")
-                break # در صورت خطا، از حلقه خارج شو
-
-            if raw_data:
                 kline_list = raw_data.get('data') if isinstance(raw_data, dict) and 'data' in raw_data else raw_data
+                
                 if isinstance(kline_list, list) and kline_list:
                     normalized_data = self._normalize_kline_data(kline_list, exchange)
-                    # داده‌های جدید به ابتدای لیست کلی اضافه می‌شوند تا ترتیب زمانی حفظ شود
                     all_normalized_data = normalized_data + all_normalized_data
-                    
-                    # timestamp اولین کندل دریافتی را برای استفاده در درخواست بعدی ذخیره کن
-                    end_timestamp = normalized_data[0]['timestamp']
-                    current_limit -= len(normalized_data)
-
-                    # اگر صرافی کمتر از حد درخواست شده داده برگرداند، یعنی به انتهای تاریخچه رسیده
+                    end_timestamp = normalized_data[0]['timestamp'] - 1
+                    remaining_limit -= len(normalized_data)
                     if len(normalized_data) < fetch_limit: break
                 else:
-                    break # اگر داده‌ای برنگشت، حلقه را متوقف کن
-            else:
-                break # اگر پاسخی دریافت نشد، حلقه را متوقف کن
+                    break
+            except Exception as e:
+                logger.warning(f"Request failed during pagination for {exchange} ({symbol}@{timeframe}): {e}")
+                break
         
         if all_normalized_data:
-            # در نهایت، مطمئن شو که دقیقاً به تعداد درخواست شده کندل برمی‌گردانیم
             return all_normalized_data[-limit:]
         
-        logger.warning(f"Final attempt failed for klines from {exchange} on {symbol}@{timeframe}.")
         return None
 
-    # تابع get_first_successful_klines بدون هیچ تغییری کار می‌کند چون تابع بالایی هوشمند شده است.
-    # تمام توابع دیگر نیز بدون تغییر باقی می‌مانند.
     async def get_first_successful_klines(self, symbol: str, timeframe: str, limit: int = 200) -> Optional[Tuple[pd.DataFrame, str]]:
-        exchanges = ['okx', 'mexc', 'kucoin']
+        exchanges = ['okx', 'kucoin', 'mexc']
         
         async def fetch_and_tag(exchange: str):
             result = await self.get_klines_from_one_exchange(exchange, symbol, timeframe, limit=limit)
@@ -146,10 +122,9 @@ class ExchangeFetcher:
             for future in asyncio.as_completed(tasks):
                 result_tuple = await future
                 if result_tuple:
-                    for task in tasks:
-                        if not task.done(): task.cancel()
+                    for task in tasks: task.cancel()
                     source_exchange, df = result_tuple
-                    logger.info(f"Klines acquired from '{source_exchange}' for {symbol}@{timeframe} with limit {len(df)} (requested {limit}).")
+                    logger.info(f"Klines acquired from '{source_exchange}' for {symbol}@{timeframe} with {len(df)} rows (requested {limit}).")
                     return df, source_exchange
         except asyncio.CancelledError:
              logging.info(f"Kline fetch tasks for {symbol} cancelled as a successful one was completed.")
@@ -160,7 +135,7 @@ class ExchangeFetcher:
         return None, None
         
     async def get_ticker_from_one_exchange(self, exchange: str, symbol: str) -> Optional[Dict]:
-        cache_key = self._get_cache_key("ticker", exchange, symbol)
+        cache_key = f"ticker:{exchange}:{symbol}"
         if cache_key in self.cache and (time.time() - self.cache[cache_key]['timestamp']) < 15:
             return self.cache[cache_key]['data']
         
