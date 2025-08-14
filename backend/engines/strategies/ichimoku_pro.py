@@ -1,3 +1,5 @@
+# strategies/ichimoku_hybrid_pro.py (v4.1 - Enhanced Logging Edition)
+
 import logging
 from typing import Dict, Any, Optional, List
 from .base_strategy import BaseStrategy
@@ -6,17 +8,12 @@ logger = logging.getLogger(__name__)
 
 class IchimokuHybridPro(BaseStrategy):
     """
-    IchimokuHybridPro - (v4.0 - Grandmaster Edition)
+    IchimokuHybridPro - (v4.1 - Enhanced Logging Edition)
     -------------------------------------------------------------------------
-    This world-class version is a true Ichimoku grandmaster. It operates on a
-    multi-dimensional, adaptive scoring engine, featuring:
-    1.  Deep MTF Confluence: Scores both primary and HTF Ichimoku signals.
-    2.  Volume Power Filter: Integrates whale activity into its scoring logic.
-    3.  Adaptive Weights: Uses different scoring models for RANGING vs TRENDING markets.
+    This version integrates the new logging mechanism for transparent decision-making.
     """
     strategy_name: str = "IchimokuHybridPro"
 
-    # ✅ MIRACLE UPGRADE: Default configuration for the Grandmaster engine
     default_config = {
         "min_total_score": 10,
         "market_regime_adx": 23,
@@ -32,11 +29,10 @@ class IchimokuHybridPro(BaseStrategy):
         },
         "htf_confirmation_enabled": True,
         "htf_map": { "5m": "15m", "15m": "1h", "1h": "4h", "4h": "1d" },
-        "htf_confirmations": {} # We use our own deep MTF analysis now
+        "htf_confirmations": {}
     }
 
     def _score_ichimoku(self, direction: str, analysis_data: Dict, weights: Dict) -> tuple[int, List[str]]:
-        """The core scoring engine for a single timeframe's analysis data."""
         score, confirmations = 0, []
         if not analysis_data: return 0, []
         
@@ -58,7 +54,6 @@ class IchimokuHybridPro(BaseStrategy):
             if analysis.get('chikou_status') == "Free (Bearish)": score += weights.get('chikou_free', 2); confirmations.append("Chikou_Free")
             if analysis.get('kumo_twist') == "Bearish Twist": score += weights.get('kumo_twist', 1); confirmations.append("Kumo_Twist")
             
-        # Volume Confirmation
         whales_data = self.get_indicator('whales', analysis_source=analysis_data)
         if whales_data and whales_data['analysis'].get('is_whale_activity'):
             score += weights.get('volume_spike', 1)
@@ -68,20 +63,36 @@ class IchimokuHybridPro(BaseStrategy):
 
     def check_signal(self) -> Optional[Dict[str, Any]]:
         cfg = self.config
-        if not self.price_data: return None
+        if not self.price_data:
+            self._log_final_decision("HOLD", "No price data available.")
+            return None
         
         # --- 1. Data Gathering & Market Regime Detection ---
         ichimoku_data = self.get_indicator('ichimoku')
         adx_data = self.get_indicator('adx')
-        if not all([ichimoku_data, adx_data]): return None
-
+        
+        # Log data availability checks
+        self._log_criteria("Ichimoku Data Check", ichimoku_data is not None, "Ichimoku data is missing." if ichimoku_data is None else "Ichimoku data is present.")
+        self._log_criteria("ADX Data Check", adx_data is not None, "ADX data is missing." if adx_data is None else "ADX data is present.")
+        
+        if not all([ichimoku_data, adx_data]):
+            self._log_final_decision("HOLD", "Required indicator data is missing.")
+            return None
+        
         market_regime = "TRENDING" if adx_data['values'].get('adx', 0) > cfg.get('market_regime_adx', 23) else "RANGING"
         active_weights = cfg.get('weights_trending') if market_regime == "TRENDING" else cfg.get('weights_ranging')
-
+        
+        self._log_criteria("Market Regime Detection", True, f"Market regime detected as '{market_regime}' (ADX: {adx_data['values'].get('adx', 0):.2f})")
+        
         # --- 2. Primary Trigger & Multi-Dimensional Scoring ---
         tk_cross = ichimoku_data.get('analysis', {}).get('tk_cross')
         signal_direction = "BUY" if "Bullish" in tk_cross else "SELL" if "Bearish" in tk_cross else None
-        if not signal_direction: return None
+        
+        self._log_criteria("TK Cross Trigger", signal_direction is not None, "No strong TK cross signal detected." if signal_direction is None else f"TK Cross signal is '{signal_direction}'")
+
+        if not signal_direction:
+            self._log_final_decision("HOLD", "No primary trigger signal from Ichimoku.")
+            return None
 
         primary_score, primary_confirms = self._score_ichimoku(signal_direction, self.analysis, active_weights)
         htf_score, htf_confirms = (0, [])
@@ -90,9 +101,12 @@ class IchimokuHybridPro(BaseStrategy):
         
         total_score = primary_score + htf_score
         
-        if total_score < cfg.get('min_total_score', 10): return None
+        self._log_criteria("Total Score Check", total_score >= cfg.get('min_total_score', 10), f"Total score of {total_score} is below minimum {cfg.get('min_total_score', 10)}.")
         
-        logger.info(f"[{self.strategy_name}] Grandmaster Signal: {signal_direction} with Total Score {total_score} in {market_regime} market.")
+        if total_score < cfg.get('min_total_score', 10):
+            self._log_final_decision("HOLD", f"Total score ({total_score}) is below minimum threshold.")
+            return None
+        
         confirmations = {
             "total_score": total_score,
             "market_regime": market_regime,
@@ -102,22 +116,38 @@ class IchimokuHybridPro(BaseStrategy):
         
         # --- 3. Ichimoku-Native Risk Management ---
         entry_price = self.price_data.get('close')
-        if not entry_price: return None
+        if not entry_price:
+            self._log_final_decision("HOLD", "Could not determine entry price.")
+            return None
 
         ichi_values = ichimoku_data.get('values', {})
         stop_loss = None
-        if cfg.get('sl_mode') == 'kijun': stop_loss = ichi_values.get('kijun')
+        
+        if cfg.get('sl_mode') == 'kijun':
+            stop_loss = ichi_values.get('kijun')
+            self._log_criteria("Stop Loss Source", stop_loss is not None, "Kijun line not available." if stop_loss is None else f"Kijun line used as Stop Loss: {stop_loss}")
         elif cfg.get('sl_mode') == 'kumo':
             stop_loss = ichi_values.get('senkou_b')
-        if not stop_loss: return None
+            self._log_criteria("Stop Loss Source", stop_loss is not None, "Senkou B line not available." if stop_loss is None else f"Senkou B line used as Stop Loss: {stop_loss}")
+            
+        if not stop_loss:
+            self._log_final_decision("HOLD", "Could not set Stop Loss based on selected mode.")
+            return None
             
         risk_params = self._calculate_smart_risk_management(entry_price, signal_direction, stop_loss)
+
+        # Log Risk/Reward check
+        rr_is_ok = risk_params and risk_params.get("risk_reward_ratio", 0) >= cfg.get('min_rr_ratio', 1.5)
+        self._log_criteria("Risk/Reward Check", rr_is_ok, "Failed R/R check." if not rr_is_ok else f"Passed with R/R: {risk_params.get('risk_reward_ratio')}")
         
-        if not risk_params or risk_params.get("risk_reward_ratio", 0) < cfg.get('min_rr_ratio', 1.5):
+        if not rr_is_ok:
+            self._log_final_decision("HOLD", "Risk/Reward ratio is too low.")
             return None
+        
         confirmations['rr_check'] = f"Passed (R/R: {risk_params.get('risk_reward_ratio')})"
 
-        logger.info(f"✨✨ [{self.strategy_name}] ICHIMOKU GRANDMASTER SIGNAL CONFIRMED! ✨✨")
-
-        # --- 4. Package and Return ---
-        return { "direction": signal_direction, "entry_price": entry_price, **risk_params, "confirmations": confirmations }
+        # --- 4. Final Decision & Return ---
+        final_summary = { "direction": signal_direction, "entry_price": entry_price, **risk_params, "confirmations": confirmations }
+        self._log_final_decision(signal_direction, "All criteria met. Grandmaster signal confirmed.")
+        
+        return final_summary
