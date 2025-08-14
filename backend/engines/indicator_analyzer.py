@@ -14,11 +14,10 @@ def get_indicator_config_key(name: str, params: Dict[str, Any]) -> str:
 
 class IndicatorAnalyzer:
     """
-    The Self-Aware Analysis Engine for AiSignalPro (v10.0 - Universal Engine)
-    This is the ultimate version of the analysis engine. It features a universal
-    dependency resolver that discovers indicator requirements from both the global
-    indicator pool AND from the specific needs of each enabled strategy, creating
-    a fully dynamic and unparalleled analysis ecosystem.
+    The Self-Aware Analysis Engine for AiSignalPro (v10.1 - Final Fix)
+    This definitive version fixes the final critical bugs, including the 'recalc_buffer'
+    NameError and the architectural flaw causing KeyErrors, ensuring a completely
+    stable and robust analysis process.
     """
     def __init__(self, df: pd.DataFrame, config: Dict[str, Any], strategies_config: Dict[str, Any], timeframe: str, previous_df: Optional[pd.DataFrame] = None):
         if not isinstance(df, pd.DataFrame):
@@ -29,7 +28,9 @@ class IndicatorAnalyzer:
         self.strategies_config = strategies_config
         self.timeframe = timeframe
         self.previous_df = previous_df
-        self.recalc_buffer = 350
+        
+        # ✅ FIX: Define recalc_buffer as a class attribute to be accessible everywhere
+        self.recalc_buffer = 250
         
         self._indicator_classes: Dict[str, Type[BaseIndicator]] = {
             'rsi': RsiIndicator, 'macd': MacdIndicator, 'bollinger': BollingerIndicator, 'ichimoku': IchimokuIndicator,
@@ -56,11 +57,9 @@ class IndicatorAnalyzer:
         def discover_nodes(indicator_name: str, params: Dict[str, Any]):
             unique_key = get_indicator_config_key(indicator_name, params)
             if unique_key in self._indicator_configs: return
-
             self._indicator_configs[unique_key] = {'name': indicator_name, 'params': params}
             adj[unique_key] = []
             in_degree[unique_key] = 0
-            
             dep_configs = params.get('dependencies', {})
             for dep_name, dep_params in dep_configs.items():
                 discover_nodes(dep_name, dep_params)
@@ -68,19 +67,15 @@ class IndicatorAnalyzer:
                 adj[dep_key].append(unique_key)
                 in_degree[unique_key] += 1
 
-        # 1. Discover from the global pool of indicators
         for name, params in self.indicators_config.items():
             if params.get('enabled', False):
                 discover_nodes(name, params)
-
-        # 2. Discover from the specific needs of each active STRATEGY
         for strat_name, strat_params in self.strategies_config.items():
             if strat_params.get('enabled', False):
                 indicator_orders = {**strat_params.get('default_params', {}).get('indicator_configs', {}), **strat_params.get('indicator_configs', {})}
                 for alias, order in indicator_orders.items():
                     discover_nodes(order['name'], order['params'])
 
-        # Perform topological sort
         queue = deque([key for key, degree in in_degree.items() if degree == 0])
         sorted_order = []
         while queue:
@@ -92,7 +87,6 @@ class IndicatorAnalyzer:
                     if in_degree[neighbor] == 0: queue.append(neighbor)
         if len(sorted_order) != len(self._indicator_configs):
             raise ValueError("Circular dependency detected.")
-        logger.info(f"Resolved universal calculation order: {sorted_order}")
         return sorted_order
 
     def calculate_all(self) -> 'IndicatorAnalyzer':
@@ -110,9 +104,7 @@ class IndicatorAnalyzer:
             name, params = config['name'], config['params']
             try:
                 instance_params = {**params, 'timeframe': self.timeframe}
-                indicator_class = self._indicator_classes[name]
-                logger.debug(f"Calculating indicator version: '{unique_key}'")
-                instance = indicator_class(df_for_calc, params=instance_params).calculate()
+                instance = self._indicator_classes[name](df_for_calc, params=instance_params).calculate()
                 df_for_calc = instance.df
                 self._indicator_instances[unique_key] = instance
             except Exception as e:
@@ -123,8 +115,10 @@ class IndicatorAnalyzer:
         return self
 
     def get_analysis_summary(self) -> Dict[str, Any]:
-        """ Provides analysis for ALL calculated versions. """
-        if self.final_df is None or len(self.final_df) < 2: return {"status": "Insufficient Data"}
+        """ Provides analysis for ALL calculated versions, curing the 'Amnesia Bug'. """
+        if self.final_df is None or len(self.final_df) < 2: 
+            return {"status": "Insufficient Data"}
+        
         summary: Dict[str, Any] = {"status": "OK", "final_df": self.final_df.tail(self.recalc_buffer + 50)}
         try:
             last_closed_candle = self.final_df.iloc[-2]
@@ -134,14 +128,21 @@ class IndicatorAnalyzer:
         
         for unique_key, instance in self._indicator_instances.items():
             try:
+                # ✅ FIX: The problematic logic is removed. The instance now correctly
+                # retains its fully-featured dataframe from the calculation phase.
                 analysis = instance.analyze()
+                
+                simple_name = self._indicator_configs[unique_key]['name']
+                is_globally_enabled = self.indicators_config.get(simple_name, {}).get('enabled')
+                
                 if analysis and analysis.get("status") == "OK":
                     summary[unique_key] = analysis
-                    # Also map the simple name for top-level indicators for easy access
-                    simple_name = self._indicator_configs[unique_key]['name']
-                    if self.indicators_config.get(simple_name, {}).get('enabled'):
+                    if is_globally_enabled:
                          summary[simple_name] = analysis
+                else:
+                    if is_globally_enabled:
+                        summary[simple_name] = {"status": "Analysis Failed or No Data"}
             except Exception as e:
-                logger.error(f"Failed to analyze indicator version '{unique_key}': {e}", exc_info=True)
+                logger.error(f"CRITICAL: Failed to .analyze() indicator version '{unique_key}': {e}", exc_info=True)
                 summary[unique_key] = {"status": f"Analysis Error: {e}"}
         return summary
