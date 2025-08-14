@@ -38,7 +38,7 @@
       "okx": {
         "base_url": "https://www.okx.com",
         "kline_endpoint": "/api/v5/market/candles",
-        "max_limit_per_req": 100,
+        "max_limit_per_req": 1000,
         "symbol_template": "{base}-{quote}",
         "timeframe_map": { "5m": "5m", "15m": "15m", "1h": "1H", "4h": "4H", "1d": "1D" },
         "rate_limit_delay": 0.2
