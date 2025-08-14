@@ -17,6 +17,41 @@
     "fetcher_limit": 500,
     "min_rows_for_htf": 300
   },
+  "exchange_settings": {
+    "exchange_specific": {
+      "mexc": {
+        "base_url": "https://api.mexc.com",
+        "kline_endpoint": "/api/v3/klines",
+        "max_limit_per_req": 1000,
+        "symbol_template": "{base}{quote}",
+        "timeframe_map": { "5m": "5m", "15m": "15m", "1h": "1h", "4h": "4h", "1d": "1d" },
+        "rate_limit_delay": 0.5
+      },
+      "kucoin": {
+        "base_url": "https://api.kucoin.com",
+        "kline_endpoint": "/api/v1/market/candles",
+        "max_limit_per_req": 1500,
+        "symbol_template": "{base}-{quote}",
+        "timeframe_map": { "5m": "5min", "15m": "15min", "1h": "1hour", "4h": "4hour", "1d": "1day" },
+        "rate_limit_delay": 0.5
+      },
+      "okx": {
+        "base_url": "https://www.okx.com",
+        "kline_endpoint": "/api/v5/market/candles",
+        "max_limit_per_req": 300,
+        "symbol_template": "{base}-{quote}",
+        "timeframe_map": { "5m": "5m", "15m": "15m", "1h": "1H", "4h": "4H", "1d": "1D" },
+        "rate_limit_delay": 0.5
+      }
+    },
+    "symbol_map": {
+      "BTC/USDT": {"base": "BTC", "quote": "USDT"},
+      "ETH/USDT": {"base": "ETH", "quote": "USDT"},
+      "SOL/USDT": {"base": "SOL", "quote": "USDT"},
+      "XRP/USDT": {"base": "XRP", "quote": "USDT"},
+      "DOGE/USDT": {"base": "DOGE", "quote": "USDT"}
+    }
+  },
   "signal_cache": {
     "default_ttl_hours": 8,
     "ttl_map_hours": { "5m": 0.5, "15m": 1.5, "1h": 4, "4h": 24, "1d": 72 }
