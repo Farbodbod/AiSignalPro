@@ -11,9 +11,9 @@ from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_excep
 logger = logging.getLogger(__name__)
 
 EXCHANGE_CONFIG = {
-    'mexc': {'base_url': 'https://api.mexc.com', 'kline_endpoint': '/api/v3/klines', 'ticker_endpoint': '/api/v3/ticker/24hr', 'max_limit_per_req': 1000, 'symbol_template': '{base}{quote}', 'timeframe_map': {'5m': '5m', '15m': '15m', '1h': '1h', '4h': '4h', '1d': '1d'}, 'rate_limit_delay': 0.5},
-    'kucoin': {'base_url': 'https://api.kucoin.com', 'kline_endpoint': '/api/v1/market/candles', 'ticker_endpoint': '/api/v1/market/stats', 'max_limit_per_req': 1500, 'symbol_template': '{base}-{quote}', 'timeframe_map': {'5m': '5min', '15m': '15min', '1h': '1hour', '4h': '4hour', '1d': '1day'}, 'rate_limit_delay': 0.5},
-    'okx': {'base_url': 'https://www.okx.com', 'kline_endpoint': '/api/v5/market/candles', 'ticker_endpoint': '/api/v5/market/ticker', 'max_limit_per_req': 100, 'symbol_template': '{base}-{quote}', 'timeframe_map': {'5m': '5m', '15m': '15m', '1h': '1H', '4h': '4H', '1d': '1D'}, 'rate_limit_delay': 0.2},
+    'mexc': {'base_url': 'https://api.mexc.com', 'kline_endpoint': '/api/v3/klines', 'max_limit_per_req': 1000, 'symbol_template': '{base}{quote}', 'timeframe_map': {'5m': '5m', '15m': '15m', '1h': '1h', '4h': '4h', '1d': '1d'}, 'rate_limit_delay': 0.5},
+    'kucoin': {'base_url': 'https://api.kucoin.com', 'kline_endpoint': '/api/v1/market/candles', 'max_limit_per_req': 1500, 'symbol_template': '{base}-{quote}', 'timeframe_map': {'5m': '5min', '15m': '15min', '1h': '1hour', '4h': '4hour', '1d': '1day'}, 'rate_limit_delay': 0.5},
+    'okx': {'base_url': 'https://www.okx.com', 'kline_endpoint': '/api/v5/market/candles', 'max_limit_per_req': 100, 'symbol_template': '{base}-{quote}', 'timeframe_map': {'5m': '5m', '15m': '15m', '1h': '1H', '4h': '4H', '1d': '1D'}, 'rate_limit_delay': 0.2},
 }
 SYMBOL_MAP = {'BTC/USDT': {'base': 'BTC', 'quote': 'USDT'}, 'ETH/USDT': {'base': 'ETH', 'quote': 'USDT'}}
 
@@ -78,7 +78,7 @@ class ExchangeFetcher:
             fetch_limit = min(remaining_limit, max_per_req)
             if fetch_limit <= 0: break
             
-            logger.info(f"Fetching page #{page_num} for {symbol}@{timeframe} from {exchange} (limit: {fetch_limit})...")
+            logger.info(f"PAGINATION_DEBUG: Fetching page #{page_num} for {symbol}@{timeframe} from {exchange} (requesting limit: {fetch_limit})...")
             
             url = config['base_url'] + config['kline_endpoint']
             params = {'limit': str(fetch_limit)}
@@ -99,23 +99,23 @@ class ExchangeFetcher:
                 
                 if isinstance(kline_list, list) and kline_list:
                     normalized_data = self._normalize_kline_data(kline_list, exchange)
-                    logger.info(f"  -> Page #{page_num} received {len(normalized_data)} candles.") # DEBUG LOG
+                    logger.info(f"PAGINATION_DEBUG: Page #{page_num} received {len(normalized_data)} candles.")
                     all_normalized_data = normalized_data + all_normalized_data
                     end_timestamp = normalized_data[0]['timestamp'] - 1
                     remaining_limit -= len(normalized_data)
                     page_num += 1
                     if len(normalized_data) < fetch_limit:
-                        logger.info(f"Exchange returned fewer candles than requested. Assuming end of history for {symbol} on {exchange}.")
+                        logger.warning(f"PAGINATION_DEBUG: Exchange returned fewer candles than requested ({len(normalized_data)} < {fetch_limit}). Assuming end of history.")
                         break
                 else:
-                    logger.info(f"Exchange returned no more data for {symbol} on {exchange}. Ending pagination.")
+                    logger.warning(f"PAGINATION_DEBUG: Exchange returned no data (empty list). Ending pagination.")
                     break
             except Exception as e:
-                logger.warning(f"Request failed during pagination for {exchange} ({symbol}@{timeframe}): {e}")
+                logger.error(f"PAGINATION_DEBUG: Request failed during pagination for {exchange} on page {page_num}: {e}")
                 break
         
         if all_normalized_data:
-            logger.info(f"Total klines fetched for {symbol}@{timeframe} from {exchange}: {len(all_normalized_data)}. Truncating to requested limit: {limit}.")
+            logger.info(f"PAGINATION_DEBUG: Total klines fetched: {len(all_normalized_data)}. Now truncating to requested limit: {limit}.")
             return all_normalized_data[-limit:]
         
         return None
@@ -141,7 +141,7 @@ class ExchangeFetcher:
                     for task in tasks: 
                         if not task.done(): task.cancel()
                     source_exchange, df = result_tuple
-                    logger.info(f"Klines acquired from '{source_exchange}'. Initial DF length: {len(df)} rows (requested {limit}).")
+                    logger.info(f"Klines acquired from '{source_exchange}' for {symbol}@{timeframe} with {len(df)} rows (requested {limit}).")
                     return df, source_exchange
         except asyncio.CancelledError:
              logging.info(f"Kline fetch tasks for {symbol} cancelled as a successful one was completed.")
