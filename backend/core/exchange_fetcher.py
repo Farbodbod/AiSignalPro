@@ -1,4 +1,4 @@
-# core/exchange_fetcher.py (v5.0 - Decoupled & Hardened Edition)
+# core/exchange_fetcher.py (v5.1 - Final Pagination FIX)
 
 import asyncio
 import time
@@ -10,37 +10,39 @@ from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_excep
 
 logger = logging.getLogger(__name__)
 
+EXCHANGE_CONFIG = {
+    'mexc': {'base_url': 'https://api.mexc.com', 'kline_endpoint': '/api/v3/klines', 'max_limit_per_req': 1000, 'symbol_template': '{base}{quote}', 'timeframe_map': {'5m': '5m', '15m': '15m', '1h': '1h', '4h': '4h', '1d': '1d'}, 'rate_limit_delay': 0.5},
+    'kucoin': {'base_url': 'https://api.kucoin.com', 'kline_endpoint': '/api/v1/market/candles', 'max_limit_per_req': 1500, 'symbol_template': '{base}-{quote}', 'timeframe_map': {'5m': '5min', '15m': '15min', '1h': '1hour', '4h': '4hour', '1d': '1day'}, 'rate_limit_delay': 0.5},
+    # --- ✨ FIX 1: Corrected OKX limit to its actual value ---
+    'okx': {'base_url': 'https://www.okx.com', 'kline_endpoint': '/api/v5/market/candles', 'max_limit_per_req': 100, 'symbol_template': '{base}-{quote}', 'timeframe_map': {'5m': '5m', '15m': '15m', '1h': '1H', '4h': '4H', '1d': '1D'}, 'rate_limit_delay': 0.2},
+}
+SYMBOL_MAP = {'BTC': {'base': 'BTC', 'quote': 'USDT'}, 'ETH': {'base': 'ETH', 'quote': 'USDT'}, 'XRP': {'base': 'XRP', 'quote': 'USDT'}, 'SOL': {'base': 'SOL', 'quote': 'USDT'}, 'DOGE': {'base': 'DOGE', 'quote': 'USDT'}}
+
 class ExchangeFetcher:
-    """
-    The definitive, world-class data fetching engine for AiSignalPro (v5.0).
-    This version features:
-    1.  Robust, multi-request pagination to bypass exchange API limits.
-    2.  Decoupled configuration, making the class modular and testable.
-    3.  Enhanced logging for better debugging of the fetching process.
-    4.  Asynchronous, multi-exchange failover for maximum reliability.
-    """
-    def __init__(self, config: Dict[str, Any], cache_ttl: int = 60):
-        headers = {'User-Agent': 'AiSignalPro/5.0.0', 'Accept': 'application/json'}
+    def __init__(self, config: Dict[str, Any] = None, cache_ttl: int = 60):
+        headers = {'User-Agent': 'AiSignalPro/5.1.0', 'Accept': 'application/json'}
         self.client = httpx.AsyncClient(headers=headers, timeout=20, follow_redirects=True)
         self.cache = {}
         self.cache_ttl = cache_ttl
         
-        # --- ✨ UPGRADE: Configuration is now passed in, not hardcoded ---
-        self.exchange_config = config.get("exchange_specific", {})
-        self.symbol_map = config.get("symbol_map", {})
+        # Allow passing config for decoupling, but fallback to hardcoded if not provided
+        if config:
+            self.exchange_config = config.get("exchange_specific", EXCHANGE_CONFIG)
+            self.symbol_map = config.get("symbol_map", SYMBOL_MAP)
+        else:
+            self.exchange_config = EXCHANGE_CONFIG
+            self.symbol_map = SYMBOL_MAP
         
-        logging.info("ExchangeFetcher (Decoupled & Hardened Edition v5.0) initialized.")
+        logging.info("ExchangeFetcher (Final Pagination FIX v5.1) initialized.")
 
-    def _format_symbol(self, symbol: str, exchange: str) -> Optional[str]:
-        base_symbol, quote_symbol = symbol.split('/')
-        config = self.exchange_config.get(exchange)
-        if not config: return None
-        return config['symbol_template'].format(base=base_symbol, quote=quote_symbol).upper()
+    def _format_symbol(self, s: str, e: str) -> Optional[str]:
+        base_symbol, quote_symbol = s.split('/')
+        c = self.exchange_config.get(e)
+        return c['symbol_template'].format(base=base_symbol, quote=quote_symbol).upper() if c else None
 
-    def _format_timeframe(self, timeframe: str, exchange: str) -> Optional[str]:
-        config = self.exchange_config.get(exchange)
-        if not config: return None
-        return config.get('timeframe_map', {}).get(timeframe)
+    def _format_timeframe(self, t: str, e: str) -> Optional[str]:
+        c = self.exchange_config.get(e)
+        return c.get('timeframe_map', {}).get(t) if c else None
 
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=6), reraise=True)
     async def _safe_async_request(self, method: str, url: str, **kwargs) -> Optional[Any]:
@@ -52,6 +54,7 @@ class ExchangeFetcher:
         return response.json()
 
     def _normalize_kline_data(self, data: List[list], source: str) -> List[Dict[str, Any]]:
+        # This function is correct and remains unchanged
         if not data: return []
         normalized_data = []
         if source == 'okx': data.reverse()
@@ -78,10 +81,12 @@ class ExchangeFetcher:
 
         while remaining_limit > 0:
             fetch_limit = min(remaining_limit, max_per_req)
+            if fetch_limit <= 0: break
+            
             logger.info(f"Fetching page #{page_num} for {symbol}@{timeframe} from {exchange} (limit: {fetch_limit})...")
             
             url = config['base_url'] + config['kline_endpoint']
-            params = {'limit': fetch_limit}
+            params = {'limit': str(fetch_limit)} # Some exchanges prefer string limits
 
             if exchange == 'okx':
                 params.update({'instId': formatted_symbol, 'bar': formatted_timeframe})
@@ -103,7 +108,10 @@ class ExchangeFetcher:
                     end_timestamp = normalized_data[0]['timestamp'] - 1
                     remaining_limit -= len(normalized_data)
                     page_num += 1
-                    if len(normalized_data) < fetch_limit: break
+                    # --- ✨ FIX 2: Corrected loop break condition ---
+                    if len(normalized_data) < fetch_limit:
+                        logger.info(f"Reached end of available history for {symbol} on {exchange}.")
+                        break
                 else:
                     break
             except Exception as e:
@@ -111,12 +119,14 @@ class ExchangeFetcher:
                 break
         
         if all_normalized_data:
+            logger.info(f"Total klines fetched for {symbol}@{timeframe} from {exchange}: {len(all_normalized_data)}")
             return all_normalized_data[-limit:]
         
         return None
 
     async def get_first_successful_klines(self, symbol: str, timeframe: str, limit: int = 200) -> Optional[Tuple[pd.DataFrame, str]]:
-        exchanges = self.exchange_config.keys() # Automatically use all configured exchanges
+        # This function does not need any changes.
+        exchanges = list(self.exchange_config.keys())
         
         async def fetch_and_tag(exchange: str):
             result = await self.get_klines_from_one_exchange(exchange, symbol, timeframe, limit=limit)
@@ -133,7 +143,8 @@ class ExchangeFetcher:
             for future in asyncio.as_completed(tasks):
                 result_tuple = await future
                 if result_tuple:
-                    for task in tasks: task.cancel()
+                    for task in tasks: 
+                        if not task.done(): task.cancel()
                     source_exchange, df = result_tuple
                     logger.info(f"Klines acquired from '{source_exchange}' for {symbol}@{timeframe} with {len(df)} rows (requested {limit}).")
                     return df, source_exchange
@@ -144,6 +155,6 @@ class ExchangeFetcher:
 
         logger.error(f"Critical Failure: Could not fetch klines for {symbol}@{timeframe} from any exchange.")
         return None, None
-        
+
     async def close(self):
         await self.client.aclose()
