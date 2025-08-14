@@ -1,4 +1,4 @@
-# core/exchange_fetcher.py (v5.3 - Community Hotfix)
+# core/exchange_fetcher.py (v5.3 - Debug Edition)
 
 import asyncio
 import time
@@ -10,7 +10,6 @@ from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_excep
 
 logger = logging.getLogger(__name__)
 
-# This remains a fallback for when the fetcher is instantiated without a config
 EXCHANGE_CONFIG = {
     'mexc': {'base_url': 'https://api.mexc.com', 'kline_endpoint': '/api/v3/klines', 'ticker_endpoint': '/api/v3/ticker/24hr', 'max_limit_per_req': 1000, 'symbol_template': '{base}{quote}', 'timeframe_map': {'5m': '5m', '15m': '15m', '1h': '1h', '4h': '4h', '1d': '1d'}, 'rate_limit_delay': 0.5},
     'kucoin': {'base_url': 'https://api.kucoin.com', 'kline_endpoint': '/api/v1/market/candles', 'ticker_endpoint': '/api/v1/market/stats', 'max_limit_per_req': 1500, 'symbol_template': '{base}-{quote}', 'timeframe_map': {'5m': '5min', '15m': '15min', '1h': '1hour', '4h': '4hour', '1d': '1day'}, 'rate_limit_delay': 0.5},
@@ -26,12 +25,11 @@ class ExchangeFetcher:
         self.cache = {}
         self.cache_ttl = cache_ttl
         
-        # --- FIX APPLIED: Robust initialization using your suggestion ---
         effective_config = config or {}
         self.exchange_config = effective_config.get("exchange_specific", EXCHANGE_CONFIG)
         self.symbol_map = effective_config.get("symbol_map", SYMBOL_MAP)
         
-        logging.info("ExchangeFetcher (Community Hotfix v5.3) initialized.")
+        logging.info("ExchangeFetcher (Debug Edition v5.3) initialized.")
 
     def _format_symbol(self, s: str, e: str) -> Optional[str]:
         base_symbol, quote_symbol = s.split('/')
@@ -101,12 +99,13 @@ class ExchangeFetcher:
                 
                 if isinstance(kline_list, list) and kline_list:
                     normalized_data = self._normalize_kline_data(kline_list, exchange)
+                    logger.info(f"  -> Page #{page_num} received {len(normalized_data)} candles.") # DEBUG LOG
                     all_normalized_data = normalized_data + all_normalized_data
                     end_timestamp = normalized_data[0]['timestamp'] - 1
                     remaining_limit -= len(normalized_data)
                     page_num += 1
                     if len(normalized_data) < fetch_limit:
-                        logger.info(f"Reached end of available history for {symbol} on {exchange}.")
+                        logger.info(f"Exchange returned fewer candles than requested. Assuming end of history for {symbol} on {exchange}.")
                         break
                 else:
                     logger.info(f"Exchange returned no more data for {symbol} on {exchange}. Ending pagination.")
@@ -116,7 +115,7 @@ class ExchangeFetcher:
                 break
         
         if all_normalized_data:
-            logger.info(f"Total klines fetched for {symbol}@{timeframe} from {exchange}: {len(all_normalized_data)}")
+            logger.info(f"Total klines fetched for {symbol}@{timeframe} from {exchange}: {len(all_normalized_data)}. Truncating to requested limit: {limit}.")
             return all_normalized_data[-limit:]
         
         return None
@@ -142,7 +141,7 @@ class ExchangeFetcher:
                     for task in tasks: 
                         if not task.done(): task.cancel()
                     source_exchange, df = result_tuple
-                    logger.info(f"Klines acquired from '{source_exchange}' for {symbol}@{timeframe} with {len(df)} rows (requested {limit}).")
+                    logger.info(f"Klines acquired from '{source_exchange}'. Initial DF length: {len(df)} rows (requested {limit}).")
                     return df, source_exchange
         except asyncio.CancelledError:
              logging.info(f"Kline fetch tasks for {symbol} cancelled as a successful one was completed.")
@@ -151,60 +150,6 @@ class ExchangeFetcher:
 
         logger.error(f"Critical Failure: Could not fetch klines for {symbol}@{timeframe} from any exchange.")
         return None, None
-        
-    async def get_ticker_from_one_exchange(self, exchange: str, symbol: str) -> Optional[Dict]:
-        cache_key = f"ticker:{exchange}:{symbol}"
-        if cache_key in self.cache and (time.time() - self.cache[cache_key]['timestamp']) < 15:
-            return self.cache[cache_key]['data']
-        
-        config = self.exchange_config.get(exchange)
-        formatted_symbol = self._format_symbol(symbol, exchange)
-        if not all([config, formatted_symbol, 'ticker_endpoint' in config]): return None
-
-        url = config['base_url'] + config['ticker_endpoint']
-        params = {'instId': formatted_symbol} if exchange == 'okx' else {'symbol': formatted_symbol}
-        
-        raw_data = await self._safe_async_request('GET', url, params=params, exchange_name=exchange)
-        if raw_data:
-            price, change = 0.0, 0.0
-            try:
-                if exchange == 'mexc': 
-                    data = raw_data[0] if isinstance(raw_data, list) and raw_data else raw_data
-                    price = float(data.get('lastPrice', 0))
-                    change = float(data.get('priceChangePercent', 0)) * 100
-                elif exchange == 'kucoin' and raw_data.get('data'): 
-                    data = raw_data['data']
-                    price = float(data.get('last', 0))
-                    change = float(data.get('changeRate', 0)) * 100
-                elif exchange == 'okx' and raw_data.get('data'): 
-                    data = raw_data['data'][0]
-                    price = float(data.get('last', 0))
-                    open_price_24h = float(data.get('open24h', 0))
-                    change = ((price - open_price_24h) / open_price_24h) * 100 if open_price_24h > 0 else 0.0
-                
-                if price > 0: 
-                    result = {'price': price, 'change_24h': change, 'source': exchange, 'symbol': symbol}
-                    self.cache[cache_key] = {'timestamp': time.time(), 'data': result}
-                    return result
-            except (ValueError, TypeError, IndexError, KeyError) as e:
-                 logging.warning(f"Ticker data normalization failed for {exchange} on {symbol}: {e}")
-
-        logging.warning(f"Final attempt failed for ticker from {exchange} on {symbol}.")
-        return None
-
-    async def get_first_successful_ticker(self, symbol: str) -> Optional[Dict]:
-        tasks = [asyncio.create_task(self.get_ticker_from_one_exchange(ex, symbol)) for ex in ['kucoin', 'okx', 'mexc']]
-        for task in asyncio.as_completed(tasks):
-            try:
-                result = await task
-                if result:
-                    for t in tasks:
-                        if not t.done(): t.cancel()
-                    return result
-            except Exception:
-                continue
-        logging.error(f"Critical Failure: Could not fetch ticker for {symbol} from any exchange.")
-        return None
 
     async def close(self):
         await self.client.aclose()
