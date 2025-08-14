@@ -74,7 +74,7 @@ async def main_loop():
     default_kline_limit = general_config.get("fetcher_limit", 500) # افزایش پیش‌فرض برای تحلیل HTF
 
     # --- مقداردهی اولیه کلاس‌ها مانند قبل ---
-    fetcher = ExchangeFetcher()
+    fetcher = ExchangeFetcher(config=config.get("exchange_settings", {}))
     orchestrator = MasterOrchestrator(config=config) # از نسخه جدید MasterOrchestrator استفاده خواهد شد
     telegram = TelegramHandler()
     cache = SignalCache(ttl_map_hours=config.get("signal_cache", {}).get("ttl_map_hours", {}), 
