@@ -1,3 +1,5 @@
+# engines/indicator_analyzer.py (v10.2 - Visual Logger Edition)
+
 import pandas as pd
 import logging
 from typing import Dict, Any, Type, List, Optional
@@ -14,10 +16,9 @@ def get_indicator_config_key(name: str, params: Dict[str, Any]) -> str:
 
 class IndicatorAnalyzer:
     """
-    The Self-Aware Analysis Engine for AiSignalPro (v10.1 - Final Fix)
-    This definitive version fixes the final critical bugs, including the 'recalc_buffer'
-    NameError and the architectural flaw causing KeyErrors, ensuring a completely
-    stable and robust analysis process.
+    The Self-Aware Analysis Engine for AiSignalPro (v10.2 - Visual Logger Edition)
+    This version introduces a highly readable visual logging system to instantly
+    report the status of each indicator's calculation and analysis phase.
     """
     def __init__(self, df: pd.DataFrame, config: Dict[str, Any], strategies_config: Dict[str, Any], timeframe: str, previous_df: Optional[pd.DataFrame] = None):
         if not isinstance(df, pd.DataFrame):
@@ -28,8 +29,6 @@ class IndicatorAnalyzer:
         self.strategies_config = strategies_config
         self.timeframe = timeframe
         self.previous_df = previous_df
-        
-        # ✅ FIX: Define recalc_buffer as a class attribute to be accessible everywhere
         self.recalc_buffer = 250
         
         self._indicator_classes: Dict[str, Type[BaseIndicator]] = {
@@ -50,7 +49,7 @@ class IndicatorAnalyzer:
         self.final_df = None
 
     def _resolve_dependencies(self) -> List[str]:
-        """ Discovers dependencies from global indicators AND active strategies. """
+        # This function remains unchanged.
         adj: Dict[str, List[str]] = {}
         in_degree: Dict[str, int] = {}
         
@@ -90,15 +89,12 @@ class IndicatorAnalyzer:
         return sorted_order
 
     def calculate_all(self) -> 'IndicatorAnalyzer':
-        """ Calculates all unique versions of required indicators in the correct order. """
         if self.previous_df is not None and not self.previous_df.empty:
-            logger.debug("Previous state found. Performing incremental calculation.")
-            combined_df = pd.concat([self.previous_df, self.base_df])
-            df_for_calc = combined_df[~combined_df.index.duplicated(keep='last')].sort_index()
+            df_for_calc = pd.concat([self.previous_df, self.base_df]).drop_duplicates(keep='last').sort_index()
         else:
-            logger.debug("No previous state. Performing full calculation.")
             df_for_calc = self.base_df.copy()
 
+        logger.info(f"--- Starting Calculations for {self.timeframe} ---")
         for unique_key in self._calculation_order:
             config = self._indicator_configs[unique_key]
             name, params = config['name'], config['params']
@@ -107,15 +103,17 @@ class IndicatorAnalyzer:
                 instance = self._indicator_classes[name](df_for_calc, params=instance_params).calculate()
                 df_for_calc = instance.df
                 self._indicator_instances[unique_key] = instance
+                # --- NEW VISUAL LOGGING ---
+                logger.info(f"✅ Calculation successful for: '{unique_key}'")
             except Exception as e:
-                logger.error(f"Failed to calculate indicator version '{unique_key}': {e}", exc_info=True)
+                # --- NEW VISUAL LOGGING ---
+                logger.error(f"❌ Calculation FAILED for: '{unique_key}'. Reason: {e}", exc_info=False) # exc_info=False for cleaner logs unless debugging
         
         self.final_df = df_for_calc
-        logger.info(f"Calculations for timeframe {self.timeframe} complete. Final DF has {len(self.final_df)} rows.")
+        logger.info(f"--- Calculations for {self.timeframe} complete. Final DF has {len(self.final_df)} rows. ---")
         return self
 
     def get_analysis_summary(self) -> Dict[str, Any]:
-        """ Provides analysis for ALL calculated versions, curing the 'Amnesia Bug'. """
         if self.final_df is None or len(self.final_df) < 2: 
             return {"status": "Insufficient Data"}
         
@@ -126,23 +124,29 @@ class IndicatorAnalyzer:
         except IndexError:
             return {"status": "Insufficient Data after calculations"}
         
+        logger.info(f"--- Starting Analysis for {self.timeframe} ---")
         for unique_key, instance in self._indicator_instances.items():
             try:
-                # ✅ FIX: The problematic logic is removed. The instance now correctly
-                # retains its fully-featured dataframe from the calculation phase.
                 analysis = instance.analyze()
-                
                 simple_name = self._indicator_configs[unique_key]['name']
                 is_globally_enabled = self.indicators_config.get(simple_name, {}).get('enabled')
                 
                 if analysis and analysis.get("status") == "OK":
+                    # --- NEW VISUAL LOGGING ---
+                    logger.info(f"✅ Analysis successful for: '{unique_key}'")
                     summary[unique_key] = analysis
                     if is_globally_enabled:
                          summary[simple_name] = analysis
                 else:
+                    # --- NEW VISUAL LOGGING for graceful failures ---
+                    status_msg = analysis.get('status', 'Unknown non-OK status') if analysis else 'None'
+                    logger.warning(f"⚠️ Analysis reported non-OK status for: '{unique_key}'. Status: '{status_msg}'")
                     if is_globally_enabled:
                         summary[simple_name] = {"status": "Analysis Failed or No Data"}
             except Exception as e:
-                logger.error(f"CRITICAL: Failed to .analyze() indicator version '{unique_key}': {e}", exc_info=True)
+                # --- NEW VISUAL LOGGING for crashes ---
+                logger.error(f"❌ Analysis CRASHED for: '{unique_key}'. Reason: {e}", exc_info=False)
                 summary[unique_key] = {"status": f"Analysis Error: {e}"}
+        
+        logger.info(f"--- Analysis for {self.timeframe} complete. ---")
         return summary
