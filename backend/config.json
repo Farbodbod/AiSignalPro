@@ -19,7 +19,7 @@
     "fetcher_limit": 500,
     
     
-    "min_rows_for_htf": 300
+    "min_rows_for_htf": 400
   },
   "signal_cache": {
     "default_ttl_hours": 8,
