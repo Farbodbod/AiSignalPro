@@ -29,7 +29,7 @@ class IndicatorAnalyzer:
         self.strategies_config = strategies_config
         self.timeframe = timeframe
         self.previous_df = previous_df
-        self.recalc_buffer = 250
+        self.recalc_buffer = 350
         
         self._indicator_classes: Dict[str, Type[BaseIndicator]] = {
             'rsi': RsiIndicator, 'macd': MacdIndicator, 'bollinger': BollingerIndicator, 'ichimoku': IchimokuIndicator,
