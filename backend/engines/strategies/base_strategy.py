@@ -33,6 +33,9 @@ class BaseStrategy(ABC):
         self.df = self.analysis.get('final_df')
         self.indicator_configs = self.config.get('indicator_configs', {})
         self.log_details = {"criteria_results": []}
+        
+        # ✅ FIX: This line was missing or incorrect in your old file
+        self.name = config.get('name', self.strategy_name)
 
     def _log_criteria(self, criterion_name: str, status: bool, reason: str = ""):
         """
