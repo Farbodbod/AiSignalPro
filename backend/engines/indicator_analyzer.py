@@ -1,4 +1,4 @@
-# engines/indicator_analyzer.py (v10.4 - Fortress Edition)
+# engines/indicator_analyzer.py (v10.5 - Fortress Edition, Harmonized)
 
 import pandas as pd
 import logging
@@ -26,10 +26,11 @@ def get_indicator_config_key(name: str, params: Dict[str, Any]) -> str:
 
 class IndicatorAnalyzer:
     """
-    The Self-Aware Analysis Engine for AiSignalPro (v10.4 - Fortress Edition)
-    This version introduces two critical safety upgrades for maximum stability:
+    The Self-Aware Analysis Engine for AiSignalPro (v10.5 - Fortress Edition)
+    This version includes the core logic from v10.0 plus critical safety upgrades:
     1.  Fail-safe Dependency Checks: Skips indicators whose dependencies have failed.
     2.  Strict Circular Dependency Error: Halts execution if a circular dependency is detected.
+    3.  Robust Duplicate Index Handling: Prevents crashes from overlapping data.
     """
     def __init__(self, df: pd.DataFrame, config: Dict[str, Any], strategies_config: Dict[str, Any], timeframe: str, previous_df: Optional[pd.DataFrame] = None):
         if not isinstance(df, pd.DataFrame):
@@ -40,7 +41,7 @@ class IndicatorAnalyzer:
         self.strategies_config = strategies_config
         self.timeframe = timeframe
         self.previous_df = previous_df
-        self.recalc_buffer = 250
+        self.recalc_buffer = 250 
         
         self._indicator_classes: Dict[str, Type[BaseIndicator]] = {
             'rsi': RsiIndicator, 'macd': MacdIndicator, 'bollinger': BollingerIndicator, 'ichimoku': IchimokuIndicator,
@@ -55,7 +56,6 @@ class IndicatorAnalyzer:
         }
         
         self._indicator_configs: Dict[str, Dict[str, Any]] = {}
-        # --- ✨ NEW: Track the success/fail status of each calculation ---
         self._calculation_status: Dict[str, bool] = {}
         self._calculation_order: List[str] = self._resolve_dependencies()
         self._indicator_instances: Dict[str, BaseIndicator] = {}
@@ -96,15 +96,12 @@ class IndicatorAnalyzer:
                     in_degree[neighbor] -= 1
                     if in_degree[neighbor] == 0: queue.append(neighbor)
 
-        # --- ✨ UPGRADE: Halt execution on circular dependency ---
         if len(sorted_order) != len(self._indicator_configs):
             raise ValueError(f"Circular dependency detected in indicator configurations for {self.timeframe}. Process halted.")
         return sorted_order
 
     def calculate_all(self) -> 'IndicatorAnalyzer':
-        # --- ✅ FIX: More robust handling of duplicate timestamps ---
         if self.previous_df is not None and not self.previous_df.empty:
-            # Concatenate and then explicitly drop duplicates, keeping the latest timestamp
             combined_df = pd.concat([self.previous_df, self.base_df])
             df_for_calc = combined_df[~combined_df.index.duplicated(keep='last')].sort_index()
         else:
@@ -116,7 +113,6 @@ class IndicatorAnalyzer:
             name, params = config['name'], config['params']
             start_time = time.time()
             
-            # --- ✨ UPGRADE: Fail-safe dependency check ---
             dependencies_ok = True
             failed_dependency = ""
             dep_configs = params.get('dependencies', {})
@@ -137,11 +133,11 @@ class IndicatorAnalyzer:
                 instance = self._indicator_classes[name](df_for_calc, params=instance_params).calculate()
                 df_for_calc = instance.df
                 self._indicator_instances[unique_key] = instance
-                self._calculation_status[unique_key] = True # Mark as success
+                self._calculation_status[unique_key] = True
                 elapsed = time.time() - start_time
                 logger.info(f"✅ Calc OK: '{unique_key}' in {elapsed:.4f}s")
             except Exception as e:
-                self._calculation_status[unique_key] = False # Mark as failure
+                self._calculation_status[unique_key] = False
                 elapsed = time.time() - start_time
                 logger.error(f"❌ Calc FAIL: '{unique_key}' in {elapsed:.4f}s. Reason: {e}", exc_info=False)
         
@@ -150,7 +146,6 @@ class IndicatorAnalyzer:
         return self
 
     def get_analysis_summary(self) -> Dict[str, Any]:
-        # This function remains unchanged from v10.3 as its logging is already robust.
         if self.final_df is None or len(self.final_df) < 2: 
             return {"status": "Insufficient Data"}
         
@@ -163,7 +158,6 @@ class IndicatorAnalyzer:
         
         logger.info(f"--- Starting Analysis for {self.timeframe} ---")
         for unique_key, instance in self._indicator_instances.items():
-            # Skip analysis if calculation failed in the first place
             if not self._calculation_status.get(unique_key, False):
                 logger.warning(f"⏭️ Analysis SKIP: '{unique_key}' was skipped because its calculation failed.")
                 continue
