@@ -1,4 +1,4 @@
-# core/exchange_fetcher.py (v5.4 - Final)
+# core/exchange_fetcher.py (v5.6 - Final & Harmonized)
 
 import asyncio
 import time
@@ -11,15 +11,15 @@ from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_excep
 logger = logging.getLogger(__name__)
 
 EXCHANGE_CONFIG = {
-    'mexc': {'base_url': 'https://api.mexc.com', 'kline_endpoint': '/api/v3/klines', 'max_limit_per_req': 400, 'symbol_template': '{base}{quote}', 'timeframe_map': {'5m': '5m', '15m': '15m', '1h': '1h', '4h': '4h', '1d': '1d'}, 'rate_limit_delay': 0.5},
-    'kucoin': {'base_url': 'https://api.kucoin.com', 'kline_endpoint': '/api/v1/market/candles', 'max_limit_per_req': 400, 'symbol_template': '{base}-{quote}', 'timeframe_map': {'5m': '5min', '15m': '15min', '1h': '1hour', '4h': '4hour', '1d': '1day'}, 'rate_limit_delay': 0.5},
-    'okx': {'base_url': 'https://www.okx.com', 'kline_endpoint': '/api/v5/market/candles', 'max_limit_per_req': 400, 'symbol_template': '{base}-{quote}', 'timeframe_map': {'5m': '5m', '15m': '15m', '1h': '1H', '4h': '4H', '1d': '1D'}, 'rate_limit_delay': 0.2},
+    'mexc': {'base_url': 'https://api.mexc.com', 'kline_endpoint': '/api/v3/klines', 'ticker_endpoint': '/api/v3/ticker/24hr', 'max_limit_per_req': 400, 'symbol_template': '{base}{quote}', 'timeframe_map': {'5m': '5m', '15m': '15m', '1h': '1h', '4h': '4h', '1d': '1d'}, 'rate_limit_delay': 0.5},
+    'kucoin': {'base_url': 'https://api.kucoin.com', 'kline_endpoint': '/api/v1/market/candles', 'ticker_endpoint': '/api/v1/market/stats', 'max_limit_per_req': 400, 'symbol_template': '{base}-{quote}', 'timeframe_map': {'5m': '5min', '15m': '15min', '1h': '1hour', '4h': '4hour', '1d': '1day'}, 'rate_limit_delay': 0.5},
+    'okx': {'base_url': 'https://www.okx.com', 'kline_endpoint': '/api/v5/market/candles', 'ticker_endpoint': '/api/v5/market/ticker', 'max_limit_per_req': 400, 'symbol_template': '{base}-{quote}', 'timeframe_map': {'5m': '5m', '15m': '15m', '1h': '1H', '4h': '4H', '1d': '1D'}, 'rate_limit_delay': 0.2},
 }
 SYMBOL_MAP = {'BTC/USDT': {'base': 'BTC', 'quote': 'USDT'}, 'ETH/USDT': {'base': 'ETH', 'quote': 'USDT'}}
 
 class ExchangeFetcher:
     def __init__(self, config: Dict[str, Any] = None, cache_ttl: int = 60):
-        headers = {'User-Agent': 'AiSignalPro/5.4.0', 'Accept': 'application/json'}
+        headers = {'User-Agent': 'AiSignalPro/5.6.0', 'Accept': 'application/json'}
         self.client = httpx.AsyncClient(headers=headers, timeout=20, follow_redirects=True)
         self.cache = {}
         self.cache_ttl = cache_ttl
@@ -28,7 +28,14 @@ class ExchangeFetcher:
         self.exchange_config = effective_config.get("exchange_specific", EXCHANGE_CONFIG)
         self.symbol_map = effective_config.get("symbol_map", SYMBOL_MAP)
         
-        logging.info("ExchangeFetcher (Final v5.4) initialized.")
+        logging.info("ExchangeFetcher (Final v5.6) initialized with Cache.")
+
+    def _get_cache_key(self, prefix: str, exchange: str, symbol: str, timeframe: Optional[str] = None) -> str:
+        """Helper to create a stable cache key."""
+        key = f"{prefix}:{exchange}:{symbol}"
+        if timeframe:
+            key += f":{timeframe}"
+        return key
 
     def _format_symbol(self, s: str, e: str) -> Optional[str]:
         base_symbol, quote_symbol = s.split('/')
@@ -61,6 +68,12 @@ class ExchangeFetcher:
         return normalized_data
 
     async def get_klines_from_one_exchange(self, exchange: str, symbol: str, timeframe: str, limit: int = 500) -> Optional[List[Dict]]:
+        # ✨ Cache Check: Check for fresh data before making an API call
+        cache_key = self._get_cache_key("kline", exchange, symbol, timeframe)
+        if cache_key in self.cache and (time.time() - self.cache[cache_key]['timestamp']) < self.cache_ttl:
+            logger.info(f"Serving {len(self.cache[cache_key]['data'])} klines for {symbol} from cache.")
+            return self.cache[cache_key]['data']
+
         config = self.exchange_config.get(exchange)
         formatted_symbol = self._format_symbol(symbol, exchange)
         formatted_timeframe = self._format_timeframe(timeframe, exchange)
@@ -110,6 +123,8 @@ class ExchangeFetcher:
                 break
         
         if all_normalized_data:
+            # ✨ Cache Storage: Store the newly fetched data
+            self.cache[cache_key] = {'timestamp': time.time(), 'data': all_normalized_data}
             return all_normalized_data[-limit:]
         
         return None
@@ -123,6 +138,8 @@ class ExchangeFetcher:
                 df = pd.DataFrame(result)
                 df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
                 df.set_index('timestamp', inplace=True)
+                # ✨ FINAL FIX: Remove any potential duplicates from the fetched data
+                df = df[~df.index.duplicated(keep='first')]
                 return exchange, df
             return None
 
@@ -144,6 +161,69 @@ class ExchangeFetcher:
 
         logger.error(f"Critical Failure: Could not fetch klines for {symbol}@{timeframe} from any exchange.")
         return None, None
+
+    async def get_ticker_from_one_exchange(self, exchange: str, symbol: str) -> Optional[Dict]:
+        # ✨ Cache Check: Add caching logic to the ticker fetcher
+        cache_key = self._get_cache_key("ticker", exchange, symbol)
+        # Use a shorter TTL for real-time data like tickers
+        if cache_key in self.cache and (time.time() - self.cache[cache_key]['timestamp']) < 15:
+            return self.cache[cache_key]['data']
+
+        config = self.exchange_config.get(exchange)
+        formatted_symbol = self._format_symbol(symbol, exchange)
+
+        if not all([config, formatted_symbol, 'ticker_endpoint' in config]): return None
+        
+        url = config['base_url'] + config['ticker_endpoint']
+        params = {'instId': formatted_symbol} if exchange == 'okx' else {'symbol': formatted_symbol}
+        
+        raw_data = await self._safe_async_request('GET', url, params=params, exchange_name=exchange)
+        
+        if raw_data:
+            price, change = 0.0, 0.0
+            try:
+                if exchange == 'mexc':
+                    data = raw_data[0] if isinstance(raw_data, list) and raw_data else raw_data
+                    price = float(data.get('lastPrice', 0))
+                    change = float(data.get('priceChangePercent', 0)) * 100
+                elif exchange == 'kucoin' and raw_data.get('data'):
+                    data = raw_data['data']
+                    price = float(data.get('last', 0))
+                    change = float(data.get('changeRate', 0)) * 100
+                elif exchange == 'okx' and raw_data.get('data'):
+                    data = raw_data['data'][0]
+                    price = float(data.get('last', 0))
+                    open_price_24h = float(data.get('open24h', 0))
+                    change = ((price - open_price_24h) / open_price_24h) * 100 if open_price_24h > 0 else 0.0
+                
+                if price > 0:
+                    result = {'price': price, 'change_24h': change, 'source': exchange, 'symbol': symbol}
+                    # ✨ Cache Storage: Store the ticker data
+                    self.cache[cache_key] = {'timestamp': time.time(), 'data': result}
+                    return result
+            except (ValueError, TypeError, IndexError, KeyError) as e:
+                logger.warning(f"Ticker data normalization failed for {exchange} on {symbol}: {e}")
+        
+        logger.warning(f"Final attempt failed for ticker from {exchange} on {symbol}.")
+        return None
+
+    async def get_first_successful_ticker(self, symbol: str) -> Optional[Dict]:
+        tasks = [asyncio.create_task(self.get_ticker_from_one_exchange(ex, symbol)) for ex in self.exchange_config.keys()]
+        
+        try:
+            for future in asyncio.as_completed(tasks):
+                result = await future
+                if result:
+                    for task in tasks:
+                        if not task.done(): task.cancel()
+                    return result
+        except asyncio.CancelledError:
+            logging.info(f"Ticker fetch tasks for {symbol} cancelled as a successful one was completed.")
+        except Exception as e:
+            logger.error(f"An unexpected error in get_first_successful_ticker: {e}")
+            
+        logger.error(f"Critical Failure: Could not fetch ticker for {symbol} from any exchange.")
+        return None
 
     async def close(self):
         await self.client.aclose()
