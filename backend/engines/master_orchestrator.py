@@ -1,4 +1,4 @@
-# engines/master_orchestrator.py (v25.1 - Resilient HTF Edition)
+# engines/master_orchestrator.py (v25.2 - Final Production Engine)
 
 import pandas as pd
 import logging
@@ -14,11 +14,11 @@ logger = logging.getLogger(__name__)
 
 class MasterOrchestrator:
     """
-    The strategic mastermind of AiSignalPro (v25.1 - Resilient HTF Edition).
-    This version incorporates critical upgrades for absolute stability:
-    1.  Correct data resampling for robust Higher-Timeframe (HTF) analysis.
-    2.  Validation of AI responses to prevent errors from malformed data.
-    3.  An upgraded, stricter prompt for more reliable AI confirmations.
+    The strategic mastermind of AiSignalPro (v25.2 - Final Production Engine).
+    This version consolidates all critical upgrades for absolute stability and reliability:
+    1.  Robust, correctly resampled data for the Dynamic HTF Engine.
+    2.  A hardened, strict, and professional-grade prompt for AI validation.
+    3.  Defensive validation of all AI responses to prevent system errors.
     """
     def __init__(self, config: Dict[str, Any]):
         self.config = config
@@ -30,32 +30,27 @@ class MasterOrchestrator:
         ]
         self.gemini_handler = GeminiHandler()
         self.last_gemini_call_time = 0
-        self.ENGINE_VERSION = "25.1.0"
+        self.ENGINE_VERSION = "25.2.0"
         
-        logger.info(f"MasterOrchestrator v{self.ENGINE_VERSION} (Resilient HTF Edition) initialized.")
+        logger.info(f"MasterOrchestrator v{self.ENGINE_VERSION} (Final Production Engine) initialized.")
 
     def _resample_df(self, df: pd.DataFrame, timeframe: str) -> pd.DataFrame:
-        """Resamples a dataframe to a higher timeframe."""
+        """Resamples the primary dataframe to a higher timeframe for HTF analysis."""
         try:
-            # Define standard aggregation rules for OHLCV data
-            agg_rules = {
-                'open': 'first',
-                'high': 'max',
-                'low': 'min',
-                'close': 'last',
-                'volume': 'sum'
-            }
-            # Only keep OHLCV columns for resampling
+            if df.index.tz is None:
+                df.index = df.index.tz_localize('UTC')
+
+            agg_rules = { 'open': 'first', 'high': 'max', 'low': 'min', 'close': 'last', 'volume': 'sum' }
             ohlcv_df = df[['open', 'high', 'low', 'close', 'volume']]
             resampled_df = ohlcv_df.resample(timeframe).agg(agg_rules)
-            resampled_df.dropna(inplace=True) # Drop intervals with no data
+            resampled_df.dropna(inplace=True)
+            logger.info(f"Successfully resampled {len(df)} rows to {len(resampled_df)} rows for timeframe {timeframe}.")
             return resampled_df
         except Exception as e:
-            logger.error(f"Failed to resample DataFrame to {timeframe}: {e}")
+            logger.error(f"Failed to resample DataFrame to {timeframe}: {e}", exc_info=True)
             return pd.DataFrame()
 
     def _find_super_signal(self, signals: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
-        # This function remains unchanged and correct.
         min_confluence = self.config.get("general", {}).get("min_confluence_for_super_signal", 3)
         buy_signals = [s for s in signals if s['direction'] == 'BUY']
         sell_signals = [s for s in signals if s['direction'] == 'SELL']
@@ -94,26 +89,23 @@ class MasterOrchestrator:
         }
         json_data = json.dumps(prompt_context, indent=2, ensure_ascii=False, default=str)
         
-        # --- ✨ UPGRADE 3: Advanced Prompt Engineering ---
         prompt_template = f"""
-You are an expert algorithmic trading signal validator with deep knowledge of technical indicators, price action, and risk management. Your role is to act as a final, critical checkpoint.
+Act as a professional algorithmic trading signal validator with expertise in multi-timeframe confluence and strict JSON output. Your sole purpose is to provide a final, unbiased risk assessment.
 
 TASK:
-Analyze the provided JSON data from our algorithmic system for {symbol} on the {timeframe} timeframe. Validate whether a high-probability trade signal exists. You must be objective and ruthless in your risk assessment.
+Analyze the provided structured JSON data for a trade signal on {symbol} ({timeframe}). Validate if a high-probability trade exists.
 
 RULES:
-1. Respond ONLY with a valid JSON object.
-2. The output must strictly follow this exact schema: {{"signal": "BUY" | "SELL" | "HOLD", "confidence_percent": integer (0-100), "explanation_fa": string (Persian explanation)}}
-3. Do not include any extra text, markdown, comments, or explanations outside of the JSON structure.
-4. If confidence is low or risks outweigh potential rewards, set "signal" to "HOLD".
-5. Base your reasoning ("explanation_fa") on your own expert analysis of the provided data, do not simply repeat the system's reasons. Provide a new, concise insight.
-
-EXAMPLE OUTPUT:
-{{
-  "signal": "SELL",
-  "confidence_percent": 85,
-  "explanation_fa": "با توجه به تلاقی مقاومت ساختاری و واگرایی نزولی در چندین اسیلاتور، پتانسیل بازگشت قیمت بسیار بالاست و سیگنال فروش با اطمینان بالا تایید می‌شود."
-}}
+1.  Respond ONLY with a valid JSON object. Do not include any additional text, comments, markdown, or explanations before or after the JSON block.
+2.  Your output MUST strictly follow this exact schema:
+    {{
+      "signal": "BUY" | "SELL" | "HOLD",
+      "confidence_percent": integer (a whole number between 0 and 100, no decimals),
+      "explanation_fa": string (must be a short, professional summary in PERSIAN)
+    }}
+3.  If your confidence is low or risks outweigh potential rewards, you MUST set "signal" to "HOLD".
+4.  Your "explanation_fa" must be your own expert summary. Do NOT repeat the 'system_reasons' text verbatim. Provide a new, concise insight.
+5.  If your output contains anything other than the single, valid JSON object, the system will reject it as invalid.
 
 Here is the signal data to analyze:
 {json_data}
@@ -121,13 +113,9 @@ Here is the signal data to analyze:
         self.last_gemini_call_time = time.time()
         ai_response = self.gemini_handler.query(prompt_template)
 
-        # --- ✨ UPGRADE 2: AI Response Validation ---
-        if not isinstance(ai_response, dict) or not all(k in ai_response for k in ['signal', 'confidence', 'explanation_fa']):
+        if not isinstance(ai_response, dict) or not all(k in ai_response for k in ['signal', 'confidence_percent', 'explanation_fa']):
             logger.critical(f"FATAL: AI response validation failed. The response format was invalid. Response: {ai_response}")
-            return None # Veto the signal due to invalid AI response
-
-        if "confidence_percent" not in ai_response and "confidence" in ai_response:
-             ai_response["confidence_percent"] = ai_response.pop("confidence")
+            return None
 
         if ai_response.get('signal') == 'HOLD':
             logger.warning(f"AI VETOED the signal for {symbol}. System signal was {signal['direction']}. Reason: {ai_response.get('explanation_fa')}")
@@ -162,12 +150,11 @@ Here is the signal data to analyze:
                         if target_htf in htf_analysis_cache:
                             htf_analysis = htf_analysis_cache[target_htf]
                         else:
-                            logger.info(f"Dynamically running HTF analysis for {symbol} on {target_htf}...")
-                            # --- ✨ UPGRADE 1: Correctly Resample data for HTF analysis ---
                             df_for_htf = self._resample_df(analyzer.final_df, target_htf)
                             min_htf_rows = self.config.get("general", {}).get("min_rows_for_htf", 50)
                             
                             if len(df_for_htf) >= min_htf_rows:
+                                logger.info(f"Dynamically running HTF analysis for {symbol} on {target_htf}...")
                                 htf_analyzer = IndicatorAnalyzer(df_for_htf, indicators_config, strategies_config, target_htf)
                                 htf_analyzer.calculate_all()
                                 htf_analysis = htf_analyzer.get_analysis_summary()
@@ -184,7 +171,6 @@ Here is the signal data to analyze:
                 except Exception as e:
                     logger.error(f"Error running strategy '{strategy_name}' on {timeframe}: {e}", exc_info=True)
         
-        # The rest of the function remains unchanged and correct.
         if not valid_signals:
             result = {"status": "NEUTRAL", "message": "No strategy conditions met.", "full_analysis": primary_analysis, "engine_version": self.ENGINE_VERSION}
             return result, analyzer.final_df
@@ -209,3 +195,4 @@ Here is the signal data to analyze:
 
         final_package = {"status": "SUCCESS", "symbol": symbol, "timeframe": timeframe, "base_signal": best_signal, "ai_confirmation": ai_confirmation, "full_analysis": primary_analysis, "engine_version": self.ENGINE_VERSION}
         return final_package, analyzer.final_df
+
