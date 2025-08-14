@@ -12,10 +12,10 @@
     "assumed_slippage_pct": 0.0005,
     "kline_limit_map": {
       "comment": "Default candle count for initial fetch per timeframe. The main controller.",
-      "1m": 500, "5m": 500, "15m": 500, "1h": 500, "4h": 500, "1d": 500
+      "1m": 400, "5m": 400, "15m": 400, "1h": 400, "4h": 400, "1d": 400
     },
-    "fetcher_limit": 500,
-    "min_rows_for_htf": 300
+    "fetcher_limit": 400,
+    "min_rows_for_htf": 380
   },
   "exchange_settings": {
     "exchange_specific": {
@@ -41,7 +41,7 @@
         "max_limit_per_req": 100,
         "symbol_template": "{base}-{quote}",
         "timeframe_map": { "5m": "5m", "15m": "15m", "1h": "1H", "4h": "4H", "1d": "1D" },
-        "rate_limit_delay": 0.5
+        "rate_limit_delay": 0.2
       }
     },
     "symbol_map": {
