@@ -102,7 +102,9 @@ class IndicatorAnalyzer:
         return sorted_order
 
     def calculate_all(self) -> 'IndicatorAnalyzer':
+        # --- ✅ FIX: More robust handling of duplicate timestamps ---
         if self.previous_df is not None and not self.previous_df.empty:
+            # Concatenate and then explicitly drop duplicates, keeping the latest timestamp
             combined_df = pd.concat([self.previous_df, self.base_df])
             df_for_calc = combined_df[~combined_df.index.duplicated(keep='last')].sort_index()
         else:
