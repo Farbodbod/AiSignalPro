@@ -1,4 +1,4 @@
-# core/exchange_fetcher.py (v5.3 - Debug Edition)
+# core/exchange_fetcher.py (v5.4 - Final)
 
 import asyncio
 import time
@@ -17,10 +17,9 @@ EXCHANGE_CONFIG = {
 }
 SYMBOL_MAP = {'BTC/USDT': {'base': 'BTC', 'quote': 'USDT'}, 'ETH/USDT': {'base': 'ETH', 'quote': 'USDT'}}
 
-
 class ExchangeFetcher:
     def __init__(self, config: Dict[str, Any] = None, cache_ttl: int = 60):
-        headers = {'User-Agent': 'AiSignalPro/5.3.0', 'Accept': 'application/json'}
+        headers = {'User-Agent': 'AiSignalPro/5.4.0', 'Accept': 'application/json'}
         self.client = httpx.AsyncClient(headers=headers, timeout=20, follow_redirects=True)
         self.cache = {}
         self.cache_ttl = cache_ttl
@@ -29,7 +28,7 @@ class ExchangeFetcher:
         self.exchange_config = effective_config.get("exchange_specific", EXCHANGE_CONFIG)
         self.symbol_map = effective_config.get("symbol_map", SYMBOL_MAP)
         
-        logging.info("ExchangeFetcher (Debug Edition v5.3) initialized.")
+        logging.info("ExchangeFetcher (Final v5.4) initialized.")
 
     def _format_symbol(self, s: str, e: str) -> Optional[str]:
         base_symbol, quote_symbol = s.split('/')
@@ -78,7 +77,7 @@ class ExchangeFetcher:
             fetch_limit = min(remaining_limit, max_per_req)
             if fetch_limit <= 0: break
             
-            logger.info(f"PAGINATION_DEBUG: Fetching page #{page_num} for {symbol}@{timeframe} from {exchange} (requesting limit: {fetch_limit})...")
+            logger.info(f"Fetching page #{page_num} for {symbol}@{timeframe} from {exchange} (limit: {fetch_limit})...")
             
             url = config['base_url'] + config['kline_endpoint']
             params = {'limit': str(fetch_limit)}
@@ -99,23 +98,18 @@ class ExchangeFetcher:
                 
                 if isinstance(kline_list, list) and kline_list:
                     normalized_data = self._normalize_kline_data(kline_list, exchange)
-                    logger.info(f"PAGINATION_DEBUG: Page #{page_num} received {len(normalized_data)} candles.")
                     all_normalized_data = normalized_data + all_normalized_data
                     end_timestamp = normalized_data[0]['timestamp'] - 1
                     remaining_limit -= len(normalized_data)
                     page_num += 1
-                    if len(normalized_data) < fetch_limit:
-                        logger.warning(f"PAGINATION_DEBUG: Exchange returned fewer candles than requested ({len(normalized_data)} < {fetch_limit}). Assuming end of history.")
-                        break
                 else:
-                    logger.warning(f"PAGINATION_DEBUG: Exchange returned no data (empty list). Ending pagination.")
+                    logger.info(f"Exchange returned no more data. Ending pagination.")
                     break
             except Exception as e:
-                logger.error(f"PAGINATION_DEBUG: Request failed during pagination for {exchange} on page {page_num}: {e}")
+                logger.warning(f"Request failed during pagination: {e}")
                 break
         
         if all_normalized_data:
-            logger.info(f"PAGINATION_DEBUG: Total klines fetched: {len(all_normalized_data)}. Now truncating to requested limit: {limit}.")
             return all_normalized_data[-limit:]
         
         return None
