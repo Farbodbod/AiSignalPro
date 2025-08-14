@@ -12,10 +12,11 @@ logger = logging.getLogger(__name__)
 
 class MasterOrchestrator:
     """
-    The strategic mastermind of the AiSignalPro project (v24.0 - Universal Conductor)
-    This definitive version is fully harmonized with the Universal Indicator Engine (v10.0)
-    and the Universal Strategy Toolkit (v5.1). It correctly passes all required
-    configurations to the core components, completing the final architectural upgrade.
+    The strategic mastermind of the AiSignalPro project (v25.0 - Dynamic HTF Engine)
+    This ultimate version features a fully dynamic Higher-Timeframe (HTF) analysis
+    engine. It intelligently determines, calculates, and provides the precise HTF
+    context required by each strategy for each specific timeframe, curing the stateful
+    'amnesia' bug and achieving a true multi-dimensional market analysis.
     """
     def __init__(self, config: Dict[str, Any]):
         self.config = config
@@ -27,9 +28,9 @@ class MasterOrchestrator:
         ]
         self.gemini_handler = GeminiHandler()
         self.last_gemini_call_time = 0
-        self.ENGINE_VERSION = "24.0.0"
+        self.ENGINE_VERSION = "25.0.0"
         
-        logger.info(f"MasterOrchestrator v{self.ENGINE_VERSION} (Universal Conductor) initialized.")
+        logger.info(f"MasterOrchestrator v{self.ENGINE_VERSION} (Dynamic HTF Engine) initialized.")
 
     def _find_super_signal(self, signals: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
         min_confluence = self.config.get("general", {}).get("min_confluence_for_super_signal", 3)
@@ -107,40 +108,14 @@ class MasterOrchestrator:
         return ai_response
 
     def run_full_pipeline(self, df: pd.DataFrame, symbol: str, timeframe: str, previous_df: Optional[pd.DataFrame] = None) -> Tuple[Dict[str, Any], Optional[pd.DataFrame]]:
-        
-        # ✅ FINAL UPGRADE: Pass both indicators and strategies configs to the Universal Engine
         indicators_config = self.config.get('indicators', {})
         strategies_config = self.config.get('strategies', {})
-        analyzer = IndicatorAnalyzer(
-            df=df, 
-            config=indicators_config, 
-            strategies_config=strategies_config, 
-            timeframe=timeframe, 
-            previous_df=previous_df
-        )
-        analyzer.calculate_all()
         
+        analyzer = IndicatorAnalyzer(df, indicators_config, strategies_config, timeframe, previous_df)
+        analyzer.calculate_all()
         primary_analysis = analyzer.get_analysis_summary()
         
-        # HTF Analysis also needs the full context
-        htf_timeframe = '4h' # This could be made dynamic in a future version
-        min_htf_rows = self.config.get("general", {}).get("min_rows_for_htf", 300)
-
-        if timeframe == htf_timeframe:
-            htf_analysis = primary_analysis
-        elif len(analyzer.final_df) < min_htf_rows:
-            htf_analysis = {}
-        else:
-            logger.info(f"Running HTF analysis for {symbol} on {htf_timeframe}...")
-            htf_analyzer = IndicatorAnalyzer(
-                df=df, 
-                config=indicators_config,
-                strategies_config=strategies_config,
-                timeframe=htf_timeframe
-                # Note: HTF analysis is kept stateless for simplicity, but could be made stateful.
-            )
-            htf_analyzer.calculate_all()
-            htf_analysis = htf_analyzer.get_analysis_summary()
+        htf_analysis_cache: Dict[str, Dict] = {}
         
         valid_signals = []
         for sc in self._strategy_classes:
@@ -148,15 +123,31 @@ class MasterOrchestrator:
             strategy_config = strategies_config.get(strategy_name, {})
             
             if strategy_config.get('enabled', True):
+                htf_analysis = {}
+                
+                merged_strat_config = {**sc.default_config, **strategy_config}
+                
+                if merged_strat_config.get('htf_confirmation_enabled'):
+                    htf_map = merged_strat_config.get('htf_map', {})
+                    target_htf = htf_map.get(timeframe)
+
+                    if target_htf and target_htf != timeframe:
+                        if target_htf in htf_analysis_cache:
+                            htf_analysis = htf_analysis_cache[target_htf]
+                        else:
+                            logger.info(f"Dynamically running HTF analysis for {symbol} on {target_htf}...")
+                            min_htf_rows = self.config.get("general", {}).get("min_rows_for_htf", 380)
+                            
+                            if len(analyzer.final_df) >= min_htf_rows:
+                                htf_analyzer = IndicatorAnalyzer(analyzer.final_df, indicators_config, strategies_config, target_htf)
+                                htf_analyzer.calculate_all()
+                                htf_analysis = htf_analyzer.get_analysis_summary()
+                                htf_analysis_cache[target_htf] = htf_analysis
+                            else:
+                                logger.warning(f"Skipping dynamic HTF analysis for {target_htf}. Insufficient base data: {len(analyzer.final_df)} < {min_htf_rows}")
+
                 try:
-                    # ✅ FINAL UPGRADE: Pass the main_config to the strategy constructor
-                    instance = sc(
-                        primary_analysis=primary_analysis, 
-                        config=strategy_config, 
-                        main_config=self.config,
-                        primary_timeframe=timeframe, 
-                        htf_analysis=htf_analysis
-                    )
+                    instance = sc(primary_analysis, strategy_config, self.config, timeframe, htf_analysis=htf_analysis)
                     signal = instance.check_signal()
                     if signal:
                         signal['strategy_name'] = instance.strategy_name
