@@ -1,4 +1,4 @@
-# strategies/breakout_hunter.py (v4.1 - Enhanced Logging Edition)
+# strategies/breakout_hunter.py (v4.2 - Specific Diagnostic Logging)
 
 import logging
 from typing import Dict, Any, Optional, List, Tuple
@@ -9,10 +9,10 @@ logger = logging.getLogger(__name__)
 
 class BreakoutHunter(BaseStrategy):
     """
-    BreakoutHunter - (v4.1 - Enhanced Logging Edition)
+    BreakoutHunter - (v4.2 - Specific Diagnostic Logging)
     ----------------------------------------------------------------
-    This version integrates the new logging mechanism from BaseStrategy for
-    transparent, step-by-step decision tracking.
+    This version enhances the logging to specify exactly which required
+    indicators are missing, providing clearer diagnostics.
     """
     strategy_name: str = "BreakoutHunter"
 
@@ -35,9 +35,7 @@ class BreakoutHunter(BaseStrategy):
     }
 
     def _calculate_breakout_score(self, signal_direction: str, bollinger_data: Dict, whales_data: Dict, cci_data: Dict) -> Tuple[int, List[str]]:
-        """
-        The Breakout Power Score Engine. (This internal calculation logic remains unchanged).
-        """
+        # This internal calculation logic remains unchanged.
         cfg = self.config
         weights = cfg.get('weights', {})
         score = 0
@@ -75,22 +73,28 @@ class BreakoutHunter(BaseStrategy):
             return None
         
         # --- 1. Data Gathering & Availability Check ---
-        donchian_data = self.get_indicator('donchian_channel')
-        bollinger_data = self.get_indicator('bollinger')
-        whales_data = self.get_indicator('whales')
-        cci_data = self.get_indicator('cci')
-        atr_data = self.get_indicator('atr')
+        indicator_data = {
+            "Donchian": self.get_indicator('donchian_channel'),
+            "Bollinger": self.get_indicator('bollinger'),
+            "Whales": self.get_indicator('whales'),
+            "CCI": self.get_indicator('cci'),
+            "ATR": self.get_indicator('atr')
+        }
 
-        # Log data availability checks for critical indicators
-        self._log_criteria("Data Availability", all([donchian_data, bollinger_data, whales_data, cci_data, atr_data]), 
-                           "One or more required indicators are missing.")
+        # ✅ NEW: Specific check to identify exactly which indicators are missing
+        missing_indicators = [name for name, data in indicator_data.items() if data is None]
         
-        if not all([donchian_data, bollinger_data, whales_data, cci_data, atr_data]):
-            self._log_final_decision("HOLD", "Required indicator data is missing.")
+        data_is_ok = not missing_indicators
+        reason = f"Missing required indicators: {', '.join(missing_indicators)}" if not data_is_ok else "All required indicator data is present."
+        
+        self._log_criteria("Data Availability", data_is_ok, reason)
+        
+        if not data_is_ok:
+            self._log_final_decision("HOLD", reason)
             return None
 
         # --- 2. Primary Trigger (Donchian Channel Breakout) ---
-        donchian_signal = donchian_data.get('analysis', {}).get('signal')
+        donchian_signal = indicator_data["Donchian"].get('analysis', {}).get('signal')
         signal_direction = "BUY" if "Buy" in donchian_signal else "SELL" if "Sell" in donchian_signal else None
         
         self._log_criteria("Primary Trigger (Donchian)", signal_direction is not None, 
@@ -101,7 +105,7 @@ class BreakoutHunter(BaseStrategy):
             return None
         
         # --- 3. Breakout Quality Scoring ---
-        breakout_score, score_details = self._calculate_breakout_score(signal_direction, bollinger_data, whales_data, cci_data)
+        breakout_score, score_details = self._calculate_breakout_score(signal_direction, indicator_data["Bollinger"], indicator_data["Whales"], indicator_data["CCI"])
         min_score = cfg.get('min_breakout_score', 6)
         score_is_ok = breakout_score >= min_score
 
@@ -120,10 +124,10 @@ class BreakoutHunter(BaseStrategy):
             self._log_final_decision("HOLD", "Could not determine entry price.")
             return None
         
-        stop_loss = donchian_data.get('values', {}).get('middle_band')
+        stop_loss = indicator_data["Donchian"].get('values', {}).get('middle_band')
         sl_source = "Donchian Middle Band"
         if not stop_loss:
-            atr_value = atr_data.get('values', {}).get('atr', entry_price * 0.02)
+            atr_value = indicator_data["ATR"].get('values', {}).get('atr', entry_price * 0.02)
             stop_loss = entry_price - (atr_value * 2) if signal_direction == "BUY" else entry_price + (atr_value * 2)
             sl_source = "ATR Fallback"
 
@@ -132,7 +136,6 @@ class BreakoutHunter(BaseStrategy):
         risk_params = self._calculate_smart_risk_management(entry_price, signal_direction, stop_loss)
         
         rr_reqs = cfg.get('rr_requirements', {})
-        # Dynamic R/R requirement based on score quality
         min_rr_ratio = rr_reqs.get('high_rr', 2.5) if breakout_score < rr_reqs.get('low_score_threshold', 7) else rr_reqs.get('default_rr', 1.5)
         
         calculated_rr = risk_params.get("risk_reward_ratio", 0) if risk_params else 0
