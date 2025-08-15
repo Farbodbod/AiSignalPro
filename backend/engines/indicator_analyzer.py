@@ -1,4 +1,4 @@
-# engines/indicator_analyzer.py (v10.5 - Fortress Edition, Harmonized)
+# engines/indicator_analyzer.py (v11.0 - Grouped Logging Edition)
 
 import pandas as pd
 import logging
@@ -26,11 +26,9 @@ def get_indicator_config_key(name: str, params: Dict[str, Any]) -> str:
 
 class IndicatorAnalyzer:
     """
-    The Self-Aware Analysis Engine for AiSignalPro (v10.5 - Fortress Edition)
-    This version includes the core logic from v10.0 plus critical safety upgrades:
-    1.  Fail-safe Dependency Checks: Skips indicators whose dependencies have failed.
-    2.  Strict Circular Dependency Error: Halts execution if a circular dependency is detected.
-    3.  Robust Duplicate Index Handling: Prevents crashes from overlapping data.
+    The Self-Aware Analysis Engine for AiSignalPro (v11.0 - Grouped Logging Edition)
+    This version refactors the logging mechanism to group indicator calculation and
+    analysis results into clean, concise summaries, drastically reducing log volume.
     """
     def __init__(self, df: pd.DataFrame, config: Dict[str, Any], strategies_config: Dict[str, Any], timeframe: str, previous_df: Optional[pd.DataFrame] = None):
         if not isinstance(df, pd.DataFrame):
@@ -62,6 +60,7 @@ class IndicatorAnalyzer:
         self.final_df = None
 
     def _resolve_dependencies(self) -> List[str]:
+        # This method remains unchanged as its logic is sound.
         adj: Dict[str, List[str]] = {}
         in_degree: Dict[str, int] = {}
         
@@ -107,11 +106,14 @@ class IndicatorAnalyzer:
         else:
             df_for_calc = self.base_df.copy()
 
-        logger.info(f"--- Starting Calculations for {self.timeframe} ---")
+        logger.info(f"--- Starting Calculations for {self.timeframe} ({len(self._calculation_order)} indicators) ---")
+        
+        # ✅ REFACTOR: Collect results instead of logging individually
+        success_keys, failed_keys, skipped_keys = [], [], []
+
         for unique_key in self._calculation_order:
             config = self._indicator_configs[unique_key]
             name, params = config['name'], config['params']
-            start_time = time.time()
             
             dependencies_ok = True
             failed_dependency = ""
@@ -124,8 +126,8 @@ class IndicatorAnalyzer:
                     break
             
             if not dependencies_ok:
-                logger.warning(f"⏭️ Calc SKIP: '{unique_key}' was skipped because its dependency '{failed_dependency}' failed.")
                 self._calculation_status[unique_key] = False
+                skipped_keys.append(f"{unique_key}(dep:{failed_dependency})")
                 continue
             
             try:
@@ -134,15 +136,21 @@ class IndicatorAnalyzer:
                 df_for_calc = instance.df
                 self._indicator_instances[unique_key] = instance
                 self._calculation_status[unique_key] = True
-                elapsed = time.time() - start_time
-                logger.info(f"✅ Calc OK: '{unique_key}' in {elapsed:.4f}s")
+                success_keys.append(name) # Use simple name for cleaner logs
             except Exception as e:
                 self._calculation_status[unique_key] = False
-                elapsed = time.time() - start_time
-                logger.error(f"❌ Calc FAIL: '{unique_key}' in {elapsed:.4f}s. Reason: {e}", exc_info=False)
+                failed_keys.append(f"{unique_key}({e})")
         
         self.final_df = df_for_calc
-        logger.info(f"--- Calculations for {self.timeframe} complete. Final DF has {len(self.final_df)} rows. ---")
+        
+        # ✅ REFACTOR: Log the collected summaries
+        if success_keys:
+            logger.info(f"✅ [Calc OK] {len(success_keys)} indicators calculated for {self.timeframe}: {', '.join(sorted(list(set(success_keys))))}")
+        if skipped_keys:
+            logger.warning(f"⏭️ [Calc SKIPPED] {len(skipped_keys)} indicators for {self.timeframe}: {', '.join(skipped_keys)}")
+        if failed_keys:
+            logger.error(f"❌ [Calc FAIL] {len(failed_keys)} indicators for {self.timeframe}: {', '.join(failed_keys)}")
+            
         return self
 
     def get_analysis_summary(self) -> Dict[str, Any]:
@@ -156,34 +164,45 @@ class IndicatorAnalyzer:
         except IndexError:
             return {"status": "Insufficient Data after calculations"}
         
-        logger.info(f"--- Starting Analysis for {self.timeframe} ---")
+        logger.info(f"--- Starting Analysis for {self.timeframe} ({len(self._indicator_instances)} indicators) ---")
+        
+        # ✅ REFACTOR: Collect analysis results instead of logging individually
+        success_keys, warning_keys, error_keys, skipped_keys = [], [], [], []
+
         for unique_key, instance in self._indicator_instances.items():
+            simple_name = self._indicator_configs[unique_key]['name']
+
             if not self._calculation_status.get(unique_key, False):
-                logger.warning(f"⏭️ Analysis SKIP: '{unique_key}' was skipped because its calculation failed.")
+                skipped_keys.append(simple_name)
                 continue
 
-            start_time = time.time()
             try:
                 analysis = instance.analyze()
-                simple_name = self._indicator_configs[unique_key]['name']
                 is_globally_enabled = self.indicators_config.get(simple_name, {}).get('enabled')
                 
                 if analysis and analysis.get("status") == "OK":
-                    elapsed = time.time() - start_time
-                    logger.info(f"✅ Analysis OK: '{unique_key}' in {elapsed:.4f}s")
+                    success_keys.append(simple_name)
                     summary[unique_key] = analysis
                     if is_globally_enabled:
                          summary[simple_name] = analysis
                 else:
-                    status_msg = analysis.get('status', 'Unknown non-OK status') if analysis else 'None'
-                    elapsed = time.time() - start_time
-                    logger.warning(f"⚠️ Analysis FAIL (Graceful): '{unique_key}' in {elapsed:.4f}s. Status: '{status_msg}'")
+                    status_msg = analysis.get('status', 'No Data') if analysis else 'None'
+                    warning_keys.append(f"{simple_name}({status_msg})")
                     if is_globally_enabled:
                         summary[simple_name] = {"status": "Analysis Failed or No Data"}
             except Exception as e:
-                elapsed = time.time() - start_time
-                logger.error(f"❌ Analysis CRASH: '{unique_key}' in {elapsed:.4f}s. Reason: {e}", exc_info=False)
+                error_keys.append(f"{simple_name}({e})")
                 summary[unique_key] = {"status": f"Analysis Error: {e}"}
         
-        logger.info(f"--- Analysis for {self.timeframe} complete. ---")
+        # ✅ REFACTOR: Log the collected summaries
+        unique_success = sorted(list(set(success_keys)))
+        if unique_success:
+            logger.info(f"✅ [Analysis OK] {len(unique_success)} indicators analyzed for {self.timeframe}: {', '.join(unique_success)}")
+        if skipped_keys:
+            logger.info(f"⏭️ [Analysis SKIPPED] {len(skipped_keys)} indicators for {self.timeframe} (due to calc failure).")
+        if warning_keys:
+            logger.warning(f"⚠️ [Analysis WARN] {len(warning_keys)} indicators for {self.timeframe} had issues: {', '.join(warning_keys)}")
+        if error_keys:
+            logger.error(f"❌ [Analysis CRASH] {len(error_keys)} indicators for {self.timeframe}: {', '.join(error_keys)}")
+            
         return summary
