@@ -1,4 +1,4 @@
-# backend/engines/strategies/volume_catalyst.py (v4.2 - Deep Validation Edition)
+# backend/engines/strategies/volume_catalyst.py (v4.3 - SyntaxError FIX)
 
 import logging
 from typing import Dict, Any, Optional, Tuple, List
@@ -8,16 +8,15 @@ logger = logging.getLogger(__name__)
 
 class VolumeCatalystPro(BaseStrategy):
     """
-    VolumeCatalystPro - (v4.2 - Deep Validation Edition)
+    VolumeCatalystPro - (v4.3 - SyntaxError FIX)
     ------------------------------------------------------------------
-    This version implements a deep validation check at the start of the signal
-    process to ensure all critical nested data paths exist, making the strategy
-    exceptionally robust against incomplete analysis data.
+    This version fixes a critical SyntaxError in the deep validation logging
+    message, allowing the application to start correctly.
     """
     strategy_name: str = "VolumeCatalystPro"
 
     default_config = {
-        # ... default_config remains unchanged ...
+        # ... (بخش کانفیگ بدون تغییر باقی می‌ماند) ...
         "min_quality_score": 7,
         "weights": {
             "volume_catalyst_strength": 4,
@@ -36,14 +35,12 @@ class VolumeCatalystPro(BaseStrategy):
         }
     }
 
+    # --- تمام توابع کمکی (_calculate_breakout_quality_score, _find_structural_breakout) بدون تغییر باقی می‌مانند ---
     def _calculate_breakout_quality_score(self, direction: str, whales_data: Dict, cci_data: Dict, bollinger_data: Dict) -> tuple[int, List[str]]:
-        # This helper remains unchanged.
-        # ... (کد این تابع بدون تغییر است)
         cfg = self.config
         weights = cfg.get('weights', {})
         score = 0
         confirmations = []
-
         if whales_data['analysis'].get('is_whale_activity'):
             whale_pressure = whales_data['analysis'].get('pressure', '')
             if (direction == "BUY" and "Buying" in whale_pressure) or \
@@ -51,31 +48,23 @@ class VolumeCatalystPro(BaseStrategy):
                 score += weights.get('volume_catalyst_strength', 4)
                 spike_score = whales_data['analysis'].get('spike_score', 0)
                 confirmations.append(f"Volume Catalyst (Score: {spike_score:.2f})")
-
         cci_value = cci_data.get('values', {}).get('value', 0)
         if (direction == "BUY" and cci_value > cfg.get('cci_threshold', 100.0)) or \
            (direction == "SELL" and cci_value < -cfg.get('cci_threshold', 100.0)):
             score += weights.get('momentum_thrust', 3)
             confirmations.append(f"Momentum Thrust (CCI: {cci_value:.2f})")
-
         if bollinger_data['analysis'].get('is_squeeze_release', False):
             score += weights.get('volatility_release', 3)
             confirmations.append("Volatility Release")
-            
         return score, confirmations
-
     def _find_structural_breakout(self, structure_data: Dict) -> Optional[Tuple[str, float]]:
-        # This helper is now guaranteed to receive valid data.
-        # ... (کد این تابع بدون تغییر است)
         if self.df is None or len(self.df) < 2: return None, None
         prev_close = self.df['close'].iloc[-2]
         current_price = self.price_data.get('close')
-        
         prox_analysis = structure_data['analysis'].get('proximity', {})
         nearest_resistance = prox_analysis.get('nearest_resistance_details', {}).get('price')
         if nearest_resistance and prev_close <= nearest_resistance < current_price:
             return "BUY", nearest_resistance
-
         nearest_support = prox_analysis.get('nearest_support_details', {}).get('price')
         if nearest_support and prev_close >= nearest_support > current_price:
             return "SELL", nearest_support
@@ -87,7 +76,6 @@ class VolumeCatalystPro(BaseStrategy):
             self._log_final_decision("HOLD", "No price data available.")
             return None
         
-        # --- 1. Shallow Data Availability Check ---
         required_names = ['structure', 'whales', 'cci', 'keltner_channel', 'bollinger', 'atr']
         indicators = {name: self.get_indicator(name) for name in required_names}
         missing_indicators = [name for name, data in indicators.items() if data is None]
@@ -98,7 +86,6 @@ class VolumeCatalystPro(BaseStrategy):
             self._log_final_decision("HOLD", reason)
             return None
 
-        # ✅ NEW: Deep Validation Check (Your excellent suggestion)
         critical_paths = {
             'structure': ['analysis', 'proximity'],
             'keltner_channel': ['values', 'middle_band'],
@@ -109,16 +96,16 @@ class VolumeCatalystPro(BaseStrategy):
             for key in path:
                 obj = obj.get(key) if isinstance(obj, dict) else None
                 if obj is None:
-                    reason = f"Indicator '{name}' is missing critical nested data: '{'.join(path)}'"
+                    # ✅ SYNTAX FIX: Corrected the f-string formatting
+                    reason = f"Indicator '{name}' is missing critical nested data: '{'.'.join(path)}'"
                     self._log_criteria("Deep Data Validation", False, reason)
                     self._log_final_decision("HOLD", reason)
                     return None
         self._log_criteria("Deep Data Validation", True, "All critical nested data paths are valid.")
         
-        # --- All subsequent logic can now safely assume data is valid ---
+        # --- بقیه کد check_signal بدون تغییر باقی می‌ماند ---
         signal_direction, broken_level = self._find_structural_breakout(indicators['structure'])
         
-        # ... (بقیه کد check_signal بدون تغییر باقی می‌ماند) ...
         trigger_is_ok = signal_direction is not None
         self._log_criteria("Primary Trigger (Structural Breakout)", trigger_is_ok, "No structural breakout detected.")
         if not trigger_is_ok:
@@ -148,7 +135,6 @@ class VolumeCatalystPro(BaseStrategy):
         keltner_mid = indicators['keltner_channel'].get('values', {}).get('middle_band')
         atr_value = indicators['atr'].get('values', {}).get('atr')
         
-        # This check is now redundant due to deep validation, but kept for safety.
         if not all([entry_price, keltner_mid, atr_value]):
             self._log_final_decision("HOLD", "Missing data for Stop Loss calculation (Keltner/ATR).")
             return None
