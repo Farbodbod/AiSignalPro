@@ -1,4 +1,4 @@
-# backend/engines/strategies/ema_crossover.py (v4.0 - Defensive Logging Edition)
+# backend/engines/strategies/ema_crossover.py (v4.1 - Config Safety Fix)
 
 import logging
 from typing import Dict, Any, Optional
@@ -8,44 +8,25 @@ logger = logging.getLogger(__name__)
 
 class EmaCrossoverStrategy(BaseStrategy):
     """
-    EmaCrossoverStrategy - (v4.0 - Defensive Logging Edition)
+    EmaCrossoverStrategy - (v4.1 - Config Safety Fix)
     -------------------------------------------------------------------
-    This version fixes potential KeyErrors with a robust config loader and
-    integrates the professional logging system for full transparency. All
-    advanced pillars (Master Trend, Strength Engine, Dynamic Risk) are preserved.
+    This version fixes a critical KeyError caused by an incomplete user config
+    for the master_trend_filter. The logic is now hardened to prevent this crash
+    and logging has been fully integrated.
     """
     strategy_name: str = "EmaCrossoverStrategy"
 
     default_config = {
-        "default_params": {
-            "min_adx_strength": 23.0,
-            "candlestick_confirmation_enabled": True,
-        },
-        "master_trend_filter": {
-            "enabled": True,
-            "ma_indicator": "fast_ma",
-            "ma_period": 200
-        },
-        "strength_engine": {
-            "macd_confirmation_enabled": True,
-            "volume_confirmation_enabled": True
-        },
-        "volatility_regimes": {
-            "low_atr_pct_threshold": 1.5,
-            "low_vol_sl_multiplier": 2.0,
-            "high_vol_sl_multiplier": 3.0
-        },
+        "default_params": { "min_adx_strength": 23.0, "candlestick_confirmation_enabled": True, },
+        "master_trend_filter": { "enabled": True, "ma_indicator": "fast_ma", "ma_period": 200 },
+        "strength_engine": { "macd_confirmation_enabled": True, "volume_confirmation_enabled": True },
+        "volatility_regimes": { "low_atr_pct_threshold": 1.5, "low_vol_sl_multiplier": 2.0, "high_vol_sl_multiplier": 3.0 },
         "htf_confirmation_enabled": True,
         "htf_map": { "5m": "15m", "15m": "1h", "1h": "4h", "4h": "1d" },
-        "htf_confirmations": {
-            "min_required_score": 2,
-            "adx": {"weight": 1, "min_strength": 25},
-            "supertrend": {"weight": 1}
-        }
+        "htf_confirmations": { "min_required_score": 2, "adx": {"weight": 1, "min_strength": 25}, "supertrend": {"weight": 1} }
     }
     
     def _get_signal_config(self) -> Dict[str, Any]:
-        """ ✅ FIX: Robustly loads and merges hierarchical configs to prevent KeyErrors. """
         final_cfg = self.config.copy()
         base_params = self.config.get("default_params", {})
         tf_overrides = self.config.get("timeframe_overrides", {}).get(self.primary_timeframe, {})
@@ -64,8 +45,8 @@ class EmaCrossoverStrategy(BaseStrategy):
         trend_cfg = cfg.get('master_trend_filter', {})
         strength_cfg = cfg.get('strength_engine', {})
 
-        if trend_cfg.get('enabled'):
-            required_names.append(trend_cfg.get('ma_indicator', 'fast_ma'))
+        if trend_cfg.get('enabled') and trend_cfg.get('ma_indicator'):
+            required_names.append(trend_cfg.get('ma_indicator'))
         if strength_cfg.get('macd_confirmation_enabled'):
             required_names.append('macd')
         if strength_cfg.get('volume_confirmation_enabled'):
@@ -97,15 +78,24 @@ class EmaCrossoverStrategy(BaseStrategy):
         # --- 3. Confirmation Funnel ---
         master_trend_ok = True
         if trend_cfg.get('enabled'):
-            ma_value = indicators[trend_cfg.get('ma_indicator')].get('values', {}).get('ma_value')
-            if ma_value:
-                master_trend_ok = not ((signal_direction == "BUY" and self.price_data.get('close', 0) < ma_value) or \
-                                       (signal_direction == "SELL" and self.price_data.get('close', 0) > ma_value))
-            else: master_trend_ok = False
-        self._log_criteria("Pillar 1: Master Trend Filter", master_trend_ok, "Signal is against the long-term Master MA.")
+            # ✅ CRITICAL FIX: Safely get the indicator name and then the data.
+            ma_indicator_name = trend_cfg.get('ma_indicator')
+            if ma_indicator_name and ma_indicator_name in indicators:
+                master_ma_data = indicators[ma_indicator_name]
+                ma_value = master_ma_data.get('values', {}).get('ma_value')
+                if ma_value:
+                    master_trend_ok = not ((signal_direction == "BUY" and self.price_data.get('close', 0) < ma_value) or \
+                                           (signal_direction == "SELL" and self.price_data.get('close', 0) > ma_value))
+                else:
+                    master_trend_ok = False # Fail if MA value can't be retrieved
+            else:
+                master_trend_ok = False # Fail if ma_indicator name is missing in config
+        
+        self._log_criteria("Pillar 1: Master Trend Filter", master_trend_ok, "Signal is against the long-term Master MA or MA config is invalid.")
         if not master_trend_ok: self._log_final_decision("HOLD", "Master Trend filter failed."); return None
         confirmations['master_trend_filter'] = "Passed"
 
+        # ... (بقیه فانل تایید بدون تغییر باقی می‌ماند) ...
         macd_ok = True
         if strength_cfg.get('macd_confirmation_enabled'):
             histo = indicators['macd'].get('values', {}).get('histogram', 0)
@@ -141,6 +131,7 @@ class EmaCrossoverStrategy(BaseStrategy):
         confirmations['candlestick_filter'] = "Passed"
         
         # --- 4. Dynamic Risk Management ---
+        # ... (این بخش بدون تغییر باقی می‌ماند) ...
         entry_price = self.price_data.get('close')
         long_ema_val = indicators['ema_cross'].get('values', {}).get('long_ema')
         atr_value = indicators['atr'].get('values', {}).get('atr')
@@ -165,3 +156,4 @@ class EmaCrossoverStrategy(BaseStrategy):
         self._log_final_decision(signal_direction, "All criteria met. EMA Crossover signal confirmed.")
 
         return { "direction": signal_direction, "entry_price": entry_price, **risk_params, "confirmations": confirmations }
+
