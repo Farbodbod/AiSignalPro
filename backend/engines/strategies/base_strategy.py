@@ -1,4 +1,4 @@
-# strategies/base_strategy.py (v6.1 - Robust Risk Calculation)
+# strategies/base_strategy.py (v6.2 - Perfected Production Logging)
 
 from abc import ABC, abstractmethod
 from typing import Dict, Any, Optional, List, Union
@@ -9,11 +9,10 @@ import json
 logger = logging.getLogger(__name__)
 
 def get_indicator_config_key(name: str, params: Dict[str, Any]) -> str:
-    # ... (این تابع بدون تغییر باقی می‌ماند)
+    # ... (این تابع بدون تغییر است)
     try:
         filtered_params = {k: v for k, v in params.items() if k not in ['enabled', 'dependencies', 'name']}
-        if not filtered_params:
-            return name
+        if not filtered_params: return name
         param_str = json.dumps(filtered_params, sort_keys=True, separators=(',', ':'))
         return f"{name}_{param_str}"
     except TypeError:
@@ -22,16 +21,17 @@ def get_indicator_config_key(name: str, params: Dict[str, Any]) -> str:
 
 class BaseStrategy(ABC):
     """
-    World-Class Base Strategy Framework - (v6.1 - Robust Risk Calculation)
+    World-Class Base Strategy Framework - (v6.2 - Perfected Production Logging)
     ---------------------------------------------------------------------------------------------
-    This version hardens the _calculate_smart_risk_management method to prevent
-    TypeErrors from None inputs, making the entire strategy pipeline more stable.
+    This final version promotes the focused, step-by-step strategy logs to the INFO
+    level, creating the perfect, clean production view while retaining deep-dive
+    debugging capabilities at the DEBUG level.
     """
     strategy_name: str = "BaseStrategy"
     default_config: Dict[str, Any] = {}
 
     def __init__(self, primary_analysis: Dict[str, Any], config: Dict[str, Any], main_config: Dict[str, Any], primary_timeframe: str, symbol: str, htf_analysis: Optional[Dict[str, Any]] = None):
-        # ... (این تابع بدون تغییر باقی می‌ماند)
+        # ... (این تابع بدون تغییر است)
         merged_config = {**self.default_config, **(config or {})}
         self.analysis = primary_analysis
         self.config = merged_config
@@ -46,27 +46,27 @@ class BaseStrategy(ABC):
         self.name = config.get('name', self.strategy_name)
 
     def _log_criteria(self, criterion_name: str, status: bool, reason: str = ""):
-        # ... (این تابع بدون تغییر باقی می‌ماند)
         focus_symbol = self.main_config.get("general", {}).get("logging_focus_symbol")
+        
         if focus_symbol and self.symbol != focus_symbol:
             return
+            
         self.log_details["criteria_results"].append({"criterion": criterion_name, "status": status, "reason": reason})
         status_emoji = "✅" if status else "❌"
-        logger.debug(f"{status_emoji} Criterion Check: {self.name} on {self.symbol} {self.primary_timeframe} - '{criterion_name}': {status}. Reason: {reason}")
+        # ✅ FINAL FIX: Promoted from DEBUG to INFO to appear in the clean production view.
+        logger.info(f"  {status_emoji} Criterion: {self.name} on {self.primary_timeframe} - '{criterion_name}': {status}. Reason: {reason}")
     
     def _log_final_decision(self, signal: str, reason: str = ""):
-        # ... (این تابع بدون تغییر باقی می‌ماند)
         self.log_details["final_signal"] = signal
         self.log_details["final_reason"] = reason
-        signal_emoji = "🟢" if signal == "BUY" else "🔴" if signal == "SELL" else "⚪"
+        signal_emoji = "🟢" if signal == "BUY" else "🔴" if signal == "SELL" else "⚪️"
         logger.info(f"{signal_emoji} Final Decision: {self.name} on {self.symbol} {self.primary_timeframe} -> Signal: {signal}. Reason: {reason}")
     
+    # --- (بقیه توابع کلاس بدون تغییر باقی می‌مانند) ---
     @abstractmethod
     def check_signal(self) -> Optional[Dict[str, Any]]:
         pass
-
     def get_indicator(self, name_or_alias: str, analysis_source: Optional[Dict] = None) -> Optional[Dict[str, Any]]:
-        # ... (این تابع بدون تغییر باقی می‌ماند)
         source = analysis_source if analysis_source is not None else self.analysis
         if not source: return None
         indicator_data = None
@@ -82,9 +82,7 @@ class BaseStrategy(ABC):
         if "error" in status or "failed" in status:
             return None
         return indicator_data
-    
     def _get_candlestick_confirmation(self, direction: str, min_reliability: str = 'Medium') -> Optional[Dict[str, Any]]:
-        # ... (این تابع بدون تغییر باقی می‌ماند)
         pattern_analysis = self.get_indicator('patterns')
         if not pattern_analysis or 'analysis' not in pattern_analysis: return None
         reliability_map, min_reliability_score = {'Low': 0, 'Medium': 1, 'Strong': 2}, 1
@@ -95,18 +93,14 @@ class BaseStrategy(ABC):
             if reliability_map.get(pattern.get('reliability'), 0) >= min_reliability_score:
                 return pattern
         return None
-
     def _get_volume_confirmation(self) -> bool:
-        # ... (این تابع بدون تغییر باقی می‌ماند)
         whale_analysis = self.get_indicator('whales')
         if not whale_analysis: return False
         min_spike_score = self.config.get('min_whale_spike_score', 1.5)
         is_whale_activity = whale_analysis.get('analysis', {}).get('is_whale_activity', False)
         spike_score = whale_analysis.get('analysis', {}).get('spike_score', 0)
         return is_whale_activity and spike_score >= min_spike_score
-
     def _get_trend_confirmation(self, direction: str) -> bool:
-        # ... (این تابع بدون تغییر باقی می‌ماند)
         htf_map = self.config.get('htf_map', {})
         target_htf = htf_map.get(self.primary_timeframe)
         if not target_htf: return True
@@ -117,8 +111,7 @@ class BaseStrategy(ABC):
             rule = htf_rules['adx']
             adx_analysis = self.get_indicator('adx', analysis_source=self.htf_analysis)
             if adx_analysis:
-                adx_strength = adx_analysis.get('values', {}).get('adx', 0)
-                adx_dir = adx_analysis.get('analysis', {}).get('direction', 'Neutral')
+                adx_strength, adx_dir = adx_analysis.get('values', {}).get('adx', 0), adx_analysis.get('analysis', {}).get('direction', 'Neutral')
                 if adx_strength >= rule.get('min_strength', 20) and direction.upper() in adx_dir.upper():
                     current_score += rule.get('weight', 1)
         if "supertrend" in htf_rules:
@@ -126,29 +119,21 @@ class BaseStrategy(ABC):
             st_analysis = self.get_indicator('supertrend', analysis_source=self.htf_analysis)
             if st_analysis:
                 st_trend = st_analysis.get('analysis', {}).get('trend', 'Neutral')
-                if (direction.upper() == "BUY" and "UP" in st_trend.upper()) or \
-                   (direction.upper() == "SELL" and "DOWN" in st_trend.upper()):
+                if (direction.upper() == "BUY" and "UP" in st_trend.upper()) or (direction.upper() == "SELL" and "DOWN" in st_trend.upper()):
                     current_score += rule.get('weight', 1)
         return current_score >= min_required_score
-
     def _calculate_smart_risk_management(self, entry_price: float, direction: str, stop_loss: float) -> Dict[str, Any]:
-        # ✅ CRITICAL FIX: Added a safeguard to prevent crashes from None inputs.
         if not isinstance(entry_price, (int, float)) or not isinstance(stop_loss, (int, float)):
             logger.debug(f"Smart risk calculation skipped due to invalid inputs. Entry: {entry_price}, SL: {stop_loss}")
             return {}
-
         if entry_price == stop_loss: return {}
-        
-        fees_pct = self.main_config.get("general", {}).get("assumed_fees_pct", 0.001)
-        slippage_pct = self.main_config.get("general", {}).get("assumed_slippage_pct", 0.0005)
+        fees_pct, slippage_pct = self.main_config.get("general", {}).get("assumed_fees_pct", 0.001), self.main_config.get("general", {}).get("assumed_slippage_pct", 0.0005)
         risk_per_unit = abs(entry_price - stop_loss)
         if risk_per_unit < 1e-9: return {}
         total_risk_per_unit = risk_per_unit + (entry_price * fees_pct) + (entry_price * slippage_pct)
         structure_data = self.get_indicator('structure')
         key_levels = (structure_data.get('key_levels', {}) if structure_data else {}) or {}
-        targets = []
-        resistances = [r['price'] for r in key_levels.get('resistances', [])]
-        supports = [s['price'] for s in key_levels.get('supports', [])]
+        targets, resistances, supports = [], [r['price'] for r in key_levels.get('resistances', [])], [s['price'] for s in key_levels.get('supports', [])]
         if direction.upper() == 'BUY': targets = [r for r in sorted(resistances) if r > entry_price][:3]
         elif direction.upper() == 'SELL': targets = [s for s in sorted(supports, reverse=True) if s < entry_price][:3]
         if not targets:
