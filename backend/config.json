@@ -10,7 +10,8 @@
     "account_equity": 10000,
     "assumed_fees_pct": 0.001,
     "assumed_slippage_pct": 0.0005,
-    "fetcher_limit": 500
+    "fetcher_limit": 500,
+    "min_rows_for_htf": 300
   },
   "exchange_settings": {
     "exchange_specific": {
