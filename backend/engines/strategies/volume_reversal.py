@@ -1,5 +1,4 @@
-# backend/engines/strategies/volume_reversal.py (v5.1 - Ultimate Safeguard Edition)
-
+# backend/engines/strategies/volume_reversal.py (v6.0 - BlackBox Diagnostic)
 import logging
 from typing import Dict, Any, Optional, Tuple, List
 from .base_strategy import BaseStrategy
@@ -7,78 +6,59 @@ from .base_strategy import BaseStrategy
 logger = logging.getLogger(__name__)
 
 class WhaleReversal(BaseStrategy):
-    """
-    WhaleReversal - (v5.1 - Ultimate Safeguard Edition)
-    --------------------------------------------------------------
-    This version incorporates user-provided analysis to fix a critical edge case
-    where a nested data value could be None, making helper functions exceptionally robust.
-    All logging and advanced features are preserved.
-    """
     strategy_name: str = "WhaleReversal"
-
-    default_config = {
-        "min_reversal_score": 7,
-        "weights": { "whale_intensity": 4, "rejection_wick": 3, "volatility_context": 2, "candlestick_pattern": 2 },
-        "adaptive_proximity_multiplier": 0.5,
-        "min_rr_ratio": 2.0,
-        "htf_confirmation_enabled": True,
-        "htf_map": { "5m": "15m", "15m": "1h", "1h": "4h", "4h": "1d" },
-        "htf_confirmations": { "min_required_score": 1, "adx": {"weight": 1, "min_strength": 25} }
-    }
+    default_config = { "min_reversal_score": 7, "weights": { "whale_intensity": 4, "rejection_wick": 3, "volatility_context": 2, "candlestick_pattern": 2 }, "adaptive_proximity_multiplier": 0.5, "min_rr_ratio": 2.0, "htf_confirmation_enabled": True, "htf_map": { "5m": "15m", "15m": "1h", "1h": "4h", "4h": "1d" }, "htf_confirmations": { "min_required_score": 1, "adx": {"weight": 1, "min_strength": 25} } }
 
     def _calculate_reversal_strength_score(self, direction: str, whales_data: Dict, bollinger_data: Dict) -> tuple[int, List[str]]:
-        weights = self.config.get('weights', {})
-        score = 0
-        confirmations = []
+        weights, score, confirmations = self.config.get('weights', {}), 0, []
         if whales_data['analysis'].get('is_whale_activity'):
             spike_score = whales_data['analysis'].get('spike_score', 0)
             if spike_score > 2.5:
-                score += weights.get('whale_intensity', 4)
-                confirmations.append(f"High Whale Intensity (Score: {spike_score:.2f})")
-        candle = self.price_data
-        wick = (candle['high'] - candle['low'])
-        body = abs(candle['close'] - candle['open'])
+                score += weights.get('whale_intensity', 4); confirmations.append(f"High Whale Intensity (Score: {spike_score:.2f})")
+        candle, wick, body = self.price_data, (self.price_data['high'] - self.price_data['low']), abs(self.price_data['close'] - self.price_data['open'])
         if wick > 0 and body / wick < 0.33:
-             if (direction == "BUY" and (candle['close'] - candle['low']) > (wick * 0.66)) or \
-                (direction == "SELL" and (candle['high'] - candle['close']) > (wick * 0.66)):
-                score += weights.get('rejection_wick', 3)
-                confirmations.append("Strong Rejection Wick")
-        if not bollinger_data['analysis'].get('is_in_squeeze', True):
-            score += weights.get('volatility_context', 2)
-            confirmations.append("High Volatility Context")
-        if self._get_candlestick_confirmation(direction, min_reliability='Strong'):
-            score += weights.get('candlestick_pattern', 2)
-            confirmations.append("Strong Candlestick Pattern")
+             if (direction == "BUY" and (candle['close'] - candle['low']) > (wick * 0.66)) or (direction == "SELL" and (candle['high'] - candle['close']) > (wick * 0.66)):
+                score += weights.get('rejection_wick', 3); confirmations.append("Strong Rejection Wick")
+        if not bollinger_data['analysis'].get('is_in_squeeze', True): score += weights.get('volatility_context', 2); confirmations.append("High Volatility Context")
+        if self._get_candlestick_confirmation(direction, min_reliability='Strong'): score += weights.get('candlestick_pattern', 2); confirmations.append("Strong Candlestick Pattern")
         return score, confirmations
 
     def _find_tested_level(self, cfg: Dict, structure_data: Dict, atr_data: Dict) -> Optional[Tuple[str, float]]:
-        price_low, price_high = self.price_data.get('low'), self.price_data.get('high')
-        atr_value = atr_data.get('values', {}).get('atr')
-        if not all([price_low, price_high, atr_value]): return None, None
-        
-        proximity_zone = atr_value * cfg.get('adaptive_proximity_multiplier', 0.5)
-
-        # ✅ ULTIMATE FIX (Based on your analysis): Safely access nested dictionaries
-        analysis_block = structure_data.get('analysis') or {}
-        prox_analysis = analysis_block.get('proximity') or {}
-
-        nearest_support = prox_analysis.get('nearest_support_details', {}).get('price')
-        if nearest_support and (price_low - nearest_support) < proximity_zone:
-            return "BUY", nearest_support
-
-        nearest_resistance = prox_analysis.get('nearest_resistance_details', {}).get('price')
-        if nearest_resistance and (nearest_resistance - price_high) < proximity_zone:
-            return "SELL", nearest_resistance
+        try:
+            price_low, price_high = self.price_data.get('low'), self.price_data.get('high')
+            atr_value = atr_data.get('values', {}).get('atr')
+            if not all([price_low, price_high, atr_value]): return None, None
+            proximity_zone = atr_value * cfg.get('adaptive_proximity_multiplier', 0.5)
             
-        return None, None
+            # This is the area that was causing the crash.
+            analysis_block = structure_data.get('analysis', {})
+            if analysis_block is None: analysis_block = {}
+            
+            prox_analysis = analysis_block.get('proximity', {})
+            if prox_analysis is None: prox_analysis = {}
 
+            nearest_support = prox_analysis.get('nearest_support_details', {}).get('price')
+            if nearest_support and (price_low - nearest_support) < proximity_zone:
+                return "BUY", nearest_support
+
+            nearest_resistance = prox_analysis.get('nearest_resistance_details', {}).get('price')
+            if nearest_resistance and (nearest_resistance - price_high) < proximity_zone:
+                return "SELL", nearest_resistance
+                
+            return None, None
+        except Exception as e:
+            # ✅ BLACKBOX: If any error occurs, log the exact input data and exit gracefully.
+            logger.error(f"CRASH AVOIDED in _find_tested_level. Reason: {e}. Offending structure_data: {structure_data}", exc_info=True)
+            return None, None
+    
     def check_signal(self) -> Optional[Dict[str, Any]]:
+        # This version includes a blackbox to catch the persistent error.
+        logger.info(f"--- Executing WhaleReversal v6.0 ---")
         cfg = self.config
         if not self.price_data:
             self._log_final_decision("HOLD", "No price data available.")
             return None
         
-        # --- 1. Data Availability Check ---
         required_names = ['structure', 'whales', 'patterns', 'atr', 'bollinger']
         indicators = {name: self.get_indicator(name) for name in required_names}
         missing_indicators = [name for name, data in indicators.items() if data is None]
@@ -90,7 +70,6 @@ class WhaleReversal(BaseStrategy):
             return None
         self._log_criteria("Data Availability", True, "All required indicators are present.")
 
-        # --- 2. Primary Trigger (Find a Tested Key Level) ---
         signal_direction, tested_level = self._find_tested_level(cfg, indicators['structure'], indicators['atr'])
         
         trigger_is_ok = signal_direction is not None
@@ -99,7 +78,6 @@ class WhaleReversal(BaseStrategy):
             self._log_final_decision("HOLD", "No valid entry trigger.")
             return None
         
-        # --- 3. Reversal Strength Score Check ---
         reversal_score, score_details = self._calculate_reversal_strength_score(signal_direction, indicators['whales'], indicators['bollinger'])
         min_score = cfg.get('min_reversal_score', 7)
         score_is_ok = reversal_score >= min_score
@@ -110,7 +88,6 @@ class WhaleReversal(BaseStrategy):
             return None
         confirmations = {"reversal_strength_score": reversal_score, "score_details": ", ".join(score_details)}
 
-        # --- 4. HTF Confirmation Filter ---
         htf_ok = True
         if cfg.get('htf_confirmation_enabled'):
             opposite_direction = "SELL" if signal_direction == "BUY" else "BUY"
@@ -121,7 +98,6 @@ class WhaleReversal(BaseStrategy):
             return None
         confirmations['htf_filter'] = "Passed (No strong opposing HTF trend)"
 
-        # --- 5. Risk Management & Final Checks ---
         entry_price = self.price_data.get('close')
         atr_value = indicators['atr'].get('values', {}).get('atr', entry_price * 0.01)
         stop_loss = tested_level - (atr_value * cfg.get('atr_sl_multiplier', 1.5)) if signal_direction == "BUY" else tested_level + (atr_value * cfg.get('atr_sl_multiplier', 1.5))
@@ -136,7 +112,6 @@ class WhaleReversal(BaseStrategy):
             return None
         confirmations['rr_check'] = f"Passed (R/R: {risk_params.get('risk_reward_ratio')})"
         
-        # --- 6. Final Decision ---
         self._log_final_decision(signal_direction, "All criteria met. Whale Reversal signal confirmed.")
-
         return { "direction": signal_direction, "entry_price": entry_price, **risk_params, "confirmations": confirmations }
+
