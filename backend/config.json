@@ -63,6 +63,7 @@
     "EmaCrossoverStrategy"
   ],
   "indicators": {
+    "atr": { "enabled": true, "period": 14 },
     "adx": { "enabled": true, "period": 14 },
     "bollinger": { "enabled": true, "period": 20, "std_dev": 2.0, "squeeze_stats_period": 240, "squeeze_std_multiplier": 1.5 },
     "cci": { "enabled": true, "period": 20 },
