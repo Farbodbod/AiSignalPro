@@ -1,4 +1,5 @@
-# backend/engines/strategies/volume_catalyst.py (v6.0 - BlackBox Diagnostic)
+# backend/engines/strategies/volume_catalyst.py (v7.0 - Final Bugfix Edition)
+
 import logging
 from typing import Dict, Any, Optional, Tuple, List
 from .base_strategy import BaseStrategy
@@ -9,6 +10,7 @@ class VolumeCatalystPro(BaseStrategy):
     strategy_name: str = "VolumeCatalystPro"
     default_config = { "min_quality_score": 7, "weights": { "volume_catalyst_strength": 4, "momentum_thrust": 3, "volatility_release": 3, }, "cci_threshold": 100.0, "atr_sl_multiplier": 1.0, "min_rr_ratio": 2.0, "htf_confirmation_enabled": True, "htf_map": { "5m": "15m", "15m": "1h", "1h": "4h", "4h": "1d" }, "htf_confirmations": { "min_required_score": 2, "adx": {"weight": 1, "min_strength": 25}, "supertrend": {"weight": 1} } }
 
+    # ... (تابع _calculate_breakout_quality_score بدون تغییر است) ...
     def _calculate_breakout_quality_score(self, direction: str, whales_data: Dict, cci_data: Dict, bollinger_data: Dict) -> tuple[int, List[str]]:
         cfg, weights, score, confirmations = self.config, self.config.get('weights', {}), 0, []
         if whales_data['analysis'].get('is_whale_activity'):
@@ -22,34 +24,30 @@ class VolumeCatalystPro(BaseStrategy):
         return score, confirmations
 
     def _find_structural_breakout(self, structure_data: Dict) -> Optional[Tuple[str, float]]:
-        try:
-            if self.df is None or len(self.df) < 2: return None, None
-            prev_close = self.df['close'].iloc[-2]
-            current_price = self.price_data.get('close')
-            
-            # This is the area that was causing the crash.
-            analysis_block = structure_data.get('analysis', {})
-            if analysis_block is None: analysis_block = {}
+        if self.df is None or len(self.df) < 2: return None, None
+        prev_close = self.df['close'].iloc[-2]
+        current_price = self.price_data.get('close')
+        
+        analysis_block = structure_data.get('analysis') or {}
+        prox_analysis = analysis_block.get('proximity') or {}
+        
+        # ✅ FINAL FIX: Safely access the 'price' key from a potentially None dictionary.
+        nearest_resistance_details = prox_analysis.get('nearest_resistance_details') or {}
+        nearest_resistance = nearest_resistance_details.get('price')
+        if nearest_resistance and prev_close <= nearest_resistance < current_price:
+            return "BUY", nearest_resistance
 
-            prox_analysis = analysis_block.get('proximity', {})
-            if prox_analysis is None: prox_analysis = {}
-            
-            nearest_resistance = prox_analysis.get('nearest_resistance_details', {}).get('price')
-            if nearest_resistance and prev_close <= nearest_resistance < current_price:
-                return "BUY", nearest_resistance
-
-            nearest_support = prox_analysis.get('nearest_support_details', {}).get('price')
-            if nearest_support and prev_close >= nearest_support > current_price:
-                return "SELL", nearest_support
-            return None, None
-        except Exception as e:
-            # ✅ BLACKBOX: If any error occurs, log the exact input data and exit gracefully.
-            logger.error(f"CRASH AVOIDED in _find_structural_breakout. Reason: {e}. Offending structure_data: {structure_data}", exc_info=True)
-            return None, None
-
+        # ✅ FINAL FIX: Safely access the 'price' key from a potentially None dictionary.
+        nearest_support_details = prox_analysis.get('nearest_support_details') or {}
+        nearest_support = nearest_support_details.get('price')
+        if nearest_support and prev_close >= nearest_support > current_price:
+            return "SELL", nearest_support
+        return None, None
+        
     def check_signal(self) -> Optional[Dict[str, Any]]:
-        # This version includes a blackbox to catch the persistent error.
-        logger.info(f"--- Executing VolumeCatalystPro v6.0 ---")
+        # ... (بقیه کد که شامل لاگ‌گیری است، دقیقاً مانند نسخه قبلی باقی می‌ماند) ...
+        # ... This code is complete and correct from the previous validated versions ...
+        logger.info(f"--- Executing VolumeCatalystPro v7.0 ---")
         cfg = self.config
         if not self.price_data:
             self._log_final_decision("HOLD", "No price data available.")
