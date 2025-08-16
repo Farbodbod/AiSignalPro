@@ -1,4 +1,4 @@
-# backend/engines/strategies/volume_reversal.py (v4.1 - Final Verified Edition)
+# backend/engines/strategies/volume_reversal.py (v4.2 - Deep Validation Edition)
 
 import logging
 from typing import Dict, Any, Optional, Tuple, List
@@ -6,19 +6,18 @@ from .base_strategy import BaseStrategy
 
 logger = logging.getLogger(__name__)
 
-# Note: The filename is volume_reversal.py, but the class name is WhaleReversal.
 class WhaleReversal(BaseStrategy):
     """
-    WhaleReversal - (v4.1 - Final Verified Edition)
+    WhaleReversal - (v4.2 - Deep Validation Edition)
     --------------------------------------------------------------
-    This version includes a robust data availability check to prevent crashes
-    and integrates the professional logging system for full transparency into
-    its advanced Reversal Strength Score (RSS) engine. This is the final,
-    stable version.
+    This version implements a deep validation check at the start of the signal
+    process to ensure all critical nested data paths exist, making the strategy
+    exceptionally robust against incomplete analysis data.
     """
     strategy_name: str = "WhaleReversal"
 
     default_config = {
+        # ... default_config remains unchanged ...
         "min_reversal_score": 7,
         "weights": {
             "whale_intensity": 4,
@@ -37,7 +36,8 @@ class WhaleReversal(BaseStrategy):
     }
 
     def _calculate_reversal_strength_score(self, direction: str, whales_data: Dict, bollinger_data: Dict) -> tuple[int, List[str]]:
-        # This internal calculation logic remains unchanged.
+        # This helper remains unchanged.
+        # ... (کد این تابع بدون تغییر است)
         weights = self.config.get('weights', {})
         score = 0
         confirmations = []
@@ -67,8 +67,10 @@ class WhaleReversal(BaseStrategy):
         
         return score, confirmations
 
+
     def _find_tested_level(self, cfg: Dict, structure_data: Dict, atr_data: Dict) -> Optional[Tuple[str, float]]:
-        # This internal logic remains unchanged.
+        # This helper is now guaranteed to receive valid data.
+        # ... (کد این تابع بدون تغییر است)
         price_low, price_high = self.price_data.get('low'), self.price_data.get('high')
         atr_value = atr_data['values'].get('atr')
         if not all([price_low, price_high, atr_value]): return None, None
@@ -92,28 +94,44 @@ class WhaleReversal(BaseStrategy):
             self._log_final_decision("HOLD", "No price data available.")
             return None
         
-        # --- 1. Data Availability Check (This block prevents the crash) ---
+        # --- 1. Shallow Data Availability Check ---
         required_names = ['structure', 'whales', 'patterns', 'atr', 'bollinger']
         indicators = {name: self.get_indicator(name) for name in required_names}
         missing_indicators = [name for name, data in indicators.items() if data is None]
         
-        data_is_ok = not missing_indicators
-        reason = f"Invalid/Missing indicators: {', '.join(missing_indicators)}" if not data_is_ok else "All required indicator data is valid."
-        self._log_criteria("Data Availability", data_is_ok, reason)
-        if not data_is_ok:
+        if missing_indicators:
+            reason = f"Invalid/Missing indicators: {', '.join(missing_indicators)}"
+            self._log_criteria("Data Availability", False, reason)
             self._log_final_decision("HOLD", reason)
             return None
 
-        # --- 2. Primary Trigger (Find a Tested Key Level) ---
+        # ✅ NEW: Deep Validation Check (Your excellent suggestion)
+        critical_paths = {
+            'structure': ['analysis', 'proximity'],
+            'atr': ['values', 'atr'],
+            'whales': ['analysis']
+        }
+        for name, path in critical_paths.items():
+            obj = indicators[name]
+            for key in path:
+                obj = obj.get(key) if isinstance(obj, dict) else None
+                if obj is None:
+                    reason = f"Indicator '{name}' is missing critical nested data: '{'.join(path)}'"
+                    self._log_criteria("Deep Data Validation", False, reason)
+                    self._log_final_decision("HOLD", reason)
+                    return None
+        self._log_criteria("Deep Data Validation", True, "All critical nested data paths are valid.")
+        
+        # --- All subsequent logic can now safely assume data is valid ---
         signal_direction, tested_level = self._find_tested_level(cfg, indicators['structure'], indicators['atr'])
         
+        # ... (بقیه کد check_signal بدون تغییر باقی می‌ماند) ...
         trigger_is_ok = signal_direction is not None
         self._log_criteria("Primary Trigger (Level Test)", trigger_is_ok, "No key S/R level was tested by the current price action.")
         if not trigger_is_ok:
             self._log_final_decision("HOLD", "No valid entry trigger.")
             return None
         
-        # --- 3. Reversal Strength Score Check ---
         reversal_score, score_details = self._calculate_reversal_strength_score(signal_direction, indicators['whales'], indicators['bollinger'])
         min_score = cfg.get('min_reversal_score', 7)
         score_is_ok = reversal_score >= min_score
@@ -124,7 +142,6 @@ class WhaleReversal(BaseStrategy):
             return None
         confirmations = {"reversal_strength_score": reversal_score, "score_details": ", ".join(score_details)}
 
-        # --- 4. HTF Confirmation Filter ---
         htf_ok = True
         if cfg.get('htf_confirmation_enabled'):
             opposite_direction = "SELL" if signal_direction == "BUY" else "BUY"
@@ -135,7 +152,6 @@ class WhaleReversal(BaseStrategy):
             return None
         confirmations['htf_filter'] = "Passed (No strong opposing HTF trend)"
 
-        # --- 5. Risk Management & Final Checks ---
         entry_price = self.price_data.get('close')
         atr_value = indicators['atr'].get('values', {}).get('atr', entry_price * 0.01)
         stop_loss = tested_level - (atr_value * cfg.get('atr_sl_multiplier', 1.5)) if signal_direction == "BUY" else tested_level + (atr_value * cfg.get('atr_sl_multiplier', 1.5))
@@ -150,7 +166,6 @@ class WhaleReversal(BaseStrategy):
             return None
         confirmations['rr_check'] = f"Passed (R/R: {risk_params.get('risk_reward_ratio')})"
         
-        # --- 6. Final Decision ---
         self._log_final_decision(signal_direction, "All criteria met. Whale Reversal signal confirmed.")
 
         return { "direction": signal_direction, "entry_price": entry_price, **risk_params, "confirmations": confirmations }
