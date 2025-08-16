@@ -1,4 +1,4 @@
-# strategies/pivot_reversal.py (v4.0 - Enhanced Logging Edition)
+# strategies/pivot_reversal.py (v4.1 - CRITICAL CONFIG FIX & Logging)
 
 import logging
 from typing import Dict, Any, Optional, List
@@ -7,15 +7,17 @@ from .base_strategy import BaseStrategy
 
 logger = logging.getLogger(__name__)
 
+# This class was causing the crash. The name in the file is pivot_reversal.py.
+# The class name inside is PivotConfluenceSniper, which is confusing but we will fix the logic.
 class PivotConfluenceSniper(BaseStrategy):
     """
-    PivotConfluenceSniper - (v4.0 - Enhanced Logging Edition)
+    PivotConfluenceSniper - (v4.1 - CRITICAL CONFIG FIX & Logging)
     ----------------------------------------------------------------------------
-    This version integrates the new logging mechanism from BaseStrategy for
-    transparent, step-by-step decision tracking, while preserving all advanced
-    adaptive and multi-target features.
+    This version fixes a critical bug in the configuration loading logic that
+    caused default parameters to be ignored. It also integrates the new
+    professional logging system for full transparency.
     """
-    strategy_name: str = "PivotConfluenceSniper"
+    strategy_name: str = "PivotConfluenceSniper" # We can correct this to PivotReversal later.
 
     default_config = {
         "default_params": {
@@ -39,10 +41,22 @@ class PivotConfluenceSniper(BaseStrategy):
     }
 
     def _get_signal_config(self) -> Dict[str, Any]:
-        """ Loads the hierarchical config based on the current timeframe. """
-        base_configs = self.config.get("default_params", {})
+        """ ✅ CRITICAL FIX: Smartly merges configs instead of replacing them. """
+        # 1. Start with the complete list of defaults FROM THE CODE.
+        code_defaults = self.default_config.get("default_params", {})
+        
+        # 2. Get the user's specific overrides from config.json (via self.config).
+        json_defaults = self.config.get("default_params", {})
+        
+        # 3. Merge them: user's settings will override the code's defaults if they exist.
+        base_configs = {**code_defaults, **json_defaults}
+        
+        # 4. Apply timeframe-specific overrides on top of the merged base.
         tf_overrides = self.config.get("timeframe_overrides", {}).get(self.primary_timeframe, {})
-        return {**base_configs, **tf_overrides}
+        final_config = {**base_configs, **tf_overrides}
+
+        logger.debug(f"Final config for {self.primary_timeframe}: {final_config}")
+        return final_config
 
     def _find_best_confluence_zone(self, direction: str, cfg: Dict, pivots_data: Dict, structure_data: Dict) -> Optional[Dict]:
         # This helper's logic remains unchanged.
@@ -64,16 +78,16 @@ class PivotConfluenceSniper(BaseStrategy):
         return min(confluence_zones, key=lambda x: x['distance_to_price']) if confluence_zones else None
 
     def check_signal(self) -> Optional[Dict[str, Any]]:
+        # This is the refactored version with full logging.
         cfg = self._get_signal_config()
         if not self.price_data:
             self._log_final_decision("HOLD", "No price data available.")
             return None
         
-        # --- 1. Data Availability Check ---
         required_names = ['pivots', 'structure', 'stochastic', 'cci', 'atr', 'patterns']
         indicators = {name: self.get_indicator(name) for name in required_names}
         missing_indicators = [name for name, data in indicators.items() if data is None]
-
+        
         data_is_ok = not missing_indicators
         reason = f"Invalid/Missing indicators: {', '.join(missing_indicators)}" if not data_is_ok else "All required indicator data is valid."
         self._log_criteria("Data Availability", data_is_ok, reason)
@@ -81,7 +95,6 @@ class PivotConfluenceSniper(BaseStrategy):
             self._log_final_decision("HOLD", reason)
             return None
 
-        # --- 2. Primary Trigger (Zone Identification & Price Test) ---
         buy_zone = self._find_best_confluence_zone("BUY", cfg, indicators['pivots'], indicators['structure'])
         sell_zone = self._find_best_confluence_zone("SELL", cfg, indicators['pivots'], indicators['structure'])
         price_low, price_high = self.price_data.get('low'), self.price_data.get('high')
@@ -91,15 +104,13 @@ class PivotConfluenceSniper(BaseStrategy):
         elif sell_zone and price_high and price_high >= sell_zone['price']: signal_direction, zone_info = "SELL", sell_zone
         
         trigger_is_ok = signal_direction is not None
-        self._log_criteria("Primary Trigger (Zone Test)", trigger_is_ok, 
-                           "No confluence zone found or price did not test the zone.")
+        self._log_criteria("Primary Trigger (Zone Test)", trigger_is_ok, "No confluence zone found or price did not test the zone.")
         if not trigger_is_ok:
             self._log_final_decision("HOLD", "No valid entry trigger.")
             return None
         
         confirmations = {"confluence_zone": f"Pivot {zone_info['pivot_name']} & Structure (Str: {zone_info['structure_zone']['strength']})"}
 
-        # --- 3. Confirmation Funnel ---
         stoch_k = indicators['stochastic'].get('values', {}).get('k')
         cci_val = indicators['cci'].get('values', {}).get('value')
         
@@ -130,7 +141,6 @@ class PivotConfluenceSniper(BaseStrategy):
             return None
         confirmations['htf_filter'] = "Passed (No strong opposing trend)"
 
-        # --- 4. Risk Management & Final Checks ---
         entry_price = self.price_data.get('close')
         atr_value = indicators['atr'].get('values', {}).get('atr', entry_price * 0.01)
         structure_level = zone_info['structure_zone']['price']
@@ -138,7 +148,6 @@ class PivotConfluenceSniper(BaseStrategy):
             
         risk_params = self._calculate_smart_risk_management(entry_price, signal_direction, stop_loss)
         
-        # Target Adjustment & Final RR Check
         pivots_data = indicators['pivots']
         pivot_p_level = next((lvl['price'] for lvl in pivots_data.get('levels', []) if lvl['level'] == 'P'), None)
         if pivot_p_level and risk_params.get('targets'):
@@ -150,14 +159,12 @@ class PivotConfluenceSniper(BaseStrategy):
             self._log_criteria("Target Adjustment", True, f"TP1 was adjusted to the Central Pivot level ({pivot_p_level:.5f}).")
 
         rr_is_ok = risk_params and risk_params.get("risk_reward_ratio", 0) >= cfg['min_rr_ratio']
-        self._log_criteria("Final R/R Check", rr_is_ok, 
-                           f"Failed R/R check after adjustments. (Calculated: {risk_params.get('risk_reward_ratio', 0)}, Required: {cfg['min_rr_ratio']})")
+        self._log_criteria("Final R/R Check", rr_is_ok, f"Failed R/R check. (Calculated: {risk_params.get('risk_reward_ratio', 0)}, Required: {cfg['min_rr_ratio']})")
         if not rr_is_ok:
             self._log_final_decision("HOLD", "Final R/R check failed.")
             return None
         confirmations['rr_check'] = f"Passed (R/R to TP1: {risk_params.get('risk_reward_ratio')})"
         
-        # --- 5. Final Decision ---
         self._log_final_decision(signal_direction, "All criteria met. Pivot Sniper signal confirmed.")
 
         return { "direction": signal_direction, "entry_price": entry_price, **risk_params, "confirmations": confirmations }
