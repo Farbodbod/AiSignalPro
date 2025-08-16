@@ -1,22 +1,35 @@
-# strategies/base_strategy.py (v5.2 - Enhanced Logging Edition)
+# strategies/base_strategy.py (v5.4 - CRITICAL BUG FIX)
 
 from abc import ABC, abstractmethod
 from typing import Dict, Any, Optional, List, Union
 import logging
 import pandas as pd
-
-def get_indicator_config_key(name: str, params: Dict[str, Any]) -> str:
-    param_str = "_".join(f"{k}_{v}" for k, v in sorted(params.items()) if k not in ['enabled', 'dependencies', 'name'])
-    return f"{name}_{param_str}" if param_str else name
+import json # ✅ FIX: Import json
 
 logger = logging.getLogger(__name__)
 
+# ✅ CRITICAL FIX: This function MUST be identical to the one in indicator_analyzer.py
+def get_indicator_config_key(name: str, params: Dict[str, Any]) -> str:
+    """Creates a unique, stable, and hashable key from parameters, immune to type/order issues."""
+    try:
+        filtered_params = {k: v for k, v in params.items() if k not in ['enabled', 'dependencies', 'name']}
+        if not filtered_params:
+            return name
+        # Using json.dumps ensures a canonical representation (e.g., {"a":1, "b":2} is same as {"b":2, "a":1})
+        param_str = json.dumps(filtered_params, sort_keys=True, separators=(',', ':'))
+        return f"{name}_{param_str}"
+    except TypeError:
+        # Fallback for non-serializable objects, though less ideal
+        param_str = "_".join(f"{k}_{v}" for k, v in sorted(params.items()) if k not in ['enabled', 'dependencies', 'name'])
+        return f"{name}_{param_str}" if param_str else name
+
 class BaseStrategy(ABC):
     """
-    World-Class Base Strategy Framework - (v5.2 - Enhanced Logging Edition)
+    World-Class Base Strategy Framework - (v5.4 - CRITICAL BUG FIX)
     ---------------------------------------------------------------------------------------------
-    This version includes a new logging mechanism to track the decision-making
-    process of each strategy in detail.
+    This version fixes a critical bug where the get_indicator_config_key function was
+    inconsistent with the one in indicator_analyzer, causing data lookup failures.
+    It also uses professional logging levels (DEBUG/INFO).
     """
     strategy_name: str = "BaseStrategy"
     default_config: Dict[str, Any] = {}
@@ -34,21 +47,14 @@ class BaseStrategy(ABC):
         self.indicator_configs = self.config.get('indicator_configs', {})
         self.log_details = {"criteria_results": []}
         
-        # ✅ FIX: This line was missing or incorrect in your old file
         self.name = config.get('name', self.strategy_name)
 
     def _log_criteria(self, criterion_name: str, status: bool, reason: str = ""):
-        """
-        Logs the result of a single criterion check.
-        """
         self.log_details["criteria_results"].append({"criterion": criterion_name, "status": status, "reason": reason})
         status_emoji = "✅" if status else "❌"
-        logger.info(f"{status_emoji} Criterion Check: {self.name} - '{criterion_name}': {status}. Reason: {reason}")
+        logger.debug(f"{status_emoji} Criterion Check: {self.name} - '{criterion_name}': {status}. Reason: {reason}")
     
     def _log_final_decision(self, signal: str, reason: str = ""):
-        """
-        Logs the final decision of the strategy.
-        """
         self.log_details["final_signal"] = signal
         self.log_details["final_reason"] = reason
         signal_emoji = "🟢" if signal == "BUY" else "🔴" if signal == "SELL" else "⚪"
@@ -72,6 +78,7 @@ class BaseStrategy(ABC):
         if "error" in indicator_data.get("status", "").lower() or "failed" in indicator_data.get("status", "").lower(): return None
         return indicator_data
     
+    # --- All other helper methods (_get_candlestick_confirmation, etc.) remain unchanged ---
     def _get_candlestick_confirmation(self, direction: str, min_reliability: str = 'Medium') -> Optional[Dict[str, Any]]:
         pattern_analysis = self.get_indicator('patterns')
         if not pattern_analysis or 'analysis' not in pattern_analysis: return None
