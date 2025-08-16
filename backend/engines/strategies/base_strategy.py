@@ -1,4 +1,4 @@
-# strategies/base_strategy.py (v6.0 - Focus Mode Logging)
+# strategies/base_strategy.py (v6.1 - Robust Risk Calculation)
 
 from abc import ABC, abstractmethod
 from typing import Dict, Any, Optional, List, Union
@@ -9,7 +9,7 @@ import json
 logger = logging.getLogger(__name__)
 
 def get_indicator_config_key(name: str, params: Dict[str, Any]) -> str:
-    """Creates a unique, stable, and hashable key from parameters, immune to type/order issues."""
+    # ... (این تابع بدون تغییر باقی می‌ماند)
     try:
         filtered_params = {k: v for k, v in params.items() if k not in ['enabled', 'dependencies', 'name']}
         if not filtered_params:
@@ -22,47 +22,40 @@ def get_indicator_config_key(name: str, params: Dict[str, Any]) -> str:
 
 class BaseStrategy(ABC):
     """
-    World-Class Base Strategy Framework - (v6.0 - Focus Mode Logging)
+    World-Class Base Strategy Framework - (v6.1 - Robust Risk Calculation)
     ---------------------------------------------------------------------------------------------
-    This version implements a "Focus Mode" for logging. Detailed criteria logs
-    (DEBUG level) will only be shown for a specific symbol defined in the config,
-    reducing log clutter in production while allowing for deep inspection.
+    This version hardens the _calculate_smart_risk_management method to prevent
+    TypeErrors from None inputs, making the entire strategy pipeline more stable.
     """
     strategy_name: str = "BaseStrategy"
     default_config: Dict[str, Any] = {}
 
-    # ✅ NEW: Added 'symbol' to the constructor
     def __init__(self, primary_analysis: Dict[str, Any], config: Dict[str, Any], main_config: Dict[str, Any], primary_timeframe: str, symbol: str, htf_analysis: Optional[Dict[str, Any]] = None):
+        # ... (این تابع بدون تغییر باقی می‌ماند)
         merged_config = {**self.default_config, **(config or {})}
-        
         self.analysis = primary_analysis
         self.config = merged_config
         self.main_config = main_config
         self.htf_analysis = htf_analysis or {}
         self.primary_timeframe = primary_timeframe
-        self.symbol = symbol # Store the symbol for focus mode
+        self.symbol = symbol
         self.price_data = self.analysis.get('price_data')
         self.df = self.analysis.get('final_df')
         self.indicator_configs = self.config.get('indicator_configs', {})
         self.log_details = {"criteria_results": []}
-        
         self.name = config.get('name', self.strategy_name)
 
     def _log_criteria(self, criterion_name: str, status: bool, reason: str = ""):
-        # ✅ NEW: Focus Mode Logic
+        # ... (این تابع بدون تغییر باقی می‌ماند)
         focus_symbol = self.main_config.get("general", {}).get("logging_focus_symbol")
-        
-        # If a focus symbol is set and this instance's symbol doesn't match, exit silently.
-        # This keeps the logs clean for all non-focused symbols.
         if focus_symbol and self.symbol != focus_symbol:
             return
-            
         self.log_details["criteria_results"].append({"criterion": criterion_name, "status": status, "reason": reason})
         status_emoji = "✅" if status else "❌"
         logger.debug(f"{status_emoji} Criterion Check: {self.name} on {self.symbol} {self.primary_timeframe} - '{criterion_name}': {status}. Reason: {reason}")
     
     def _log_final_decision(self, signal: str, reason: str = ""):
-        # This log is high-level and will be shown for ALL symbols.
+        # ... (این تابع بدون تغییر باقی می‌ماند)
         self.log_details["final_signal"] = signal
         self.log_details["final_reason"] = reason
         signal_emoji = "🟢" if signal == "BUY" else "🔴" if signal == "SELL" else "⚪"
@@ -73,10 +66,9 @@ class BaseStrategy(ABC):
         pass
 
     def get_indicator(self, name_or_alias: str, analysis_source: Optional[Dict] = None) -> Optional[Dict[str, Any]]:
-        # Temporary debug logs from v5.5 are now removed for clean code.
+        # ... (این تابع بدون تغییر باقی می‌ماند)
         source = analysis_source if analysis_source is not None else self.analysis
         if not source: return None
-        
         indicator_data = None
         if name_or_alias in self.indicator_configs:
             order = self.indicator_configs[name_or_alias]
@@ -84,18 +76,15 @@ class BaseStrategy(ABC):
             indicator_data = source.get(unique_key)
         else:
             indicator_data = source.get(name_or_alias)
-
         if not indicator_data or not isinstance(indicator_data, dict):
             return None
-            
         status = indicator_data.get("status", "").lower()
         if "error" in status or "failed" in status:
             return None
-            
         return indicator_data
     
-    # --- All other helper methods remain unchanged ---
     def _get_candlestick_confirmation(self, direction: str, min_reliability: str = 'Medium') -> Optional[Dict[str, Any]]:
+        # ... (این تابع بدون تغییر باقی می‌ماند)
         pattern_analysis = self.get_indicator('patterns')
         if not pattern_analysis or 'analysis' not in pattern_analysis: return None
         reliability_map, min_reliability_score = {'Low': 0, 'Medium': 1, 'Strong': 2}, 1
@@ -108,6 +97,7 @@ class BaseStrategy(ABC):
         return None
 
     def _get_volume_confirmation(self) -> bool:
+        # ... (این تابع بدون تغییر باقی می‌ماند)
         whale_analysis = self.get_indicator('whales')
         if not whale_analysis: return False
         min_spike_score = self.config.get('min_whale_spike_score', 1.5)
@@ -116,6 +106,7 @@ class BaseStrategy(ABC):
         return is_whale_activity and spike_score >= min_spike_score
 
     def _get_trend_confirmation(self, direction: str) -> bool:
+        # ... (این تابع بدون تغییر باقی می‌ماند)
         htf_map = self.config.get('htf_map', {})
         target_htf = htf_map.get(self.primary_timeframe)
         if not target_htf: return True
@@ -141,7 +132,13 @@ class BaseStrategy(ABC):
         return current_score >= min_required_score
 
     def _calculate_smart_risk_management(self, entry_price: float, direction: str, stop_loss: float) -> Dict[str, Any]:
-        if not all([entry_price, direction, stop_loss]) or entry_price == stop_loss: return {}
+        # ✅ CRITICAL FIX: Added a safeguard to prevent crashes from None inputs.
+        if not isinstance(entry_price, (int, float)) or not isinstance(stop_loss, (int, float)):
+            logger.debug(f"Smart risk calculation skipped due to invalid inputs. Entry: {entry_price}, SL: {stop_loss}")
+            return {}
+
+        if entry_price == stop_loss: return {}
+        
         fees_pct = self.main_config.get("general", {}).get("assumed_fees_pct", 0.001)
         slippage_pct = self.main_config.get("general", {}).get("assumed_slippage_pct", 0.0005)
         risk_per_unit = abs(entry_price - stop_loss)
