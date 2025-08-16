@@ -1,4 +1,4 @@
-# backend/engines/strategies/volume_catalyst.py (v4.0 - Defensive Logging Edition)
+# backend/engines/strategies/volume_catalyst.py (v4.1 - Final Verified Edition)
 
 import logging
 from typing import Dict, Any, Optional, Tuple, List
@@ -8,11 +8,12 @@ logger = logging.getLogger(__name__)
 
 class VolumeCatalystPro(BaseStrategy):
     """
-    VolumeCatalystPro - (v4.0 - Defensive Logging Edition)
+    VolumeCatalystPro - (v4.1 - Final Verified Edition)
     ------------------------------------------------------------------
-    This version fixes a critical crash bug by adding a robust data availability
-    check. It also integrates the new professional logging system for full
-    transparency into its advanced Breakout Quality Score (BQS) engine.
+    This version includes a robust data availability check to prevent crashes
+    and integrates the professional logging system for full transparency into
+    its advanced Breakout Quality Score (BQS) engine. This is the final,
+    stable version.
     """
     strategy_name: str = "VolumeCatalystPro"
 
@@ -84,7 +85,7 @@ class VolumeCatalystPro(BaseStrategy):
             self._log_final_decision("HOLD", "No price data available.")
             return None
         
-        # --- 1. Data Availability Check (CRITICAL FIX) ---
+        # --- 1. Data Availability Check (This block prevents the crash) ---
         required_names = ['structure', 'whales', 'cci', 'keltner_channel', 'bollinger', 'atr']
         indicators = {name: self.get_indicator(name) for name in required_names}
         missing_indicators = [name for name, data in indicators.items() if data is None]
@@ -131,7 +132,6 @@ class VolumeCatalystPro(BaseStrategy):
         keltner_mid = indicators['keltner_channel'].get('values', {}).get('middle_band')
         atr_value = indicators['atr'].get('values', {}).get('atr')
         
-        # This check is important before SL calculation
         if not all([entry_price, keltner_mid, atr_value]):
             self._log_final_decision("HOLD", "Missing data for Stop Loss calculation (Keltner/ATR).")
             return None
