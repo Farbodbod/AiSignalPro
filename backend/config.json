@@ -85,7 +85,9 @@
     "williams_r": { "enabled": true, "period": 14 },
     "zigzag": { "enabled": true, "deviation": 3.0 },
     "fibonacci": { "enabled": true, "dependencies": { "zigzag": { "deviation": 3.0 } } },
-    "divergence": { "enabled": true, "dependencies": { "rsi": { "period": 14 }, "zigzag": { "deviation": 3.0 } } }
+    "divergence": { "enabled": true, "dependencies": { "rsi": { "period": 14 }, "zigzag": { "deviation": 3.0 } } },
+    "obv": { "enabled": true },
+    "mfi": { "enabled": true, "period": 14 }
   },
   "strategies": {
     "TrendRiderPro": {
