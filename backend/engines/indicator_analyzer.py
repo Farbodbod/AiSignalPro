@@ -1,4 +1,4 @@
-# engines/indicator_analyzer.py (v12.1 - Diagnostic Edition)
+# engines/indicator_analyzer.py (v13.0 - High-Clarity Logging Edition)
 
 import pandas as pd
 import logging
@@ -11,8 +11,8 @@ from .indicators import *
 
 logger = logging.getLogger(__name__)
 
-# --- get_indicator_config_key function remains unchanged ---
 def get_indicator_config_key(name: str, params: Dict[str, Any]) -> str:
+    """Creates a unique, stable, and hashable key from parameters, immune to type/order issues."""
     try:
         filtered_params = {k: v for k, v in params.items() if k not in ['enabled', 'dependencies', 'name']}
         if not filtered_params:
@@ -26,12 +26,12 @@ def get_indicator_config_key(name: str, params: Dict[str, Any]) -> str:
 
 class IndicatorAnalyzer:
     """
-    The Self-Aware Analysis Engine for AiSignalPro (v12.1 - Diagnostic Edition)
+    The Self-Aware Analysis Engine for AiSignalPro (v13.0 - High-Clarity Logging Edition)
     ------------------------------------------------------------------------------------------
-    This is a temporary version to debug a specific indicator crash. It reverts
-    the analysis logging to be verbose and line-by-line to identify the culprit.
+    This definitive version implements a sophisticated grouped logging system that provides
+    full transparency by logging the complete unique keys for all indicator tasks,
+    solving any and all discrepancies in calculation vs. analysis counts.
     """
-    # --- __init__ and _resolve_dependencies remain unchanged from v12.0 ---
     def __init__(self, df: pd.DataFrame, config: Dict[str, Any], strategies_config: Dict[str, Any], timeframe: str, previous_df: Optional[pd.DataFrame] = None):
         if not isinstance(df, pd.DataFrame):
             raise ValueError("Input must be a pandas DataFrame.")
@@ -57,12 +57,12 @@ class IndicatorAnalyzer:
         
         self._indicator_configs: Dict[str, Dict[str, Any]] = {}
         self._calculation_status: Dict[str, bool] = {}
-        self._standard_indicator_keys: Set[str] = set()
         self._calculation_order: List[str] = self._resolve_dependencies()
         self._indicator_instances: Dict[str, BaseIndicator] = {}
         self.final_df = None
 
     def _resolve_dependencies(self) -> List[str]:
+        # This method's logic is sound and remains unchanged.
         adj: Dict[str, List[str]] = {}
         in_degree: Dict[str, int] = {}
         
@@ -82,8 +82,6 @@ class IndicatorAnalyzer:
         for name, params in self.indicators_config.items():
             if params.get('enabled', False): discover_nodes(name, params)
         
-        self._standard_indicator_keys = set(self._indicator_configs.keys())
-
         for strat_name, strat_params in self.strategies_config.items():
             if strat_params.get('enabled', False):
                 indicator_orders = {**strat_params.get('default_params', {}).get('indicator_configs', {}), **strat_params.get('indicator_configs', {})}
@@ -104,7 +102,6 @@ class IndicatorAnalyzer:
             raise ValueError(f"Circular dependency detected in indicator configurations for {self.timeframe}. Process halted.")
         return sorted_order
 
-    # --- calculate_all method remains unchanged from v12.0 ---
     def calculate_all(self) -> 'IndicatorAnalyzer':
         if self.previous_df is not None and not self.previous_df.empty:
             combined_df = pd.concat([self.previous_df, self.base_df])
@@ -149,56 +146,60 @@ class IndicatorAnalyzer:
         self.final_df = df_for_calc
         
         if success_keys:
-            logger.info(f"✅ [Calc OK] {len(success_keys)} indicator tasks completed for {self.timeframe}.")
+            logger.info(f"✅ [Calc OK] {len(success_keys)} tasks completed for {self.timeframe}: {', '.join(success_keys)}")
         if skipped_keys:
-            logger.warning(f"⏭️ [Calc SKIPPED] {len(skipped_keys)} indicator tasks for {self.timeframe}: {', '.join(skipped_keys)}")
+            logger.warning(f"⏭️ [Calc SKIPPED] {len(skipped_keys)} tasks for {self.timeframe}: {', '.join(skipped_keys)}")
         if failed_keys:
-            logger.error(f"❌ [Calc FAIL] {len(failed_keys)} indicator tasks for {self.timeframe}: {', '.join(failed_keys)}")
+            logger.error(f"❌ [Calc FAIL] {len(failed_keys)} tasks for {self.timeframe}: {', '.join(failed_keys)}")
             
         return self
 
     def get_analysis_summary(self) -> Dict[str, Any]:
         if self.final_df is None or len(self.final_df) < 2: 
-            return {"status": "Insufficient Data"}
+            return {"status": "Insufficient Data", "analysis": {}, "key_levels": {}}
         
         summary: Dict[str, Any] = {"status": "OK", "final_df": self.final_df.tail(self.recalc_buffer + 50)}
         try:
-            last_closed_candle = self.final_df.iloc[-2]
+            last_closed_candle = self.df.iloc[-2]
             summary['price_data'] = { 'open': last_closed_candle.get('open'), 'high': last_closed_candle.get('high'), 'low': last_closed_candle.get('low'), 'close': last_closed_candle.get('close'), 'volume': last_closed_candle.get('volume'), 'timestamp': str(last_closed_candle.name) }
         except IndexError:
-            return {"status": "Insufficient Data after calculations"}
+            return {"status": "Insufficient Data after calculations", "analysis": {}, "key_levels": {}}
         
-        logger.info(f"--- Starting Analysis for {self.timeframe} ({len(self._indicator_instances)} indicators) ---")
+        logger.info(f"--- Starting Analysis for {self.timeframe} ({len(self._indicator_instances)} tasks) ---")
         
-        # ✅ DEBUG REFACTOR: Reverted to line-by-line logging to find the crashing indicator
+        success_keys, warning_keys, error_keys, skipped_keys = [], [], [], []
+
         for unique_key, instance in self._indicator_instances.items():
             if not self._calculation_status.get(unique_key, False):
-                logger.warning(f"⏭️ Analysis SKIP: '{unique_key}' was skipped because its calculation failed.")
+                skipped_keys.append(unique_key)
                 continue
 
-            start_time = time.time()
             try:
                 analysis = instance.analyze()
                 simple_name = self._indicator_configs[unique_key]['name']
                 is_globally_enabled = self.indicators_config.get(simple_name, {}).get('enabled')
                 
                 if analysis and analysis.get("status") == "OK":
-                    elapsed = time.time() - start_time
-                    logger.info(f"✅ Analysis OK: '{unique_key}' in {elapsed:.4f}s")
+                    success_keys.append(unique_key)
                     summary[unique_key] = analysis
                     if is_globally_enabled:
                          summary[simple_name] = analysis
                 else:
-                    status_msg = analysis.get('status', 'Unknown non-OK status') if analysis else 'None'
-                    elapsed = time.time() - start_time
-                    logger.warning(f"⚠️ Analysis FAIL (Graceful): '{unique_key}' in {elapsed:.4f}s. Status: '{status_msg}'")
+                    status_msg = analysis.get('status', 'No Data') if analysis else 'None'
+                    warning_keys.append(f"{unique_key}({status_msg})")
                     if is_globally_enabled:
                         summary[simple_name] = {"status": "Analysis Failed or No Data"}
             except Exception as e:
-                # This is where the ValueError is happening. The traceback will now pinpoint the exact indicator.
-                elapsed = time.time() - start_time
-                logger.error(f"❌ Analysis CRASH: '{unique_key}' in {elapsed:.4f}s. Reason: {e}", exc_info=True)
+                error_keys.append(f"{unique_key}({e})")
                 summary[unique_key] = {"status": f"Analysis Error: {e}"}
         
-        logger.info(f"--- Analysis for {self.timeframe} complete. ---")
+        if success_keys:
+            logger.info(f"✅ [Analysis OK] {len(success_keys)} tasks analyzed for {self.timeframe}: {', '.join(success_keys)}")
+        if skipped_keys:
+            logger.warning(f"⏭️ [Analysis SKIPPED] {len(skipped_keys)} tasks for {self.timeframe} (due to calc failure): {', '.join(skipped_keys)}")
+        if warning_keys:
+            logger.warning(f"⚠️ [Analysis WARN] {len(warning_keys)} tasks for {self.timeframe} had issues: {', '.join(warning_keys)}")
+        if error_keys:
+            logger.error(f"❌ [Analysis CRASH] {len(error_keys)} tasks for {self.timeframe}: {', '.join(error_keys)}")
+            
         return summary
