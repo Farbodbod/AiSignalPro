@@ -1,35 +1,31 @@
-# strategies/base_strategy.py (v5.4 - CRITICAL BUG FIX)
+# strategies/base_strategy.py (v5.5 - Ultimate Debug Edition)
 
 from abc import ABC, abstractmethod
 from typing import Dict, Any, Optional, List, Union
 import logging
 import pandas as pd
-import json # ✅ FIX: Import json
+import json
 
 logger = logging.getLogger(__name__)
 
-# ✅ CRITICAL FIX: This function MUST be identical to the one in indicator_analyzer.py
 def get_indicator_config_key(name: str, params: Dict[str, Any]) -> str:
     """Creates a unique, stable, and hashable key from parameters, immune to type/order issues."""
     try:
         filtered_params = {k: v for k, v in params.items() if k not in ['enabled', 'dependencies', 'name']}
         if not filtered_params:
             return name
-        # Using json.dumps ensures a canonical representation (e.g., {"a":1, "b":2} is same as {"b":2, "a":1})
         param_str = json.dumps(filtered_params, sort_keys=True, separators=(',', ':'))
         return f"{name}_{param_str}"
     except TypeError:
-        # Fallback for non-serializable objects, though less ideal
         param_str = "_".join(f"{k}_{v}" for k, v in sorted(params.items()) if k not in ['enabled', 'dependencies', 'name'])
         return f"{name}_{param_str}" if param_str else name
 
 class BaseStrategy(ABC):
     """
-    World-Class Base Strategy Framework - (v5.4 - CRITICAL BUG FIX)
+    World-Class Base Strategy Framework - (v5.5 - Ultimate Debug Edition)
     ---------------------------------------------------------------------------------------------
-    This version fixes a critical bug where the get_indicator_config_key function was
-    inconsistent with the one in indicator_analyzer, causing data lookup failures.
-    It also uses professional logging levels (DEBUG/INFO).
+    This version adds deep debug logging to the get_indicator method to resolve
+    a complex data lookup paradox.
     """
     strategy_name: str = "BaseStrategy"
     default_config: Dict[str, Any] = {}
@@ -65,8 +61,14 @@ class BaseStrategy(ABC):
         pass
 
     def get_indicator(self, name_or_alias: str, analysis_source: Optional[Dict] = None) -> Optional[Dict[str, Any]]:
+        # ✅ DEBUG LOG: Log entry point and arguments
+        logger.debug(f"get_indicator called for '{name_or_alias}' on timeframe {self.primary_timeframe}")
+        
         source = analysis_source if analysis_source is not None else self.analysis
-        if not source: return None
+        if not source:
+            logger.debug(f"get_indicator for '{name_or_alias}' returning None because analysis source is missing.")
+            return None
+        
         indicator_data = None
         if name_or_alias in self.indicator_configs:
             order = self.indicator_configs[name_or_alias]
@@ -74,11 +76,21 @@ class BaseStrategy(ABC):
             indicator_data = source.get(unique_key)
         else:
             indicator_data = source.get(name_or_alias)
-        if not indicator_data or not isinstance(indicator_data, dict): return None
-        if "error" in indicator_data.get("status", "").lower() or "failed" in indicator_data.get("status", "").lower(): return None
+
+        if not indicator_data or not isinstance(indicator_data, dict):
+            # ✅ DEBUG LOG: Log the exact reason for returning None
+            logger.debug(f"get_indicator for '{name_or_alias}' returning None. Reason: Data not found in source or not a dictionary. Keys in source: {list(source.keys())}")
+            return None
+            
+        status = indicator_data.get("status", "").lower()
+        if "error" in status or "failed" in status:
+            # ✅ DEBUG LOG: Log the exact reason for returning None
+            logger.debug(f"get_indicator for '{name_or_alias}' returning None. Reason: Indicator status was '{status}'.")
+            return None
+            
         return indicator_data
     
-    # --- All other helper methods (_get_candlestick_confirmation, etc.) remain unchanged ---
+    # --- All other helper methods remain unchanged ---
     def _get_candlestick_confirmation(self, direction: str, min_reliability: str = 'Medium') -> Optional[Dict[str, Any]]:
         pattern_analysis = self.get_indicator('patterns')
         if not pattern_analysis or 'analysis' not in pattern_analysis: return None
