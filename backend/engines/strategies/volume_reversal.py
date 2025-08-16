@@ -1,4 +1,4 @@
-# backend/engines/strategies/volume_reversal.py (v4.2 - Deep Validation Edition)
+# backend/engines/strategies/volume_reversal.py (v4.3 - SyntaxError FIX)
 
 import logging
 from typing import Dict, Any, Optional, Tuple, List
@@ -8,16 +8,15 @@ logger = logging.getLogger(__name__)
 
 class WhaleReversal(BaseStrategy):
     """
-    WhaleReversal - (v4.2 - Deep Validation Edition)
+    WhaleReversal - (v4.3 - SyntaxError FIX)
     --------------------------------------------------------------
-    This version implements a deep validation check at the start of the signal
-    process to ensure all critical nested data paths exist, making the strategy
-    exceptionally robust against incomplete analysis data.
+    This version fixes a critical SyntaxError in the deep validation logging
+    message, allowing the application to start correctly.
     """
     strategy_name: str = "WhaleReversal"
 
     default_config = {
-        # ... default_config remains unchanged ...
+        # ... (بخش کانفیگ بدون تغییر باقی می‌ماند) ...
         "min_reversal_score": 7,
         "weights": {
             "whale_intensity": 4,
@@ -35,19 +34,16 @@ class WhaleReversal(BaseStrategy):
         }
     }
 
+    # --- تمام توابع کمکی (_calculate_reversal_strength_score, _find_tested_level) بدون تغییر باقی می‌مانند ---
     def _calculate_reversal_strength_score(self, direction: str, whales_data: Dict, bollinger_data: Dict) -> tuple[int, List[str]]:
-        # This helper remains unchanged.
-        # ... (کد این تابع بدون تغییر است)
         weights = self.config.get('weights', {})
         score = 0
         confirmations = []
-
         if whales_data['analysis'].get('is_whale_activity'):
             spike_score = whales_data['analysis'].get('spike_score', 0)
             if spike_score > 2.5:
                 score += weights.get('whale_intensity', 4)
                 confirmations.append(f"High Whale Intensity (Score: {spike_score:.2f})")
-
         candle = self.price_data
         wick = (candle['high'] - candle['low'])
         body = abs(candle['close'] - candle['open'])
@@ -56,36 +52,25 @@ class WhaleReversal(BaseStrategy):
                 (direction == "SELL" and (candle['high'] - candle['close']) > (wick * 0.66)):
                 score += weights.get('rejection_wick', 3)
                 confirmations.append("Strong Rejection Wick")
-        
         if not bollinger_data['analysis'].get('is_in_squeeze', True):
             score += weights.get('volatility_context', 2)
             confirmations.append("High Volatility Context")
-
         if self._get_candlestick_confirmation(direction, min_reliability='Strong'):
             score += weights.get('candlestick_pattern', 2)
             confirmations.append("Strong Candlestick Pattern")
-        
         return score, confirmations
-
-
     def _find_tested_level(self, cfg: Dict, structure_data: Dict, atr_data: Dict) -> Optional[Tuple[str, float]]:
-        # This helper is now guaranteed to receive valid data.
-        # ... (کد این تابع بدون تغییر است)
         price_low, price_high = self.price_data.get('low'), self.price_data.get('high')
         atr_value = atr_data['values'].get('atr')
         if not all([price_low, price_high, atr_value]): return None, None
-        
         proximity_zone = atr_value * cfg.get('adaptive_proximity_multiplier', 0.5)
-
         prox_analysis = structure_data['analysis'].get('proximity', {})
         nearest_support = prox_analysis.get('nearest_support_details', {}).get('price')
         if nearest_support and (price_low - nearest_support) < proximity_zone:
             return "BUY", nearest_support
-
         nearest_resistance = prox_analysis.get('nearest_resistance_details', {}).get('price')
         if nearest_resistance and (nearest_resistance - price_high) < proximity_zone:
             return "SELL", nearest_resistance
-            
         return None, None
 
     def check_signal(self) -> Optional[Dict[str, Any]]:
@@ -94,7 +79,6 @@ class WhaleReversal(BaseStrategy):
             self._log_final_decision("HOLD", "No price data available.")
             return None
         
-        # --- 1. Shallow Data Availability Check ---
         required_names = ['structure', 'whales', 'patterns', 'atr', 'bollinger']
         indicators = {name: self.get_indicator(name) for name in required_names}
         missing_indicators = [name for name, data in indicators.items() if data is None]
@@ -105,7 +89,6 @@ class WhaleReversal(BaseStrategy):
             self._log_final_decision("HOLD", reason)
             return None
 
-        # ✅ NEW: Deep Validation Check (Your excellent suggestion)
         critical_paths = {
             'structure': ['analysis', 'proximity'],
             'atr': ['values', 'atr'],
@@ -116,16 +99,16 @@ class WhaleReversal(BaseStrategy):
             for key in path:
                 obj = obj.get(key) if isinstance(obj, dict) else None
                 if obj is None:
-                    reason = f"Indicator '{name}' is missing critical nested data: '{'.join(path)}'"
+                    # ✅ SYNTAX FIX: Corrected the f-string formatting
+                    reason = f"Indicator '{name}' is missing critical nested data: '{'.'.join(path)}'"
                     self._log_criteria("Deep Data Validation", False, reason)
                     self._log_final_decision("HOLD", reason)
                     return None
         self._log_criteria("Deep Data Validation", True, "All critical nested data paths are valid.")
         
-        # --- All subsequent logic can now safely assume data is valid ---
+        # --- بقیه کد check_signal بدون تغییر باقی می‌ماند ---
         signal_direction, tested_level = self._find_tested_level(cfg, indicators['structure'], indicators['atr'])
         
-        # ... (بقیه کد check_signal بدون تغییر باقی می‌ماند) ...
         trigger_is_ok = signal_direction is not None
         self._log_criteria("Primary Trigger (Level Test)", trigger_is_ok, "No key S/R level was tested by the current price action.")
         if not trigger_is_ok:
