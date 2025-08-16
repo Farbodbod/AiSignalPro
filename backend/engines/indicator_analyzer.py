@@ -1,10 +1,10 @@
-# engines/indicator_analyzer.py (v11.0 - Grouped Logging Edition)
+# engines/indicator_analyzer.py (v12.0 - Ultimate Transparency Edition)
 
 import pandas as pd
 import logging
 import time
 import json
-from typing import Dict, Any, Type, List, Optional
+from typing import Dict, Any, Type, List, Optional, Set
 from collections import deque
 
 from .indicators import *
@@ -26,9 +26,10 @@ def get_indicator_config_key(name: str, params: Dict[str, Any]) -> str:
 
 class IndicatorAnalyzer:
     """
-    The Self-Aware Analysis Engine for AiSignalPro (v11.0 - Grouped Logging Edition)
-    This version refactors the logging mechanism to group indicator calculation and
-    analysis results into clean, concise summaries, drastically reducing log volume.
+    The Self-Aware Analysis Engine for AiSignalPro (v12.0 - Ultimate Transparency Edition)
+    ------------------------------------------------------------------------------------------
+    This version enhances logging to differentiate between standard indicators and
+    custom variations requested by strategies, providing ultimate clarity on calculation counts.
     """
     def __init__(self, df: pd.DataFrame, config: Dict[str, Any], strategies_config: Dict[str, Any], timeframe: str, previous_df: Optional[pd.DataFrame] = None):
         if not isinstance(df, pd.DataFrame):
@@ -55,12 +56,13 @@ class IndicatorAnalyzer:
         
         self._indicator_configs: Dict[str, Dict[str, Any]] = {}
         self._calculation_status: Dict[str, bool] = {}
+        # ✅ NEW: A set to track which indicator keys are "standard" vs. "special requests"
+        self._standard_indicator_keys: Set[str] = set()
         self._calculation_order: List[str] = self._resolve_dependencies()
         self._indicator_instances: Dict[str, BaseIndicator] = {}
         self.final_df = None
 
     def _resolve_dependencies(self) -> List[str]:
-        # This method remains unchanged as its logic is sound.
         adj: Dict[str, List[str]] = {}
         in_degree: Dict[str, int] = {}
         
@@ -77,14 +79,21 @@ class IndicatorAnalyzer:
                 adj[dep_key].append(unique_key)
                 in_degree[unique_key] += 1
 
+        # Discover all "standard" indicators from the main config first
         for name, params in self.indicators_config.items():
             if params.get('enabled', False): discover_nodes(name, params)
+        
+        # ✅ NEW: Store the keys of all standard indicators discovered so far
+        self._standard_indicator_keys = set(self._indicator_configs.keys())
+
+        # Now, discover any additional "special request" indicators from strategies
         for strat_name, strat_params in self.strategies_config.items():
             if strat_params.get('enabled', False):
                 indicator_orders = {**strat_params.get('default_params', {}).get('indicator_configs', {}), **strat_params.get('indicator_configs', {})}
                 for alias, order in indicator_orders.items():
                     discover_nodes(order['name'], order['params'])
 
+        # Topological sort remains the same
         queue = deque([key for key, degree in in_degree.items() if degree == 0])
         sorted_order = []
         while queue:
@@ -106,15 +115,16 @@ class IndicatorAnalyzer:
         else:
             df_for_calc = self.base_df.copy()
 
-        logger.info(f"--- Starting Calculations for {self.timeframe} ({len(self._calculation_order)} indicators) ---")
+        logger.info(f"--- Starting Calculations for {self.timeframe} ({len(self._calculation_order)} tasks) ---")
         
-        # ✅ REFACTOR: Collect results instead of logging individually
+        # ✅ REFACTOR: Store unique_key for a more accurate success count
         success_keys, failed_keys, skipped_keys = [], [], []
 
         for unique_key in self._calculation_order:
             config = self._indicator_configs[unique_key]
             name, params = config['name'], config['params']
             
+            # Dependency check logic is unchanged
             dependencies_ok = True
             failed_dependency = ""
             dep_configs = params.get('dependencies', {})
@@ -136,20 +146,20 @@ class IndicatorAnalyzer:
                 df_for_calc = instance.df
                 self._indicator_instances[unique_key] = instance
                 self._calculation_status[unique_key] = True
-                success_keys.append(name) # Use simple name for cleaner logs
+                success_keys.append(unique_key) # Store the full unique key
             except Exception as e:
                 self._calculation_status[unique_key] = False
                 failed_keys.append(f"{unique_key}({e})")
         
         self.final_df = df_for_calc
         
-        # ✅ REFACTOR: Log the collected summaries
+        # ✅ REFACTOR: Log the count of successful TASKS
         if success_keys:
-            logger.info(f"✅ [Calc OK] {len(success_keys)} indicators calculated for {self.timeframe}: {', '.join(sorted(list(set(success_keys))))}")
+            logger.info(f"✅ [Calc OK] {len(success_keys)} indicator tasks completed for {self.timeframe}.")
         if skipped_keys:
-            logger.warning(f"⏭️ [Calc SKIPPED] {len(skipped_keys)} indicators for {self.timeframe}: {', '.join(skipped_keys)}")
+            logger.warning(f"⏭️ [Calc SKIPPED] {len(skipped_keys)} indicator tasks for {self.timeframe}: {', '.join(skipped_keys)}")
         if failed_keys:
-            logger.error(f"❌ [Calc FAIL] {len(failed_keys)} indicators for {self.timeframe}: {', '.join(failed_keys)}")
+            logger.error(f"❌ [Calc FAIL] {len(failed_keys)} indicator tasks for {self.timeframe}: {', '.join(failed_keys)}")
             
         return self
 
@@ -164,10 +174,11 @@ class IndicatorAnalyzer:
         except IndexError:
             return {"status": "Insufficient Data after calculations"}
         
-        logger.info(f"--- Starting Analysis for {self.timeframe} ({len(self._indicator_instances)} indicators) ---")
+        logger.info(f"--- Starting Analysis for {self.timeframe} ({len(self._indicator_instances)} tasks) ---")
         
-        # ✅ REFACTOR: Collect analysis results instead of logging individually
-        success_keys, warning_keys, error_keys, skipped_keys = [], [], [], []
+        success_keys, warning_keys, error_keys, skipped_keys = [], [], []
+        # ✅ NEW: A list to hold the names of successfully analyzed special requests
+        special_request_success_keys = []
 
         for unique_key, instance in self._indicator_instances.items():
             simple_name = self._indicator_configs[unique_key]['name']
@@ -185,6 +196,10 @@ class IndicatorAnalyzer:
                     summary[unique_key] = analysis
                     if is_globally_enabled:
                          summary[simple_name] = analysis
+                    
+                    # ✅ NEW: Check if this was a special request and log it
+                    if unique_key not in self._standard_indicator_keys:
+                        special_request_success_keys.append(unique_key)
                 else:
                     status_msg = analysis.get('status', 'No Data') if analysis else 'None'
                     warning_keys.append(f"{simple_name}({status_msg})")
@@ -194,12 +209,17 @@ class IndicatorAnalyzer:
                 error_keys.append(f"{simple_name}({e})")
                 summary[unique_key] = {"status": f"Analysis Error: {e}"}
         
-        # ✅ REFACTOR: Log the collected summaries
+        # ✅ REFACTOR: Log summaries with the new special request note
         unique_success = sorted(list(set(success_keys)))
         if unique_success:
-            logger.info(f"✅ [Analysis OK] {len(unique_success)} indicators analyzed for {self.timeframe}: {', '.join(unique_success)}")
+            logger.info(f"✅ [Analysis OK] {len(unique_success)} unique indicators analyzed for {self.timeframe}: {', '.join(unique_success)}")
+        
+        # ✅ NEW: Add the clarifying note about special requests
+        if special_request_success_keys:
+            logger.info(f"💡 [Analysis NOTE] {len(special_request_success_keys)} additional custom indicator variations were also analyzed for specific strategies: {', '.join(special_request_success_keys)}")
+
         if skipped_keys:
-            logger.info(f"⏭️ [Analysis SKIPPED] {len(skipped_keys)} indicators for {self.timeframe} (due to calc failure).")
+            logger.info(f"⏭️ [Analysis SKIPPED] {len(set(skipped_keys))} unique indicators for {self.timeframe} (due to calc failure).")
         if warning_keys:
             logger.warning(f"⚠️ [Analysis WARN] {len(warning_keys)} indicators for {self.timeframe} had issues: {', '.join(warning_keys)}")
         if error_keys:
