@@ -1,4 +1,4 @@
-# engines/master_orchestrator.py (v27.0 - HTF Quality Gate Edition)
+# engines/master_orchestrator.py (v28.0 - Focus Mode Integration)
 
 import pandas as pd
 import logging
@@ -14,10 +14,10 @@ logger = logging.getLogger(__name__)
 
 class MasterOrchestrator:
     """
-    The strategic mastermind of AiSignalPro (v27.0 - HTF Quality Gate Edition).
-    This version re-implements a critical safety feature: an HTF Quality Gate.
-    It ensures that strategies only use higher-timeframe analysis if it's based
-    on a sufficient number of data rows, preventing signals based on weak data.
+    The strategic mastermind of AiSignalPro (v28.0 - Focus Mode Integration).
+    This version is updated to pass the symbol name to each strategy instance,
+    enabling the BaseStrategy's "Focus Mode" logging feature. It also includes
+    the HTF Quality Gate.
     """
     def __init__(self, config: Dict[str, Any]):
         self.config = config
@@ -29,12 +29,12 @@ class MasterOrchestrator:
         ]
         self.gemini_handler = GeminiHandler()
         self.last_gemini_call_times: Dict[str, float] = {}
-        self.ENGINE_VERSION = "27.0.0"
+        self.ENGINE_VERSION = "28.0.0"
         
-        logger.info(f"MasterOrchestrator v{self.ENGINE_VERSION} (HTF Quality Gate Engine) initialized.")
+        logger.info(f"MasterOrchestrator v{self.ENGINE_VERSION} (Focus Mode Integration) initialized.")
 
     def run_analysis_pipeline(self, df: pd.DataFrame, symbol: str, timeframe: str, previous_df: Optional[pd.DataFrame] = None) -> Tuple[Optional[Dict[str, Any]], Optional[pd.DataFrame]]:
-        """ This method remains unchanged. """
+        # This method remains unchanged.
         try:
             indicators_config = self.config.get('indicators', {})
             strategies_config = self.config.get('strategies', {})
@@ -49,9 +49,6 @@ class MasterOrchestrator:
             return None, previous_df
 
     def run_strategy_pipeline(self, primary_analysis: Dict[str, Any], htf_context: Dict[str, Any], symbol: str, timeframe: str) -> Optional[Dict[str, Any]]:
-        """
-        Phase 2: Now includes the HTF Quality Gate.
-        """
         valid_signals = []
         strategies_config = self.config.get('strategies', {})
 
@@ -71,22 +68,21 @@ class MasterOrchestrator:
 
                     if target_htf and target_htf != timeframe:
                         if target_htf in htf_context:
-                            # ✅ NEW FEATURE: HTF Quality Gate
                             temp_htf_analysis = htf_context[target_htf]
                             min_rows = self.config.get("general", {}).get("min_rows_for_htf", 400)
                             htf_df = temp_htf_analysis.get('final_df')
 
                             if htf_df is not None and len(htf_df) >= min_rows:
-                                htf_analysis = temp_htf_analysis # It's valid, use it.
+                                htf_analysis = temp_htf_analysis
                                 logger.debug(f"Strategy '{strategy_name}' on {timeframe} accessed valid HTF data ({len(htf_df)} rows) for {target_htf}.")
                             else:
-                                # The HTF analysis is invalid because it's based on too few candles.
                                 logger.warning(f"Strategy '{strategy_name}' on {timeframe} ignored HTF data for '{target_htf}' because it had too few rows ({len(htf_df) if htf_df is not None else 0} < {min_rows}).")
-                                htf_analysis = {} # Treat it as if it doesn't exist.
+                                htf_analysis = {}
                         else:
                             logger.warning(f"Strategy '{strategy_name}' on {timeframe} requires HTF data for '{target_htf}', but it was not found in the global context.")
 
-                instance = sc(primary_analysis, strategy_config, self.config, timeframe, htf_analysis=htf_analysis)
+                # ✅ CHANGE: Pass the 'symbol' to the strategy constructor
+                instance = sc(primary_analysis, strategy_config, self.config, timeframe, symbol, htf_analysis=htf_analysis)
                 signal = instance.check_signal()
                 if signal:
                     signal['strategy_name'] = instance.strategy_name
@@ -118,15 +114,14 @@ class MasterOrchestrator:
 
     def _find_super_signal(self, signals: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
         # This function remains unchanged.
-        min_confluence = self.config.get("general", {}).get("min_confluence_for_super_signal", 3)
-        buy_signals = [s for s in signals if s['direction'] == 'BUY']
-        sell_signals = [s for s in signals if s['direction'] == 'SELL']
+        min_confluence, buy_signals, sell_signals = self.config.get("general", {}).get("min_confluence_for_super_signal", 3), [], []
+        for s in signals:
+            if s['direction'] == 'BUY': buy_signals.append(s)
+            elif s['direction'] == 'SELL': sell_signals.append(s)
         
         super_direction, contributing_strategies = (None, [])
-        if len(buy_signals) >= min_confluence:
-            super_direction, contributing_strategies = ("BUY", buy_signals)
-        elif len(sell_signals) >= min_confluence:
-            super_direction, contributing_strategies = ("SELL", sell_signals)
+        if len(buy_signals) >= min_confluence: super_direction, contributing_strategies = ("BUY", buy_signals)
+        elif len(sell_signals) >= min_confluence: super_direction, contributing_strategies = ("SELL", sell_signals)
         
         if not super_direction: return None
             
@@ -134,12 +129,7 @@ class MasterOrchestrator:
         contributing_strategies.sort(key=lambda s: priority_list.index(s.get('strategy_name', '')) if s.get('strategy_name', '') in priority_list else 99)
         primary_signal = contributing_strategies[0]
         
-        super_signal = {
-            "strategy_name": "SuperSignal Confluence", "direction": super_direction,
-            "entry_price": primary_signal['entry_price'], "stop_loss": primary_signal['stop_loss'],
-            "targets": primary_signal['targets'], "risk_reward_ratio": primary_signal['risk_reward_ratio'],
-            "confirmations": { "confluence_count": len(contributing_strategies), "contributing_strategies": [s['strategy_name'] for s in contributing_strategies] }
-        }
+        super_signal = { "strategy_name": "SuperSignal Confluence", "direction": super_direction, "entry_price": primary_signal['entry_price'], "stop_loss": primary_signal['stop_loss'], "targets": primary_signal['targets'], "risk_reward_ratio": primary_signal['risk_reward_ratio'], "confirmations": { "confluence_count": len(contributing_strategies), "contributing_strategies": [s['strategy_name'] for s in contributing_strategies] } }
         logger.info(f"🔥🔥 SUPER SIGNAL FOUND! {super_direction} with {len(contributing_strategies)} confirmations. 🔥🔥")
         return super_signal
 
@@ -150,18 +140,13 @@ class MasterOrchestrator:
         if (time.time() - last_call_time) < cooldown:
             logger.info(f"Gemini call for {symbol} skipped due to cooldown.")
             return {"signal": "N/A", "confidence_percent": 0, "explanation_fa": "AI analysis skipped due to per-symbol cooldown."}
-        prompt_context = {
-            "signal_details": {k: v for k, v in signal.items() if k not in ['confirmations', 'strategy_name']},
-            "system_strategy": signal.get('strategy_name'),
-            "system_reasons": signal.get('confirmations')
-        }
+        prompt_context = { "signal_details": {k: v for k, v in signal.items() if k not in ['confirmations', 'strategy_name']}, "system_strategy": signal.get('strategy_name'), "system_reasons": signal.get('confirmations') }
         json_data = json.dumps(prompt_context, indent=2, ensure_ascii=False, default=str)
         prompt_template = f"""
 Act as a professional algorithmic trading signal validator...
-""" # Prompt is truncated for brevity but remains unchanged
+""" # Prompt truncated for brevity
         self.last_gemini_call_times[symbol] = time.time()
         ai_response = self.gemini_handler.query(prompt_template)
-
         if not isinstance(ai_response, dict) or not all(k in ai_response for k in ['signal', 'confidence_percent', 'explanation_fa']):
             logger.critical(f"FATAL: AI response validation failed. Response format was invalid. Response: {ai_response}")
             return None
@@ -169,3 +154,4 @@ Act as a professional algorithmic trading signal validator...
             logger.warning(f"AI VETOED the signal for {symbol}. System signal was {signal['direction']}. Reason: {ai_response.get('explanation_fa')}")
             return None 
         return ai_response
+
