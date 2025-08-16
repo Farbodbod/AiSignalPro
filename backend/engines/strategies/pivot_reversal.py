@@ -1,21 +1,22 @@
+# strategies/pivot_reversal.py (v4.0 - Enhanced Logging Edition)
+
 import logging
 from typing import Dict, Any, Optional, List
+
 from .base_strategy import BaseStrategy
 
 logger = logging.getLogger(__name__)
 
 class PivotConfluenceSniper(BaseStrategy):
     """
-    PivotConfluenceSniper - (v3.0 - Adaptive Confluence Engine)
+    PivotConfluenceSniper - (v4.0 - Enhanced Logging Edition)
     ----------------------------------------------------------------------------
-    This world-class version evolves into an adaptive special operations commander. It features:
-    1.  Timeframe-Aware Intelligence: Uses different parameters for different timeframes.
-    2.  Advanced HTF Context Engine: Intelligently gauges the strength of opposing trends.
-    3.  Multi-Target Profit System: Sets tactical and strategic profit targets.
+    This version integrates the new logging mechanism from BaseStrategy for
+    transparent, step-by-step decision tracking, while preserving all advanced
+    adaptive and multi-target features.
     """
     strategy_name: str = "PivotConfluenceSniper"
 
-    # ✅ MIRACLE UPGRADE: Hierarchical configuration for timeframe adaptability
     default_config = {
         "default_params": {
             "pivot_levels_to_check": ["R2", "R1", "S1", "S2"],
@@ -38,13 +39,13 @@ class PivotConfluenceSniper(BaseStrategy):
     }
 
     def _get_signal_config(self) -> Dict[str, Any]:
-        """ ✅ New: Loads the hierarchical config based on the current timeframe. """
+        """ Loads the hierarchical config based on the current timeframe. """
         base_configs = self.config.get("default_params", {})
         tf_overrides = self.config.get("timeframe_overrides", {}).get(self.primary_timeframe, {})
         return {**base_configs, **tf_overrides}
 
     def _find_best_confluence_zone(self, direction: str, cfg: Dict, pivots_data: Dict, structure_data: Dict) -> Optional[Dict]:
-        # This helper remains largely the same
+        # This helper's logic remains unchanged.
         current_price = self.price_data.get('close')
         if not current_price: return None
         pivot_levels = {lvl['level']: lvl['price'] for lvl in pivots_data.get('levels', [])}
@@ -64,12 +65,23 @@ class PivotConfluenceSniper(BaseStrategy):
 
     def check_signal(self) -> Optional[Dict[str, Any]]:
         cfg = self._get_signal_config()
-        if not self.price_data: return None
+        if not self.price_data:
+            self._log_final_decision("HOLD", "No price data available.")
+            return None
         
-        indicators = {name: self.get_indicator(name) for name in ['pivots', 'structure', 'stochastic', 'cci', 'atr', 'patterns']}
-        if not all(indicators.values()): return None
+        # --- 1. Data Availability Check ---
+        required_names = ['pivots', 'structure', 'stochastic', 'cci', 'atr', 'patterns']
+        indicators = {name: self.get_indicator(name) for name in required_names}
+        missing_indicators = [name for name, data in indicators.items() if data is None]
 
-        # --- Zone Identification & Price Test ---
+        data_is_ok = not missing_indicators
+        reason = f"Invalid/Missing indicators: {', '.join(missing_indicators)}" if not data_is_ok else "All required indicator data is valid."
+        self._log_criteria("Data Availability", data_is_ok, reason)
+        if not data_is_ok:
+            self._log_final_decision("HOLD", reason)
+            return None
+
+        # --- 2. Primary Trigger (Zone Identification & Price Test) ---
         buy_zone = self._find_best_confluence_zone("BUY", cfg, indicators['pivots'], indicators['structure'])
         sell_zone = self._find_best_confluence_zone("SELL", cfg, indicators['pivots'], indicators['structure'])
         price_low, price_high = self.price_data.get('low'), self.price_data.get('high')
@@ -77,57 +89,75 @@ class PivotConfluenceSniper(BaseStrategy):
         signal_direction, zone_info = None, None
         if buy_zone and price_low and price_low <= buy_zone['price']: signal_direction, zone_info = "BUY", buy_zone
         elif sell_zone and price_high and price_high >= sell_zone['price']: signal_direction, zone_info = "SELL", sell_zone
-        else: return None
+        
+        trigger_is_ok = signal_direction is not None
+        self._log_criteria("Primary Trigger (Zone Test)", trigger_is_ok, 
+                           "No confluence zone found or price did not test the zone.")
+        if not trigger_is_ok:
+            self._log_final_decision("HOLD", "No valid entry trigger.")
+            return None
         
         confirmations = {"confluence_zone": f"Pivot {zone_info['pivot_name']} & Structure (Str: {zone_info['structure_zone']['strength']})"}
 
-        # --- Confirmation Funnel ---
+        # --- 3. Confirmation Funnel ---
         stoch_k = indicators['stochastic'].get('values', {}).get('k')
         cci_val = indicators['cci'].get('values', {}).get('value')
-        if stoch_k is None or cci_val is None: return None
+        
         osc_confirmed = False
-        if signal_direction == "BUY" and stoch_k < cfg['stoch_oversold'] and cci_val < cfg['cci_oversold']: osc_confirmed = True
-        elif signal_direction == "SELL" and stoch_k > cfg['stoch_overbought'] and cci_val > cfg['cci_overbought']: osc_confirmed = True
-        if not osc_confirmed: return None
-        confirmations['oscillator_filter'] = f"Passed (Stoch & CCI agree)"
+        if stoch_k is not None and cci_val is not None:
+            if signal_direction == "BUY" and stoch_k < cfg['stoch_oversold'] and cci_val < cfg['cci_oversold']: osc_confirmed = True
+            elif signal_direction == "SELL" and stoch_k > cfg['stoch_overbought'] and cci_val > cfg['cci_overbought']: osc_confirmed = True
+        self._log_criteria("Oscillator Filter", osc_confirmed, "Stochastic and CCI are not in agreement for a reversal.")
+        if not osc_confirmed:
+            self._log_final_decision("HOLD", "Oscillator filter failed.")
+            return None
+        confirmations['oscillator_filter'] = "Passed (Stoch & CCI agree)"
 
-        if not self._get_candlestick_confirmation(signal_direction, min_reliability='Strong'): return None
+        candlestick_ok = self._get_candlestick_confirmation(signal_direction, min_reliability='Strong') is not None
+        self._log_criteria("Candlestick Filter", candlestick_ok, "No strong reversal candlestick pattern found.")
+        if not candlestick_ok:
+            self._log_final_decision("HOLD", "Candlestick filter failed.")
+            return None
         confirmations['candlestick_filter'] = "Passed (Strong Pattern)"
         
+        htf_ok = True
         if cfg['htf_confirmation_enabled']:
             opposite_direction = "SELL" if signal_direction == "BUY" else "BUY"
-            if self._get_trend_confirmation(opposite_direction): return None
-            confirmations['htf_filter'] = "Passed (No strong opposing trend)"
+            htf_ok = not self._get_trend_confirmation(opposite_direction)
+        self._log_criteria("HTF Filter", htf_ok, "A strong opposing trend was found on the higher timeframe.")
+        if not htf_ok:
+            self._log_final_decision("HOLD", "HTF filter failed.")
+            return None
+        confirmations['htf_filter'] = "Passed (No strong opposing trend)"
 
-        # --- Risk Management & Final Checks ---
+        # --- 4. Risk Management & Final Checks ---
         entry_price = self.price_data.get('close')
-        if not entry_price: return None
-        
         atr_value = indicators['atr'].get('values', {}).get('atr', entry_price * 0.01)
         structure_level = zone_info['structure_zone']['price']
-        
         stop_loss = structure_level - (atr_value * cfg['atr_sl_multiplier']) if signal_direction == "BUY" else structure_level + (atr_value * cfg['atr_sl_multiplier'])
             
         risk_params = self._calculate_smart_risk_management(entry_price, signal_direction, stop_loss)
         
-        if not risk_params or risk_params.get("risk_reward_ratio", 0) < cfg['min_rr_ratio']: return None
-        
-        # ✅ MIRACLE UPGRADE: Multi-Target Profit System
+        # Target Adjustment & Final RR Check
         pivots_data = indicators['pivots']
         pivot_p_level = next((lvl['price'] for lvl in pivots_data.get('levels', []) if lvl['level'] == 'P'), None)
         if pivot_p_level and risk_params.get('targets'):
-            # Set tactical TP1 to the Central Pivot
             risk_params['targets'][0] = pivot_p_level
-            # Recalculate R/R based on this more conservative first target
             risk_amount = abs(entry_price - stop_loss)
             if risk_amount > 1e-9:
                 risk_params['risk_reward_ratio'] = round(abs(pivot_p_level - entry_price) / risk_amount, 2)
             confirmations['target_adjustment'] = "TP1 set to Central Pivot"
-            # Re-check RR after adjustment
-            if risk_params.get("risk_reward_ratio", 0) < cfg['min_rr_ratio']: return None
+            self._log_criteria("Target Adjustment", True, f"TP1 was adjusted to the Central Pivot level ({pivot_p_level:.5f}).")
 
+        rr_is_ok = risk_params and risk_params.get("risk_reward_ratio", 0) >= cfg['min_rr_ratio']
+        self._log_criteria("Final R/R Check", rr_is_ok, 
+                           f"Failed R/R check after adjustments. (Calculated: {risk_params.get('risk_reward_ratio', 0)}, Required: {cfg['min_rr_ratio']})")
+        if not rr_is_ok:
+            self._log_final_decision("HOLD", "Final R/R check failed.")
+            return None
         confirmations['rr_check'] = f"Passed (R/R to TP1: {risk_params.get('risk_reward_ratio')})"
-        logger.info(f"✨✨ [{self.strategy_name}] PIVOT SNIPER SIGNAL CONFIRMED! ✨✨")
+        
+        # --- 5. Final Decision ---
+        self._log_final_decision(signal_direction, "All criteria met. Pivot Sniper signal confirmed.")
 
         return { "direction": signal_direction, "entry_price": entry_price, **risk_params, "confirmations": confirmations }
-
