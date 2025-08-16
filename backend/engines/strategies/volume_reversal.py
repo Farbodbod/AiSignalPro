@@ -1,4 +1,4 @@
-# backend/engines/strategies/volume_reversal.py (v4.0 - Defensive Logging Edition)
+# backend/engines/strategies/volume_reversal.py (v4.1 - Final Verified Edition)
 
 import logging
 from typing import Dict, Any, Optional, Tuple, List
@@ -9,11 +9,12 @@ logger = logging.getLogger(__name__)
 # Note: The filename is volume_reversal.py, but the class name is WhaleReversal.
 class WhaleReversal(BaseStrategy):
     """
-    WhaleReversal - (v4.0 - Defensive Logging Edition)
+    WhaleReversal - (v4.1 - Final Verified Edition)
     --------------------------------------------------------------
-    This version fixes a critical crash bug by adding a robust data availability
-    check. It also integrates the new professional logging system for full
-    transparency into its advanced Reversal Strength Score (RSS) engine.
+    This version includes a robust data availability check to prevent crashes
+    and integrates the professional logging system for full transparency into
+    its advanced Reversal Strength Score (RSS) engine. This is the final,
+    stable version.
     """
     strategy_name: str = "WhaleReversal"
 
@@ -91,7 +92,7 @@ class WhaleReversal(BaseStrategy):
             self._log_final_decision("HOLD", "No price data available.")
             return None
         
-        # --- 1. Data Availability Check (CRITICAL FIX) ---
+        # --- 1. Data Availability Check (This block prevents the crash) ---
         required_names = ['structure', 'whales', 'patterns', 'atr', 'bollinger']
         indicators = {name: self.get_indicator(name) for name in required_names}
         missing_indicators = [name for name, data in indicators.items() if data is None]
@@ -153,3 +154,4 @@ class WhaleReversal(BaseStrategy):
         self._log_final_decision(signal_direction, "All criteria met. Whale Reversal signal confirmed.")
 
         return { "direction": signal_direction, "entry_price": entry_price, **risk_params, "confirmations": confirmations }
+
