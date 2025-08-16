@@ -1,4 +1,4 @@
-# backend/engines/strategies/volume_reversal.py (v5.0 - Ultimate Safeguard Edition)
+# backend/engines/strategies/volume_reversal.py (v5.1 - Ultimate Safeguard Edition)
 
 import logging
 from typing import Dict, Any, Optional, Tuple, List
@@ -8,7 +8,7 @@ logger = logging.getLogger(__name__)
 
 class WhaleReversal(BaseStrategy):
     """
-    WhaleReversal - (v5.0 - Ultimate Safeguard Edition)
+    WhaleReversal - (v5.1 - Ultimate Safeguard Edition)
     --------------------------------------------------------------
     This version incorporates user-provided analysis to fix a critical edge case
     where a nested data value could be None, making helper functions exceptionally robust.
@@ -27,7 +27,6 @@ class WhaleReversal(BaseStrategy):
     }
 
     def _calculate_reversal_strength_score(self, direction: str, whales_data: Dict, bollinger_data: Dict) -> tuple[int, List[str]]:
-        # ... (منطق این تابع بدون تغییر است) ...
         weights = self.config.get('weights', {})
         score = 0
         confirmations = []
@@ -74,13 +73,12 @@ class WhaleReversal(BaseStrategy):
         return None, None
 
     def check_signal(self) -> Optional[Dict[str, Any]]:
-        # ... (بقیه کد که شامل لاگ‌گیری است، دقیقاً مانند نسخه قبلی باقی می‌ماند) ...
-        # --- This part is now simpler as the helpers are self-sufficient ---
         cfg = self.config
         if not self.price_data:
             self._log_final_decision("HOLD", "No price data available.")
             return None
         
+        # --- 1. Data Availability Check ---
         required_names = ['structure', 'whales', 'patterns', 'atr', 'bollinger']
         indicators = {name: self.get_indicator(name) for name in required_names}
         missing_indicators = [name for name, data in indicators.items() if data is None]
@@ -92,6 +90,7 @@ class WhaleReversal(BaseStrategy):
             return None
         self._log_criteria("Data Availability", True, "All required indicators are present.")
 
+        # --- 2. Primary Trigger (Find a Tested Key Level) ---
         signal_direction, tested_level = self._find_tested_level(cfg, indicators['structure'], indicators['atr'])
         
         trigger_is_ok = signal_direction is not None
@@ -100,6 +99,7 @@ class WhaleReversal(BaseStrategy):
             self._log_final_decision("HOLD", "No valid entry trigger.")
             return None
         
+        # --- 3. Reversal Strength Score Check ---
         reversal_score, score_details = self._calculate_reversal_strength_score(signal_direction, indicators['whales'], indicators['bollinger'])
         min_score = cfg.get('min_reversal_score', 7)
         score_is_ok = reversal_score >= min_score
@@ -110,6 +110,7 @@ class WhaleReversal(BaseStrategy):
             return None
         confirmations = {"reversal_strength_score": reversal_score, "score_details": ", ".join(score_details)}
 
+        # --- 4. HTF Confirmation Filter ---
         htf_ok = True
         if cfg.get('htf_confirmation_enabled'):
             opposite_direction = "SELL" if signal_direction == "BUY" else "BUY"
@@ -120,6 +121,7 @@ class WhaleReversal(BaseStrategy):
             return None
         confirmations['htf_filter'] = "Passed (No strong opposing HTF trend)"
 
+        # --- 5. Risk Management & Final Checks ---
         entry_price = self.price_data.get('close')
         atr_value = indicators['atr'].get('values', {}).get('atr', entry_price * 0.01)
         stop_loss = tested_level - (atr_value * cfg.get('atr_sl_multiplier', 1.5)) if signal_direction == "BUY" else tested_level + (atr_value * cfg.get('atr_sl_multiplier', 1.5))
@@ -134,7 +136,7 @@ class WhaleReversal(BaseStrategy):
             return None
         confirmations['rr_check'] = f"Passed (R/R: {risk_params.get('risk_reward_ratio')})"
         
+        # --- 6. Final Decision ---
         self._log_final_decision(signal_direction, "All criteria met. Whale Reversal signal confirmed.")
 
         return { "direction": signal_direction, "entry_price": entry_price, **risk_params, "confirmations": confirmations }
-
