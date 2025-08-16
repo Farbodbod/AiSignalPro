@@ -1,4 +1,4 @@
-# strategies/base_strategy.py (v5.5 - Ultimate Debug Edition)
+# strategies/base_strategy.py (v6.0 - Focus Mode Logging)
 
 from abc import ABC, abstractmethod
 from typing import Dict, Any, Optional, List, Union
@@ -22,15 +22,17 @@ def get_indicator_config_key(name: str, params: Dict[str, Any]) -> str:
 
 class BaseStrategy(ABC):
     """
-    World-Class Base Strategy Framework - (v5.5 - Ultimate Debug Edition)
+    World-Class Base Strategy Framework - (v6.0 - Focus Mode Logging)
     ---------------------------------------------------------------------------------------------
-    This version adds deep debug logging to the get_indicator method to resolve
-    a complex data lookup paradox.
+    This version implements a "Focus Mode" for logging. Detailed criteria logs
+    (DEBUG level) will only be shown for a specific symbol defined in the config,
+    reducing log clutter in production while allowing for deep inspection.
     """
     strategy_name: str = "BaseStrategy"
     default_config: Dict[str, Any] = {}
 
-    def __init__(self, primary_analysis: Dict[str, Any], config: Dict[str, Any], main_config: Dict[str, Any], primary_timeframe: str, htf_analysis: Optional[Dict[str, Any]] = None):
+    # ✅ NEW: Added 'symbol' to the constructor
+    def __init__(self, primary_analysis: Dict[str, Any], config: Dict[str, Any], main_config: Dict[str, Any], primary_timeframe: str, symbol: str, htf_analysis: Optional[Dict[str, Any]] = None):
         merged_config = {**self.default_config, **(config or {})}
         
         self.analysis = primary_analysis
@@ -38,6 +40,7 @@ class BaseStrategy(ABC):
         self.main_config = main_config
         self.htf_analysis = htf_analysis or {}
         self.primary_timeframe = primary_timeframe
+        self.symbol = symbol # Store the symbol for focus mode
         self.price_data = self.analysis.get('price_data')
         self.df = self.analysis.get('final_df')
         self.indicator_configs = self.config.get('indicator_configs', {})
@@ -46,28 +49,33 @@ class BaseStrategy(ABC):
         self.name = config.get('name', self.strategy_name)
 
     def _log_criteria(self, criterion_name: str, status: bool, reason: str = ""):
+        # ✅ NEW: Focus Mode Logic
+        focus_symbol = self.main_config.get("general", {}).get("logging_focus_symbol")
+        
+        # If a focus symbol is set and this instance's symbol doesn't match, exit silently.
+        # This keeps the logs clean for all non-focused symbols.
+        if focus_symbol and self.symbol != focus_symbol:
+            return
+            
         self.log_details["criteria_results"].append({"criterion": criterion_name, "status": status, "reason": reason})
         status_emoji = "✅" if status else "❌"
-        logger.debug(f"{status_emoji} Criterion Check: {self.name} - '{criterion_name}': {status}. Reason: {reason}")
+        logger.debug(f"{status_emoji} Criterion Check: {self.name} on {self.symbol} {self.primary_timeframe} - '{criterion_name}': {status}. Reason: {reason}")
     
     def _log_final_decision(self, signal: str, reason: str = ""):
+        # This log is high-level and will be shown for ALL symbols.
         self.log_details["final_signal"] = signal
         self.log_details["final_reason"] = reason
         signal_emoji = "🟢" if signal == "BUY" else "🔴" if signal == "SELL" else "⚪"
-        logger.info(f"{signal_emoji} Final Decision: {self.name} on {self.primary_timeframe} -> Signal: {signal}. Reason: {reason}")
+        logger.info(f"{signal_emoji} Final Decision: {self.name} on {self.symbol} {self.primary_timeframe} -> Signal: {signal}. Reason: {reason}")
     
     @abstractmethod
     def check_signal(self) -> Optional[Dict[str, Any]]:
         pass
 
     def get_indicator(self, name_or_alias: str, analysis_source: Optional[Dict] = None) -> Optional[Dict[str, Any]]:
-        # ✅ DEBUG LOG: Log entry point and arguments
-        logger.debug(f"get_indicator called for '{name_or_alias}' on timeframe {self.primary_timeframe}")
-        
+        # Temporary debug logs from v5.5 are now removed for clean code.
         source = analysis_source if analysis_source is not None else self.analysis
-        if not source:
-            logger.debug(f"get_indicator for '{name_or_alias}' returning None because analysis source is missing.")
-            return None
+        if not source: return None
         
         indicator_data = None
         if name_or_alias in self.indicator_configs:
@@ -78,14 +86,10 @@ class BaseStrategy(ABC):
             indicator_data = source.get(name_or_alias)
 
         if not indicator_data or not isinstance(indicator_data, dict):
-            # ✅ DEBUG LOG: Log the exact reason for returning None
-            logger.debug(f"get_indicator for '{name_or_alias}' returning None. Reason: Data not found in source or not a dictionary. Keys in source: {list(source.keys())}")
             return None
             
         status = indicator_data.get("status", "").lower()
         if "error" in status or "failed" in status:
-            # ✅ DEBUG LOG: Log the exact reason for returning None
-            logger.debug(f"get_indicator for '{name_or_alias}' returning None. Reason: Indicator status was '{status}'.")
             return None
             
         return indicator_data
@@ -94,7 +98,7 @@ class BaseStrategy(ABC):
     def _get_candlestick_confirmation(self, direction: str, min_reliability: str = 'Medium') -> Optional[Dict[str, Any]]:
         pattern_analysis = self.get_indicator('patterns')
         if not pattern_analysis or 'analysis' not in pattern_analysis: return None
-        reliability_map = {'Low': 0, 'Medium': 1, 'Strong': 2}
+        reliability_map, min_reliability_score = {'Low': 0, 'Medium': 1, 'Strong': 2}, 1
         min_reliability_score = reliability_map.get(min_reliability, 1)
         target_pattern_list = 'bullish_patterns' if direction.upper() == "BUY" else 'bearish_patterns'
         found_patterns = pattern_analysis['analysis'].get(target_pattern_list, [])
@@ -116,9 +120,8 @@ class BaseStrategy(ABC):
         target_htf = htf_map.get(self.primary_timeframe)
         if not target_htf: return True
         if not self.htf_analysis or self.htf_analysis.get('price_data') is None: return False
-        htf_rules = self.config.get('htf_confirmations', {})
+        htf_rules, current_score = self.config.get('htf_confirmations', {}), 0
         min_required_score = htf_rules.get('min_required_score', 1)
-        current_score = 0
         if "adx" in htf_rules:
             rule = htf_rules['adx']
             adx_analysis = self.get_indicator('adx', analysis_source=self.htf_analysis)
@@ -145,7 +148,7 @@ class BaseStrategy(ABC):
         if risk_per_unit < 1e-9: return {}
         total_risk_per_unit = risk_per_unit + (entry_price * fees_pct) + (entry_price * slippage_pct)
         structure_data = self.get_indicator('structure')
-        key_levels = structure_data.get('key_levels', {}) if structure_data else {}
+        key_levels = (structure_data.get('key_levels', {}) if structure_data else {}) or {}
         targets = []
         resistances = [r['price'] for r in key_levels.get('resistances', [])]
         supports = [s['price'] for s in key_levels.get('supports', [])]
@@ -158,3 +161,4 @@ class BaseStrategy(ABC):
         reward_per_unit = abs(targets[0] - entry_price) - (targets[0] * fees_pct)
         actual_rr = round(reward_per_unit / total_risk_per_unit, 2) if total_risk_per_unit > 0 else 0
         return {"stop_loss": round(stop_loss, 5), "targets": [round(t, 5) for t in targets], "risk_reward_ratio": actual_rr}
+
