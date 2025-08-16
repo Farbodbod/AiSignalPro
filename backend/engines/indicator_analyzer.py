@@ -1,4 +1,4 @@
-# engines/indicator_analyzer.py (v13.0 - High-Clarity Logging Edition)
+# engines/indicator_analyzer.py (v13.1 - Final Corrected Version)
 
 import pandas as pd
 import logging
@@ -12,7 +12,7 @@ from .indicators import *
 logger = logging.getLogger(__name__)
 
 def get_indicator_config_key(name: str, params: Dict[str, Any]) -> str:
-    """Creates a unique, stable, and hashable key from parameters, immune to type/order issues."""
+    # ... (این تابع بدون تغییر است)
     try:
         filtered_params = {k: v for k, v in params.items() if k not in ['enabled', 'dependencies', 'name']}
         if not filtered_params:
@@ -26,35 +26,22 @@ def get_indicator_config_key(name: str, params: Dict[str, Any]) -> str:
 
 class IndicatorAnalyzer:
     """
-    The Self-Aware Analysis Engine for AiSignalPro (v13.0 - High-Clarity Logging Edition)
+    The Self-Aware Analysis Engine for AiSignalPro (v13.1 - Final Corrected Version)
     ------------------------------------------------------------------------------------------
-    This definitive version implements a sophisticated grouped logging system that provides
-    full transparency by logging the complete unique keys for all indicator tasks,
-    solving any and all discrepancies in calculation vs. analysis counts.
+    This definitive version uses the correct 'self.final_df' attribute, fixing the
+    AttributeError crash. It includes the high-clarity grouped logging system.
     """
     def __init__(self, df: pd.DataFrame, config: Dict[str, Any], strategies_config: Dict[str, Any], timeframe: str, previous_df: Optional[pd.DataFrame] = None):
+        # ... (این تابع بدون تغییر است)
         if not isinstance(df, pd.DataFrame):
             raise ValueError("Input must be a pandas DataFrame.")
-        
         self.base_df = df
         self.indicators_config = config
         self.strategies_config = strategies_config
         self.timeframe = timeframe
         self.previous_df = previous_df
         self.recalc_buffer = 250 
-        
-        self._indicator_classes: Dict[str, Type[BaseIndicator]] = {
-            'rsi': RsiIndicator, 'macd': MacdIndicator, 'bollinger': BollingerIndicator, 'ichimoku': IchimokuIndicator,
-            'adx': AdxIndicator, 'supertrend': SuperTrendIndicator, 'obv': ObvIndicator, 'stochastic': StochasticIndicator,
-            'cci': CciIndicator, 'mfi': MfiIndicator, 'atr': AtrIndicator, 'patterns': PatternIndicator,
-            'divergence': DivergenceIndicator, 'pivots': PivotPointIndicator, 'structure': StructureIndicator,
-            'whales': WhaleIndicator, 'ema_cross': EMACrossIndicator, 'vwap_bands': VwapBandsIndicator,
-            'chandelier_exit': ChandelierExitIndicator, 'donchian_channel': DonchianChannelIndicator,
-            'fast_ma': FastMAIndicator, 'williams_r': WilliamsRIndicator,
-            'keltner_channel': KeltnerChannelIndicator,
-            'zigzag': ZigzagIndicator, 'fibonacci': FibonacciIndicator,
-        }
-        
+        self._indicator_classes: Dict[str, Type[BaseIndicator]] = { 'rsi': RsiIndicator, 'macd': MacdIndicator, 'bollinger': BollingerIndicator, 'ichimoku': IchimokuIndicator, 'adx': AdxIndicator, 'supertrend': SuperTrendIndicator, 'obv': ObvIndicator, 'stochastic': StochasticIndicator, 'cci': CciIndicator, 'mfi': MfiIndicator, 'atr': AtrIndicator, 'patterns': PatternIndicator, 'divergence': DivergenceIndicator, 'pivots': PivotPointIndicator, 'structure': StructureIndicator, 'whales': WhaleIndicator, 'ema_cross': EMACrossIndicator, 'vwap_bands': VwapBandsIndicator, 'chandelier_exit': ChandelierExitIndicator, 'donchian_channel': DonchianChannelIndicator, 'fast_ma': FastMAIndicator, 'williams_r': WilliamsRIndicator, 'keltner_channel': KeltnerChannelIndicator, 'zigzag': ZigzagIndicator, 'fibonacci': FibonacciIndicator, }
         self._indicator_configs: Dict[str, Dict[str, Any]] = {}
         self._calculation_status: Dict[str, bool] = {}
         self._calculation_order: List[str] = self._resolve_dependencies()
@@ -62,10 +49,9 @@ class IndicatorAnalyzer:
         self.final_df = None
 
     def _resolve_dependencies(self) -> List[str]:
-        # This method's logic is sound and remains unchanged.
+        # ... (این تابع بدون تغییر است)
         adj: Dict[str, List[str]] = {}
         in_degree: Dict[str, int] = {}
-        
         def discover_nodes(indicator_name: str, params: Dict[str, Any]):
             unique_key = get_indicator_config_key(indicator_name, params)
             if unique_key in self._indicator_configs: return
@@ -78,16 +64,13 @@ class IndicatorAnalyzer:
                 dep_key = get_indicator_config_key(dep_name, dep_params)
                 adj[dep_key].append(unique_key)
                 in_degree[unique_key] += 1
-
         for name, params in self.indicators_config.items():
             if params.get('enabled', False): discover_nodes(name, params)
-        
         for strat_name, strat_params in self.strategies_config.items():
             if strat_params.get('enabled', False):
                 indicator_orders = {**strat_params.get('default_params', {}).get('indicator_configs', {}), **strat_params.get('indicator_configs', {})}
                 for alias, order in indicator_orders.items():
                     discover_nodes(order['name'], order['params'])
-
         queue = deque([key for key, degree in in_degree.items() if degree == 0])
         sorted_order = []
         while queue:
@@ -97,41 +80,31 @@ class IndicatorAnalyzer:
                 for neighbor in adj[key]:
                     in_degree[neighbor] -= 1
                     if in_degree[neighbor] == 0: queue.append(neighbor)
-
         if len(sorted_order) != len(self._indicator_configs):
             raise ValueError(f"Circular dependency detected in indicator configurations for {self.timeframe}. Process halted.")
         return sorted_order
 
     def calculate_all(self) -> 'IndicatorAnalyzer':
+        # ... (این تابع بدون تغییر است)
         if self.previous_df is not None and not self.previous_df.empty:
             combined_df = pd.concat([self.previous_df, self.base_df])
             df_for_calc = combined_df[~combined_df.index.duplicated(keep='last')].sort_index()
         else:
             df_for_calc = self.base_df.copy()
-
         logger.info(f"--- Starting Calculations for {self.timeframe} ({len(self._calculation_order)} tasks) ---")
-        
         success_keys, failed_keys, skipped_keys = [], [], []
-
         for unique_key in self._calculation_order:
             config = self._indicator_configs[unique_key]
             name, params = config['name'], config['params']
-            
             dependencies_ok = True
             failed_dependency = ""
             dep_configs = params.get('dependencies', {})
             for dep_name, dep_params in dep_configs.items():
                 dep_key = get_indicator_config_key(dep_name, dep_params)
                 if not self._calculation_status.get(dep_key, False):
-                    dependencies_ok = False
-                    failed_dependency = dep_key
-                    break
-            
+                    dependencies_ok = False; failed_dependency = dep_key; break
             if not dependencies_ok:
-                self._calculation_status[unique_key] = False
-                skipped_keys.append(f"{unique_key}(dep:{failed_dependency})")
-                continue
-            
+                self._calculation_status[unique_key] = False; skipped_keys.append(f"{unique_key}(dep:{failed_dependency})"); continue
             try:
                 instance_params = {**params, 'timeframe': self.timeframe}
                 instance = self._indicator_classes[name](df_for_calc, params=instance_params).calculate()
@@ -140,27 +113,21 @@ class IndicatorAnalyzer:
                 self._calculation_status[unique_key] = True
                 success_keys.append(unique_key)
             except Exception as e:
-                self._calculation_status[unique_key] = False
-                failed_keys.append(f"{unique_key}({e})")
-        
+                self._calculation_status[unique_key] = False; failed_keys.append(f"{unique_key}({e})")
         self.final_df = df_for_calc
-        
-        if success_keys:
-            logger.info(f"✅ [Calc OK] {len(success_keys)} tasks completed for {self.timeframe}: {', '.join(success_keys)}")
-        if skipped_keys:
-            logger.warning(f"⏭️ [Calc SKIPPED] {len(skipped_keys)} tasks for {self.timeframe}: {', '.join(skipped_keys)}")
-        if failed_keys:
-            logger.error(f"❌ [Calc FAIL] {len(failed_keys)} tasks for {self.timeframe}: {', '.join(failed_keys)}")
-            
+        if success_keys: logger.info(f"✅ [Calc OK] {len(success_keys)} indicator tasks completed for {self.timeframe}: {', '.join(success_keys)}")
+        if skipped_keys: logger.warning(f"⏭️ [Calc SKIPPED] {len(skipped_keys)} tasks for {self.timeframe}: {', '.join(skipped_keys)}")
+        if failed_keys: logger.error(f"❌ [Calc FAIL] {len(failed_keys)} tasks for {self.timeframe}: {', '.join(failed_keys)}")
         return self
 
     def get_analysis_summary(self) -> Dict[str, Any]:
+        # ✅ CRITICAL FIX: Uses self.final_df instead of the non-existent self.df
         if self.final_df is None or len(self.final_df) < 2: 
             return {"status": "Insufficient Data", "analysis": {}, "key_levels": {}}
         
         summary: Dict[str, Any] = {"status": "OK", "final_df": self.final_df.tail(self.recalc_buffer + 50)}
         try:
-            last_closed_candle = self.df.iloc[-2]
+            last_closed_candle = self.final_df.iloc[-2]
             summary['price_data'] = { 'open': last_closed_candle.get('open'), 'high': last_closed_candle.get('high'), 'low': last_closed_candle.get('low'), 'close': last_closed_candle.get('close'), 'volume': last_closed_candle.get('volume'), 'timestamp': str(last_closed_candle.name) }
         except IndexError:
             return {"status": "Insufficient Data after calculations", "analysis": {}, "key_levels": {}}
@@ -173,7 +140,6 @@ class IndicatorAnalyzer:
             if not self._calculation_status.get(unique_key, False):
                 skipped_keys.append(unique_key)
                 continue
-
             try:
                 analysis = instance.analyze()
                 simple_name = self._indicator_configs[unique_key]['name']
@@ -193,13 +159,9 @@ class IndicatorAnalyzer:
                 error_keys.append(f"{unique_key}({e})")
                 summary[unique_key] = {"status": f"Analysis Error: {e}"}
         
-        if success_keys:
-            logger.info(f"✅ [Analysis OK] {len(success_keys)} tasks analyzed for {self.timeframe}: {', '.join(success_keys)}")
-        if skipped_keys:
-            logger.warning(f"⏭️ [Analysis SKIPPED] {len(skipped_keys)} tasks for {self.timeframe} (due to calc failure): {', '.join(skipped_keys)}")
-        if warning_keys:
-            logger.warning(f"⚠️ [Analysis WARN] {len(warning_keys)} tasks for {self.timeframe} had issues: {', '.join(warning_keys)}")
-        if error_keys:
-            logger.error(f"❌ [Analysis CRASH] {len(error_keys)} tasks for {self.timeframe}: {', '.join(error_keys)}")
+        if success_keys: logger.info(f"✅ [Analysis OK] {len(success_keys)} tasks analyzed for {self.timeframe}: {', '.join(success_keys)}")
+        if skipped_keys: logger.warning(f"⏭️ [Analysis SKIPPED] {len(skipped_keys)} tasks for {self.timeframe} (due to calc failure): {', '.join(skipped_keys)}")
+        if warning_keys: logger.warning(f"⚠️ [Analysis WARN] {len(warning_keys)} tasks for {self.timeframe} had issues: {', '.join(warning_keys)}")
+        if error_keys: logger.error(f"❌ [Analysis CRASH] {len(error_keys)} tasks for {self.timeframe}: {', '.join(error_keys)}")
             
         return summary
