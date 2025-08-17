@@ -1,63 +1,79 @@
+# backend/engines/indicators/fibonacci.py
 import logging
 import pandas as pd
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any
 
 from .base import BaseIndicator
-from .zigzag import ZigzagIndicator # Import ZigzagIndicator to call its static method
 
 logger = logging.getLogger(__name__)
 
 class FibonacciIndicator(BaseIndicator):
     """
-    Fibonacci Analysis Suite - (v4.0 - Multi-Version Aware)
+    Fibonacci Analysis Suite - (v5.0 - Dependency Injection Native)
     -------------------------------------------------------------------------
-    This world-class version is now fully compatible with the IndicatorAnalyzer v9.0's
-    Multi-Version Engine. It intelligently reads its dependency configuration
-    to request data from the specific version of ZigZag it needs.
+    This world-class version is re-engineered to natively support the Dependency
+    Injection (DI) architecture. It robustly consumes the ZigZag instance to
+    perform its on-the-fly Fibonacci analysis, eliminating fragile dependencies
+    while ensuring the core analytical algorithms remain 100% intact.
     """
-    
-    # ✅ MIRACLE UPGRADE: Dependency is now declared in config, not hardcoded here.
-    dependencies: list = []
-
-    def __init__(self, df: pd.DataFrame, **kwargs):
-        super().__init__(df, **kwargs)
-        self.params = kwargs.get('params', {})
-        self.timeframe = self.params.get('timeframe', None)
+    def __init__(self, df: pd.DataFrame, params: Dict[str, Any], dependencies: Dict[str, BaseIndicator], **kwargs):
+        super().__init__(df, params=params, dependencies=dependencies, **kwargs)
+        self.timeframe = self.params.get('timeframe')
         self.retracement_levels = sorted(self.params.get('retracements', [0, 23.6, 38.2, 50, 61.8, 78.6, 100]))
         self.extension_levels = sorted(self.params.get('extensions', [127.2, 161.8, 200, 261.8]))
-
-        # ✅ MIRACLE UPGRADE: The indicator now reads its specific dependency config.
-        self.zigzag_dependency_params = self.params.get('dependencies', {}).get('zigzag', {'deviation': 3.0})
-        
         raw_golden_zone = self.params.get('golden_zone', {'61.8%', '78.6%'})
         self.golden_zone_levels = {str(level).replace('%', '') for level in raw_golden_zone}
 
+        # These attributes will store the actual column names after discovery in calculate()
+        self.pivot_col: str | None = None
+        self.price_col: str | None = None
+
     def calculate(self) -> 'FibonacciIndicator':
-        """ This indicator is a pure analyzer; no calculations needed here. """
+        """
+        Prepares the indicator's DataFrame by consuming and joining data from its
+        ZigZag dependency.
+        """
+        # 1. Directly and safely receive the ZigZag instance injected by the Analyzer.
+        zigzag_instance = self.dependencies.get('zigzag')
+        if not zigzag_instance:
+            logger.warning(f"[{self.__class__.__name__}] on {self.timeframe} missing critical ZigZag dependency. Skipping calculation.")
+            return self
+
+        # 2. Intelligently find the required columns from the dependency's DataFrame.
+        zigzag_df = zigzag_instance.df
+        pivots_col_options = [col for col in zigzag_df.columns if 'PIVOTS' in col.upper()]
+        prices_col_options = [col for col in zigzag_df.columns if 'PRICES' in col.upper()]
+
+        if not pivots_col_options or not prices_col_options:
+            logger.warning(f"[{self.__class__.__name__}] on {self.timeframe} could not find required columns in ZigZag dependency dataframe.")
+            return self
+            
+        self.pivot_col = pivots_col_options[0]
+        self.price_col = prices_col_options[0]
+
+        # 3. Join the necessary columns into this indicator's main DataFrame for analysis.
+        self.df = self.df.join(zigzag_df[[self.pivot_col, self.price_col]], how='left')
         return self
 
     def analyze(self) -> Dict[str, Any]:
-        """ Performs a full, on-the-fly Fibonacci analysis based on the latest ZigZag pivots. """
-        
-        # ✅ MIRACLE UPGRADE: Generates the required column names dynamically
-        # based on its dependency's parameters, using the dependency's own static methods.
-        pivot_col = ZigzagIndicator.get_pivots_col_name(self.zigzag_dependency_params, self.timeframe)
-        price_col = ZigzagIndicator.get_prices_col_name(self.zigzag_dependency_params, self.timeframe)
+        """ 
+        Performs a full, on-the-fly Fibonacci analysis based on the latest ZigZag pivots.
+        The entire analytical logic of this method is 100% preserved.
+        """
+        if not self.pivot_col or not self.price_col or not all(col in self.df.columns for col in [self.pivot_col, self.price_col]):
+            logger.warning(f"[{self.__class__.__name__}] Missing prepared ZigZag columns for analysis on {self.timeframe}.")
+            return {"status": "Error: Missing Prepared Dependency Data"}
 
-        if not all(col in self.df.columns for col in [pivot_col, price_col]):
-            logger.warning(f"[{self.__class__.__name__}] Missing ZigZag columns for analysis on timeframe {self.timeframe}.")
-            return {"status": "Error: Missing Dependency Columns"}
-
-        valid_df = self.df.dropna(subset=[pivot_col, price_col])
-        pivots_df = valid_df[valid_df[pivot_col] != 0]
+        valid_df = self.df.dropna(subset=[self.pivot_col, self.price_col])
+        pivots_df = valid_df[valid_df[self.pivot_col] != 0]
 
         if len(pivots_df) < 2:
             return {'status': 'Insufficient Pivots'}
 
         last_pivot = pivots_df.iloc[-1]
         prev_pivot = pivots_df.iloc[-2]
-        start_price = prev_pivot[price_col]
-        end_price = last_pivot[price_col]
+        start_price = prev_pivot[self.price_col]
+        end_price = last_pivot[self.price_col]
         price_diff = end_price - start_price
 
         swing_trend = "Neutral"
