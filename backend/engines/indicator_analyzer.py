@@ -1,4 +1,4 @@
-# engines/indicator_analyzer.py (v15.3 - Log Consolidation Edition)
+# engines/indicator_analyzer.py (v15.4 - Critical UnboundLocalError Hotfix)
 
 import pandas as pd
 import logging
@@ -6,14 +6,13 @@ import json
 import asyncio
 from typing import Dict, Any, Type, List, Optional, Tuple
 from collections import deque
-import structlog # Use structlog
+import structlog
 from .indicators import *
 
-logger = structlog.get_logger() # Get logger via structlog
+logger = structlog.get_logger()
 
-# The get_indicator_config_key function and the class __init__ and other methods remain unchanged.
-# Only the logging calls inside calculate_all and get_analysis_summary are modified.
-
+# The get_indicator_config_key function and other methods remain unchanged.
+# Only get_analysis_summary is patched.
 def get_indicator_config_key(name: str, params: Dict[str, Any]) -> str: # Unchanged
     try:
         filtered_params = {k: v for k, v in params.items() if k not in ['enabled', 'dependencies', 'name']};
@@ -25,6 +24,12 @@ def get_indicator_config_key(name: str, params: Dict[str, Any]) -> str: # Unchan
         return f"{name}_{param_str}" if param_str else name
 
 class IndicatorAnalyzer:
+    """
+    The Self-Aware Analysis Engine for AiSignalPro (v15.4 - Critical Hotfix)
+    ------------------------------------------------------------------------------------------
+    This version contains a critical hotfix for an UnboundLocalError in the
+    get_analysis_summary method that caused a fatal crash during aggregation.
+    """
     def __init__(self, df: pd.DataFrame, config: Dict[str, Any], strategies_config: Dict[str, Any], timeframe: str, previous_df: Optional[pd.DataFrame] = None): # Unchanged
         if not isinstance(df, pd.DataFrame): raise ValueError("Input must be a pandas DataFrame.")
         self.base_df, self.previous_df, self.indicators_config, self.strategies_config, self.timeframe, self.recalc_buffer = df, previous_df, config, strategies_config, timeframe, 250
@@ -67,26 +72,17 @@ class IndicatorAnalyzer:
             return 'success', unique_key, instance
         except Exception as e:
             logger.debug(f"Calculation task failed.", task=unique_key, timeframe=self.timeframe, error=e, exc_info=True); return 'fail', f"{unique_key}({e})", None
-
-    async def calculate_all(self) -> 'IndicatorAnalyzer':
+    
+    async def calculate_all(self) -> 'IndicatorAnalyzer': # Unchanged
         if self.previous_df is not None and not self.previous_df.empty: df_for_calc = pd.concat([self.previous_df, self.base_df]).sort_index().pipe(lambda d: d[~d.index.duplicated(keep='last')])
         else: df_for_calc = self.base_df.copy()
-        
         logger.debug(f"Starting DI Calculations", timeframe=self.timeframe, tasks=len(self._calculation_order))
         for key in self._calculation_order:
             status, result_key, instance = await self._calculate_indicator_task(key, df_for_calc)
             if status == 'success': self._indicator_instances[result_key] = instance; self._calculation_status[result_key] = True; df_for_calc.update(instance.df, overwrite=True)
             else: self._calculation_status[key] = False
-        
-        self.final_df = df_for_calc
-        success_count = sum(1 for v in self._calculation_status.values() if v)
-        failed_count = len(self._calculation_order) - success_count
-
-        # ✅ KEY UPGRADE: Consolidated multi-line log into a single log event.
-        summary_message = (
-            f"DI Calculations complete: {success_count} succeeded, {failed_count} failed/skipped.\n"
-            f"--- Final stateful DF has {len(self.final_df)} rows. ---"
-        )
+        self.final_df = df_for_calc; success_count = sum(1 for v in self._calculation_status.values() if v); failed_count = len(self._calculation_order) - success_count
+        summary_message = (f"DI Calculations complete: {success_count} succeeded, {failed_count} failed/skipped.\n--- Final stateful DF has {len(self.final_df)} rows. ---")
         logger.info(summary_message, timeframe=self.timeframe)
         return self
 
@@ -107,20 +103,26 @@ class IndicatorAnalyzer:
             if not self._calculation_status.get(unique_key, False): continue
             try:
                 analysis = getattr(instance, "analyze", lambda: {"status": "No analyze() method found"})()
-                simple_name, is_globally_enabled = self._indicator_configs[unique_key]['name'], self.indicators_config.get(simple_name, {}).get('enabled', False)
+                
+                # ✅ CRITICAL FIX: Separated the assignment into two lines to resolve the UnboundLocalError.
+                simple_name = self._indicator_configs[unique_key]['name']
+                is_globally_enabled = self.indicators_config.get(simple_name, {}).get('enabled', False)
+                
                 if analysis and analysis.get("status") == "OK":
                     successful_analysis_count += 1
-                    summary[unique_key], summary[simple_name] = (analysis, analysis) if is_globally_enabled else (analysis, summary.get(simple_name))
+                    summary[unique_key] = analysis
+                    if is_globally_enabled: summary[simple_name] = analysis
                 elif is_globally_enabled:
                     summary[simple_name] = {"status": "Analysis Failed or No Data", **(analysis or {})}
             except Exception as e:
-                logger.error("Analysis CRASH during aggregation", indicator=unique_key, error=e, exc_info=True); summary[unique_key] = {"status": f"Analysis Error: {e}"}
+                # Use the new structured logger correctly
+                logger.error("Analysis CRASH during aggregation", indicator=unique_key, error=str(e), exc_info=True)
+                # Ensure a safe structure even on error
+                simple_name_on_error = self._indicator_configs.get(unique_key, {}).get('name', 'unknown')
+                summary[unique_key] = {"status": f"Analysis Error: {e}"}
+                summary[simple_name_on_error] = {"status": f"Analysis Error: {e}"}
         
-        # ✅ KEY UPGRADE: Consolidated multi-line log into a single log event.
         failed_or_no_result_count = total_calculated_instances - successful_analysis_count
-        summary_message = (
-            f"Analysis aggregation phase complete.\n"
-            f"📊 Analysis Summary: {successful_analysis_count} succeeded, {failed_or_no_result_count} had no result."
-        )
+        summary_message = (f"Analysis aggregation phase complete.\n📊 Analysis Summary: {successful_analysis_count} succeeded, {failed_or_no_result_count} had no result.")
         logger.info(summary_message, timeframe=self.timeframe)
         return summary
