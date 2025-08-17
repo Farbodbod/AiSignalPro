@@ -1,4 +1,4 @@
-# engines/indicator_analyzer.py (v18.0 - Final Bug Fix)
+# engines/indicator_analyzer.py (v19.0 - Final Harmony Release)
 
 import pandas as pd
 import logging
@@ -35,9 +35,10 @@ def get_indicator_config_key(name: str, params: Dict[str, Any]) -> str:
 
 class IndicatorAnalyzer:
     """
-    The Self-Aware Analysis Engine for AiSignalPro (v18.0 - Final Edition)
+    The Self-Aware Analysis Engine for AiSignalPro (v19.0 - Final Harmony Release)
     ------------------------------------------------------------------------------------------
-    This version includes the final fix for the core dependency resolution bug.
+    This version reverts to a robust, sequential dependency calculation model to ensure
+    stability and prevent critical failures seen in parallel processing attempts.
     """
 
     def __init__(
@@ -87,23 +88,23 @@ class IndicatorAnalyzer:
 
         self._indicator_configs: Dict[str, Dict[str, Any]] = {}
         self._indicator_instances: Dict[str, BaseIndicator] = {}
-        self.adj: Dict[str, List[str]] = {}  # ✅ FIX: Defined as class attributes
-        self.in_degree: Dict[str, int] = {}  # ✅ FIX: Defined as class attributes
         self._calculation_order: List[str] = self._resolve_dependencies()
         self.final_df: Optional[pd.DataFrame] = None
 
     def _resolve_dependencies(self) -> List[str]:
+        adj, in_degree = {}, {}
+
         def discover_nodes(ind_name: str, params: Dict[str, Any]):
             key = get_indicator_config_key(ind_name, params)
             if key in self._indicator_configs:
                 return
             self._indicator_configs[key] = {"name": ind_name, "params": params}
-            self.adj[key], self.in_degree[key] = [], 0  # ✅ FIX: Use self.adj and self.in_degree
+            adj[key], in_degree[key] = [], 0
             for dep_name, dep_params in (params.get("dependencies") or {}).items():
                 discover_nodes(dep_name, dep_params)
                 dep_key = get_indicator_config_key(dep_name, dep_params)
-                self.adj[dep_key].append(key)
-                self.in_degree[key] += 1
+                adj[dep_key].append(key)
+                in_degree[key] += 1
 
         for name, params in self.indicators_config.items():
             if params.get("enabled", False):
@@ -118,121 +119,106 @@ class IndicatorAnalyzer:
                 for alias, order in indicator_orders.items():
                     discover_nodes(order["name"], order["params"])
 
-        queue = deque([k for k, deg in self.in_degree.items() if deg == 0])
+        queue = deque([k for k, deg in in_degree.items() if deg == 0])
         sorted_order: List[str] = []
         while queue:
             key = queue.popleft()
             sorted_order.append(key)
-            for neighbor in self.adj.get(key, []):
-                self.in_degree[neighbor] -= 1
-                if self.in_degree[neighbor] == 0:
+            for neighbor in adj.get(key, []):
+                in_degree[neighbor] -= 1
+                if in_degree[neighbor] == 0:
                     queue.append(neighbor)
 
         if len(sorted_order) != len(self._indicator_configs):
+            circular_keys = set(self._indicator_configs) - set(sorted_order)
             raise ValueError(
-                f"Circular dependency in {self.timeframe}: {set(self._indicator_configs) - set(sorted_order)}"
+                f"Circular dependency in {self.timeframe}: {', '.join(circular_keys)}"
             )
         return sorted_order
 
-    async def _calculate_and_store(self, key: str, base_df: pd.DataFrame) -> None:
-        """Helper to run a single indicator task and store the result."""
-        config = self._indicator_configs[key]
+    async def _calculate_indicator_task(
+        self, unique_key: str, df: pd.DataFrame
+    ) -> Tuple[str, str, Optional[BaseIndicator]]:
+        await asyncio.sleep(0)  # Yield control for better concurrency
+        config = self._indicator_configs[unique_key]
         name, params = config["name"], config["params"]
         cls = self._indicator_classes.get(name)
         if not cls:
-            logger.warning(f"Indicator class not found for key: {key}")
-            return
-
+            return "skipped", f"{unique_key}(class_not_found)", None
+        
         dependencies = {}
         dep_configs = params.get("dependencies", {})
         for dep_name, dep_params in dep_configs.items():
             dep_key = get_indicator_config_key(dep_name, dep_params)
             dep_instance = self._indicator_instances.get(dep_key)
-            
             if not isinstance(dep_instance, BaseIndicator):
-                logger.error(
-                    f"Dependency '{dep_name}' for '{name}' failed to calculate or is missing. Aborting calculation for '{name}'."
+                reason = f"Missing required dependency instance: '{dep_key}'"
+                logger.warning(
+                    f"Skipping calculation for {unique_key} on {self.timeframe}. Reason: {reason}"
                 )
-                self._indicator_instances[key] = None
-                return
-
+                return "fail", f"{unique_key}({reason})", None
             dependencies[dep_name] = dep_instance
 
         try:
             instance_params = {**params, "timeframe": self.timeframe}
             instance = cls(
-                df=base_df.copy(), params=instance_params, dependencies=dependencies
+                df=df.copy(), params=instance_params, dependencies=dependencies
             ).calculate()
-            self._indicator_instances[key] = instance
+            return "success", unique_key, instance
         except Exception as e:
             logger.error(
-                f"Indicator calculation for '{key}' failed: {e}", exc_info=True
+                f"Calculation task for {unique_key} on {self.timeframe} failed during execution: {e}",
+                exc_info=True,
             )
-            self._indicator_instances[key] = None
+            return "fail", f"{unique_key}({e})", None
 
     async def calculate_all(self) -> "IndicatorAnalyzer":
-        df_for_calc = self.base_df.copy()
         if self.previous_df is not None and not self.previous_df.empty:
-            if df_for_calc.index.tz is None and self.previous_df.index.tz is not None:
-                df_for_calc.index = df_for_calc.index.tz_localize(self.previous_df.index.tz)
-            elif df_for_calc.index.tz is not None and self.previous_df.index.tz is None:
-                self.previous_df.index = self.previous_df.index.tz_localize(df_for_calc.index.tz)
+            df_for_calc = pd.concat([self.previous_df, self.base_df]).sort_index().pipe(
+                lambda d: d[~d.index.duplicated(keep="last")]
+            )
+        else:
+            df_for_calc = self.base_df.copy()
 
-            df_for_calc = pd.concat([self.previous_df, df_for_calc])
-            df_for_calc = df_for_calc.sort_index()
-            df_for_calc = df_for_calc[~df_for_calc.index.duplicated(keep="last")]
-        
-        logger.debug(
-            f"Starting Sequential DI Calculations on {self.timeframe} with {len(self._calculation_order)} tasks."
+        logger.info(
+            f"--- Starting Sequential DI Calculations for {self.timeframe} ({len(self._calculation_order)} tasks) ---"
         )
-        
-        # Parallel execution of independent indicators at each level.
-        current_level_keys = deque([k for k, deg in self.in_degree.items() if deg == 0])
-        processed_keys = set()
-        
-        while current_level_keys:
-            tasks = [self._calculate_and_store(key, df_for_calc) for key in current_level_keys]
-            await asyncio.gather(*tasks)
-            
-            processed_keys.update(current_level_keys)
-            next_level_keys = deque()
-            for key in current_level_keys:
-                if key in self.adj:
-                    for neighbor_key in self.adj[key]:
-                        if neighbor_key not in processed_keys:
-                            self.in_degree[neighbor_key] -= 1
-                            if self.in_degree[neighbor_key] == 0:
-                                next_level_keys.append(neighbor_key)
-            current_level_keys = next_level_keys
-            
+        for key in self._calculation_order:
+            status, result_key, instance = await self._calculate_indicator_task(key, df_for_calc)
+            if status == "success":
+                self._indicator_instances[result_key] = instance
+                # Update the main DataFrame with the newly calculated columns
+                df_for_calc.update(instance.df, overwrite=True)
+            else:
+                self._indicator_instances[result_key] = None # Mark as failed
+                
         self.final_df = df_for_calc
         success_count = sum(
             1 for v in self._indicator_instances.values() if isinstance(v, BaseIndicator)
         )
         failed_count = len(self._calculation_order) - success_count
         logger.info(
-            f"DI Calculations complete on {self.timeframe}: success={success_count}, failed={failed_count}"
+            f"✅ DI Calculations complete for {self.timeframe}: {success_count} succeeded, {failed_count} failed/skipped."
         )
         return self
 
     async def get_analysis_summary(self) -> Dict[str, Any]:
-        if self.final_df is None:
-            return {"status": "Calculation Not Run"}
-        if len(self.final_df) < 2:
-            return {"status": "Insufficient Data"}
+        if self.final_df is None or len(self.final_df) < 2:
+            return {"status": "Insufficient Data", "analysis": {}, "key_levels": {}}
 
         summary: Dict[str, Any] = {"status": "OK", "final_df": self.final_df.tail(self.recalc_buffer + 50)}
         try:
+            last_closed_candle = self.final_df.iloc[-2]
             summary["price_data"] = {
-                "open": self.final_df.iloc[-2]["open"],
-                "high": self.final_df.iloc[-2]["high"],
-                "low": self.final_df.iloc[-2]["low"],
-                "close": self.final_df.iloc[-2]["close"],
-                "volume": self.final_df.iloc[-2]["volume"],
-                "timestamp": str(self.final_df.index[-2]),
+                "open": last_closed_candle.get("open"),
+                "high": last_closed_candle.get("high"),
+                "low": last_closed_candle.get("low"),
+                "close": last_closed_candle.get("close"),
+                "volume": last_closed_candle.get("volume"),
+                "timestamp": str(last_closed_candle.name),
             }
         except IndexError:
-            return {"status": "Insufficient Data after calculations"}
+            return {"status": "Insufficient Data after calculations", "analysis": {}, "key_levels": {}}
 
         successful_analysis_count = 0
         total_calculated_instances = sum(
@@ -244,6 +230,7 @@ class IndicatorAnalyzer:
                 logger.warning(f"Skipping analysis for '{unique_key}' due to failed calculation.")
                 summary[unique_key] = {"status": "Dependency Calculation Failed"}
                 continue
+            
             try:
                 analyze_method = getattr(instance, "analyze", None)
                 analysis = None
