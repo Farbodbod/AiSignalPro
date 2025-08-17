@@ -1,4 +1,4 @@
-# live_monitor_worker.py (v5.2 - Refined Logging Config & Full Code)
+# live_monitor_worker.py (v5.3 - Environment-Aware Logging)
 import asyncio
 import logging
 import os
@@ -107,6 +107,7 @@ async def run_single_strategy(symbol: str, timeframe: str, orchestrator: MasterO
 def setup_logging(log_level_str: str):
     """
     Configures the world-class logging system.
+    ✅ FIX: Disables rich markup on non-interactive terminals (like Railway) to prevent garbled logs.
     ✅ FIX: Removed redundant 'format_exc_info' processor to prevent duplicate exception logging.
     """
     log_level = getattr(logging, log_level_str.upper(), logging.INFO)
@@ -122,8 +123,6 @@ def setup_logging(log_level_str: str):
         processors=shared_processors + [
             structlog.stdlib.PositionalArgumentsFormatter(),
             structlog.processors.StackInfoRenderer(),
-            # ✅ CRITICAL FIX: This redundant processor, which caused duplicate logs, is removed.
-            # structlog.processors.format_exc_info, 
             structlog.stdlib.ProcessorFormatter.wrap_for_formatter,
         ],
         logger_factory=structlog.stdlib.LoggerFactory(),
@@ -131,15 +130,24 @@ def setup_logging(log_level_str: str):
         cache_logger_on_first_use=True,
     )
     
+    # ✅ KEY FIX for Railway: Intelligently detect if we are in a real terminal
+    is_terminal = sys.stdout.isatty()
+
     formatter = structlog.stdlib.ProcessorFormatter(
-        processor=structlog.dev.ConsoleRenderer(colors=True),
+        # Use a plain renderer with no colors if not in a terminal
+        processor=structlog.dev.ConsoleRenderer(colors=is_terminal),
     )
     
-    handler = RichHandler(level=log_level, rich_tracebacks=True)
+    # Disable rich's extra features on non-terminals to ensure clean text logs
+    handler = RichHandler(
+        level=log_level, 
+        rich_tracebacks=True,
+        show_path=is_terminal, # Show file paths only in terminal
+        markup=is_terminal    # Disable emoji/markup rendering on Railway
+    )
     handler.setFormatter(formatter)
     
     root_logger = logging.getLogger()
-    # Clear any existing handlers to prevent duplicates in some environments (e.g., notebooks)
     if root_logger.hasHandlers():
         root_logger.handlers.clear()
         
@@ -149,7 +157,7 @@ def setup_logging(log_level_str: str):
     logging.getLogger("httpx").setLevel(logging.WARNING)
     logging.getLogger("django").setLevel(logging.WARNING)
     
-    logger.info("Logging system configured", log_level=log_level_str, renderer="RichConsole")
+    logger.info("Logging system configured", log_level=log_level_str, is_terminal=is_terminal)
 
 async def main_loop():
     try:
