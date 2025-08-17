@@ -1,4 +1,4 @@
-# backend/engines/strategies/trend_rider.py (v5.0 - Defensive Logging Edition)
+# backend/engines/strategies/trend_rider.py (v5.1 - Critical Fixes Edition)
 
 import logging
 from typing import Dict, Any, Optional
@@ -9,11 +9,11 @@ logger = logging.getLogger(__name__)
 
 class TrendRiderPro(BaseStrategy):
     """
-    TrendRiderPro - (v5.0 - Defensive Logging Edition)
+    TrendRiderPro - (v5.1 - Critical Fixes Edition)
     -----------------------------------------------------------------------------------------
-    This version fixes a critical KeyError by implementing a robust hierarchical
-    config loader. It also integrates the new professional logging system for
-    full transparency into its advanced, adaptive trend-following logic.
+    This version fixes critical bugs related to unsafe signal parsing and incomplete
+    HTF confirmation logic. The strategy now correctly uses the weighted HTF score
+    and is robust against NoneType errors from indicator signals.
     """
     strategy_name: str = "TrendRiderPro"
 
@@ -30,7 +30,7 @@ class TrendRiderPro(BaseStrategy):
             "15m": { "min_adx_strength": 23.0 },
             "1d": { "min_adx_strength": 28.0, "ch_atr_multiplier": 3.5, "tactical_tp_rr_ratio": 2.5 }
         },
-        "htf_confirmation_enabled": True, # This key was causing the KeyError
+        "htf_confirmation_enabled": True,
         "htf_map": { "5m": "15m", "15m": "1h", "1h": "4h", "4h": "1d" },
         "htf_confirmations": {
             "min_required_score": 2,
@@ -40,37 +40,28 @@ class TrendRiderPro(BaseStrategy):
     }
 
     def _get_signal_config(self) -> Dict[str, Any]:
-        """ ✅ CRITICAL FIX: Robustly loads and merges hierarchical configs. """
-        # Start with a copy of all top-level configurations (like htf_confirmation_enabled)
         final_cfg = self.config.copy()
-        
-        # Get base parameters and timeframe-specific overrides
         base_params = self.config.get("default_params", {})
         tf_overrides = self.config.get("timeframe_overrides", {}).get(self.primary_timeframe, {})
-        
-        # Merge parameters together, with overrides taking precedence
         final_params = {**base_params, **tf_overrides}
-        
-        # Update the main config dictionary with the final, merged parameters
         final_cfg.update(final_params)
-        
         return final_cfg
 
     def _get_primary_signal(self, cfg: Dict[str, Any]) -> tuple[Optional[str], str]:
-        # This helper's logic remains unchanged.
         if cfg.get('entry_trigger_type') == 'ema_cross':
             trigger_name = "EMA Cross"
             ema_cross_data = self.get_indicator('ema_cross')
             if ema_cross_data:
-                signal = ema_cross_data.get('analysis', {}).get('signal')
+                signal = (ema_cross_data.get('analysis') or {}).get('signal')
                 if signal in ['Buy', 'Sell']: return signal.upper(), trigger_name
         else: # Default to supertrend
             trigger_name = "SuperTrend Crossover"
             supertrend_data = self.get_indicator('supertrend')
             if supertrend_data:
-                signal = supertrend_data.get('analysis', {}).get('signal')
-                if "Bullish Crossover" in signal: return "BUY", trigger_name
-                if "Bearish Crossover" in signal: return "SELL", trigger_name
+                # ✅ FIX: Safe handling of None signal from indicator
+                signal = str((supertrend_data.get('analysis') or {}).get('signal', '')).lower()
+                if "bullish crossover" in signal: return "BUY", trigger_name
+                if "bearish crossover" in signal: return "SELL", trigger_name
         return None, ""
 
     def check_signal(self) -> Optional[Dict[str, Any]]:
@@ -80,70 +71,76 @@ class TrendRiderPro(BaseStrategy):
             return None
 
         # --- 1. Data Availability Check ---
-        required_indicators = ['adx', 'chandelier_exit', 'fast_ma']
+        required_names = ['adx', 'chandelier_exit', 'fast_ma']
         if cfg.get('entry_trigger_type') == 'ema_cross':
-            required_indicators.append('ema_cross')
+            required_names.append('ema_cross')
         else:
-            required_indicators.append('supertrend')
+            required_names.append('supertrend')
+        # ✅ FIX: Add HTF dependencies to the check
+        if cfg.get('htf_confirmation_enabled'):
+            htf_rules = cfg.get('htf_confirmations', {})
+            if "supertrend" in htf_rules: required_names.append('supertrend')
+            if "adx" in htf_rules: required_names.append('adx')
             
-        indicators = {name: self.get_indicator(name) for name in required_indicators}
-        missing_indicators = [name for name, data in indicators.items() if data is None]
-
-        data_is_ok = not missing_indicators
-        reason = f"Invalid/Missing indicators: {', '.join(missing_indicators)}" if not data_is_ok else "All required indicator data is valid."
-        self._log_criteria("Data Availability", data_is_ok, reason)
+        indicators = {name: self.get_indicator(name) for name in list(set(required_names))}
+        missing = [name for name, data in indicators.items() if data is None]
+        data_is_ok = not missing
+        self._log_criteria("Data Availability", data_is_ok, f"Invalid/Missing: {', '.join(missing)}" if not data_is_ok else "All required data is valid.")
         if not data_is_ok:
-            self._log_final_decision("HOLD", reason)
+            self._log_final_decision("HOLD", "Indicators missing.")
             return None
 
         # --- 2. Confirmation Funnel ---
         signal_direction, entry_trigger_name = self._get_primary_signal(cfg)
-        self._log_criteria("Primary Trigger", signal_direction is not None, f"No valid entry signal from {cfg.get('entry_trigger_type')}.")
+        self._log_criteria("Primary Trigger", signal_direction is not None, f"Signal from {cfg.get('entry_trigger_type')}: {'Found' if signal_direction else 'Not Found'}")
         if not signal_direction:
             self._log_final_decision("HOLD", "No primary trigger.")
             return None
 
         adx_data = indicators['adx']
-        adx_strength = adx_data.get('values', {}).get('adx', 0)
-        dmi_plus = adx_data.get('values', {}).get('plus_di', 0)
-        dmi_minus = adx_data.get('values', {}).get('minus_di', 0)
+        adx_strength = (adx_data.get('values') or {}).get('adx', 0.0)
+        dmi_plus = (adx_data.get('values') or {}).get('plus_di', 0.0)
+        dmi_minus = (adx_data.get('values') or {}).get('minus_di', 0.0)
         is_trend_strong = adx_strength >= cfg['min_adx_strength']
         is_dir_confirmed = (signal_direction == "BUY" and dmi_plus > dmi_minus) or \
                            (signal_direction == "SELL" and dmi_minus > dmi_plus)
         adx_ok = is_trend_strong and is_dir_confirmed
-        self._log_criteria("ADX/DMI Filter", adx_ok, f"Trend not strong or aligned. (ADX: {adx_strength:.2f})")
+        self._log_criteria("ADX/DMI Filter", adx_ok, f"Trend strong/aligned check failed. (ADX: {adx_strength:.2f})")
         if not adx_ok:
             self._log_final_decision("HOLD", "ADX/DMI filter failed.")
             return None
         
         ma_filter_data = indicators['fast_ma']
-        ma_value = ma_filter_data.get('values', {}).get('ma_value', 0)
-        current_price = self.price_data.get('close', 0)
-        ma_filter_ok = not ((signal_direction == "BUY" and current_price < ma_value) or \
-                            (signal_direction == "SELL" and current_price > ma_value))
-        self._log_criteria("Master Trend Filter", ma_filter_ok, f"Price is on the wrong side of the master MA.")
+        ma_value = (ma_filter_data.get('values') or {}).get('ma_value')
+        current_price = self.price_data.get('close')
+        ma_filter_ok = True
+        if ma_value is not None and current_price is not None:
+            ma_filter_ok = not ((signal_direction == "BUY" and current_price < ma_value) or \
+                                (signal_direction == "SELL" and current_price > ma_value))
+        self._log_criteria("Master Trend Filter", ma_filter_ok, "Price is on the wrong side of the master MA.")
         if not ma_filter_ok:
             self._log_final_decision("HOLD", "Master Trend filter failed.")
             return None
         
+        # ✅ HTF LOGIC FIX: Using the weighted scoring system from BaseStrategy.
         htf_ok = True
-        if cfg['htf_confirmation_enabled']:
+        if cfg.get('htf_confirmation_enabled'):
             htf_ok = self._get_trend_confirmation(signal_direction)
-        self._log_criteria("HTF Filter", htf_ok, "Trend is not aligned with the higher timeframe.")
+        self._log_criteria("HTF Filter", htf_ok, "Trend is not aligned with the higher timeframe." if not htf_ok else "HTF is aligned.")
         if not htf_ok:
             self._log_final_decision("HOLD", "HTF filter failed.")
             return None
         
-        # --- 3. Risk Management & Final Checks ---
+        # --- 3. Risk Management ---
         entry_price = self.price_data.get('close')
         chandelier_data = indicators['chandelier_exit']
         stop_loss_key = 'long_stop' if signal_direction == "BUY" else 'short_stop'
-        trailing_stop_loss = chandelier_data.get('values', {}).get(stop_loss_key)
+        trailing_stop_loss = (chandelier_data.get('values') or {}).get(stop_loss_key)
 
         risk_data_ok = entry_price is not None and trailing_stop_loss is not None
-        self._log_criteria("Risk Data Availability", risk_data_ok, "Could not determine Entry or Chandelier Stop Loss.")
+        self._log_criteria("Risk Data Availability", risk_data_ok, "Missing entry/SL for risk calculation.")
         if not risk_data_ok:
-            self._log_final_decision("HOLD", "Missing data for risk calculation.")
+            self._log_final_decision("HOLD", "Risk data missing.")
             return None
 
         risk_params = self._calculate_smart_risk_management(entry_price, signal_direction, trailing_stop_loss)
