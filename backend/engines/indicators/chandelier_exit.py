@@ -1,64 +1,64 @@
+# backend/engines/indicators/chandelier_exit.py
 import pandas as pd
 import numpy as np
 import logging
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 
 from .base import BaseIndicator
-from .atr import AtrIndicator # We need to import this to call its static method
 
 logger = logging.getLogger(__name__)
 
 class ChandelierExitIndicator(BaseIndicator):
     """
-    Chandelier Exit - (v4.0 - Multi-Version Aware)
+    Chandelier Exit - (v5.0 - Dependency Injection Native)
     -----------------------------------------------------------------------------
-    This world-class version is fully compatible with the IndicatorAnalyzer v9.0's
-    Multi-Version Engine. It intelligently reads its dependency configuration
-    to request the specific version of ATR it needs, ensuring a robust and
-    error-free calculation process.
+    This version is rewritten to natively support the Dependency Injection (DI)
+    architecture. It no longer relies on static methods or predicting column names.
+    Instead, it directly consumes the ATR instance passed to it by the modern
+    IndicatorAnalyzer, ensuring a robust, decoupled, and error-free calculation process.
     """
-    # ✅ MIRACLE UPGRADE: Dependency is now declared in config, not hardcoded here.
-    dependencies: list = []
-
-    def __init__(self, df: pd.DataFrame, **kwargs):
-        super().__init__(df, **kwargs)
-        self.params = kwargs.get('params', {})
+    def __init__(self, df: pd.DataFrame, params: Dict[str, Any], dependencies: Dict[str, BaseIndicator], **kwargs):
+        super().__init__(df, params=params, dependencies=dependencies, **kwargs)
         self.atr_multiplier = float(self.params.get('atr_multiplier', 3.0))
-        self.timeframe = self.params.get('timeframe', None)
+        self.timeframe = self.params.get('timeframe')
+        self.atr_period = int(self.dependencies.get('atr').params.get('period', 22))
 
-        # ✅ MIRACLE UPGRADE: The indicator now reads its specific dependency config.
-        # It defaults to a standard ATR(22) which was its original default.
-        self.atr_dependency_params = self.params.get('dependencies', {}).get('atr', {'period': 22})
-        atr_period_for_naming = self.atr_dependency_params.get('period', 22)
-
-        # Column names now correctly reflect the specific ATR period being used
-        suffix = f'_{atr_period_for_naming}_{self.atr_multiplier}'
-        if self.timeframe: suffix += f'_{self.timeframe}'
-        self.long_stop_col = f'ch_long_stop{suffix}' # Shortened for clarity
-        self.short_stop_col = f'ch_short_stop{suffix}'
+        # Column names are simplified. The DI architecture makes complex names obsolete.
+        self.long_stop_col = 'CHEX_L'
+        self.short_stop_col = 'CHEX_S'
         
     def calculate(self) -> 'ChandelierExitIndicator':
-        """ Calculates the Chandelier Exit lines using its required, specific version of ATR. """
-        df_for_calc = self.df
-        atr_period = self.atr_dependency_params.get('period', 22)
+        """ 
+        Calculates the Chandelier Exit lines by directly consuming its ATR dependency.
+        """
+        # 1. Directly receive the ATR instance injected by the Analyzer.
+        atr_instance = self.dependencies.get('atr')
+        if not atr_instance:
+            logger.warning(f"[{self.__class__.__name__}] on {self.timeframe} missing critical ATR dependency. Skipping calculation.")
+            return self
 
-        if len(df_for_calc) < atr_period:
+        # 2. Intelligently find the required ATR column from the dependency's DataFrame.
+        atr_df = atr_instance.df
+        atr_col_options = [col for col in atr_df.columns if 'ATR' in col.upper()]
+        if not atr_col_options:
+            logger.warning(f"[{self.__class__.__name__}] on {self.timeframe} could not find ATR column in dependency dataframe.")
+            return self
+        atr_col_name = atr_col_options[0]
+
+        # 3. Join the necessary ATR data into this indicator's main DataFrame.
+        self.df = self.df.join(atr_df[[atr_col_name]], how='left')
+
+        # 4. Perform the core Chandelier Exit calculation (Logic is 100% preserved).
+        if len(self.df) < self.atr_period:
             logger.warning(f"Not enough data for Chandelier Exit on {self.timeframe or 'base'}.")
             self.df[self.long_stop_col] = np.nan
             self.df[self.short_stop_col] = np.nan
             return self
-
-        # ✅ MIRACLE UPGRADE: Generates the required column name dynamically
-        # based on its dependency's parameters, using the dependency's own static method.
-        atr_col_name = AtrIndicator.get_col_name(self.atr_dependency_params, self.timeframe)
         
-        if atr_col_name not in df_for_calc.columns:
-            raise ValueError(f"Required ATR column '{atr_col_name}' not found. Ensure ATR dependency is correctly configured.")
-
-        atr_values = df_for_calc[atr_col_name] * self.atr_multiplier
+        atr_values = self.df[atr_col_name] * self.atr_multiplier
         
-        highest_high = df_for_calc['high'].rolling(window=atr_period).max()
-        lowest_low = df_for_calc['low'].rolling(window=atr_period).min()
+        highest_high = self.df['high'].rolling(window=self.atr_period).max()
+        lowest_low = self.df['low'].rolling(window=self.atr_period).min()
         
         self.df[self.long_stop_col] = highest_high - atr_values
         self.df[self.short_stop_col] = lowest_low + atr_values
@@ -66,10 +66,14 @@ class ChandelierExitIndicator(BaseIndicator):
         return self
 
     def analyze(self) -> Dict[str, Any]:
-        """ Provides a bias-free analysis of the price relative to the exit lines. """
+        """ 
+        Provides a bias-free analysis of the price relative to the exit lines.
+        This entire method's logic is preserved 100% from the previous version.
+        """
         required_cols = [self.long_stop_col, self.short_stop_col, 'close']
         valid_df = self.df.dropna(subset=required_cols)
-        if len(valid_df) < 2: return {"status": "Insufficient Data"}
+        if len(valid_df) < 2: 
+            return {"status": "Insufficient Data"}
         
         last = valid_df.iloc[-1]
         prev = valid_df.iloc[-2]
@@ -81,7 +85,7 @@ class ChandelierExitIndicator(BaseIndicator):
         signal = "Hold"
         message = "Price is between the Chandelier Exit stops."
         
-        # A true exit signal occurs on the close of the candle that crosses the line
+        # The signal generation logic is identical to the previous version, ensuring consistency.
         if prev['close'] >= prev[self.long_stop_col] and close_price < long_stop:
             signal, message = "Exit Long", f"Price closed below the Long Stop at {round(long_stop, 5)}."
         elif prev['close'] <= prev[self.short_stop_col] and close_price > short_stop:
