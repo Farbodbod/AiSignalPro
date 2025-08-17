@@ -1,7 +1,7 @@
-# backend/engines/strategies/keltner_breakout.py (v4.0 - Defensive Logging Edition)
+# backend/engines/strategies/keltner_breakout.py (v4.1 - Critical Fixes Edition)
 
 import logging
-from typing import Dict, Any, Optional, List, Tuple
+from typing import Dict, Any, Optional, List, Tuple, ClassVar
 
 from .base_strategy import BaseStrategy
 
@@ -9,15 +9,15 @@ logger = logging.getLogger(__name__)
 
 class KeltnerMomentumBreakout(BaseStrategy):
     """
-    KeltnerMomentumBreakout - (v4.0 - Defensive Logging Edition)
+    KeltnerMomentumBreakout - (v4.1 - Critical Fixes Edition)
     -------------------------------------------------------------------------
-    This version integrates the professional logging system for full transparency
-    and hardens the strategy with a dynamic data availability check to prevent crashes.
-    The advanced Momentum Power Score engine is fully preserved.
+    This version fixes critical bugs related to unsafe signal parsing and the
+    incomplete implementation of the HTF confirmation engine. The strategy
+    is now safer and logically consistent with its configuration.
     """
     strategy_name: str = "KeltnerMomentumBreakout"
 
-    default_config = {
+    default_config: ClassVar[Dict[str, Any]] = {
         "min_momentum_score": 4,
         "weights": {
             "adx_strength": 2,
@@ -38,24 +38,24 @@ class KeltnerMomentumBreakout(BaseStrategy):
     }
     
     def _calculate_momentum_score(self, direction: str, adx_data: Dict, cci_data: Dict) -> Tuple[int, List[str]]:
-        # This helper's logic remains unchanged.
         cfg = self.config
         weights = cfg.get('weights', {})
         score = 0
         confirmations = []
 
-        adx_strength = adx_data.get('values', {}).get('adx', 0)
+        adx_strength = (adx_data.get('values') or {}).get('adx', 0.0)
         if adx_strength >= cfg.get('adx_threshold', 25.0):
             score += weights.get('adx_strength', 2)
             confirmations.append(f"ADX Strength ({adx_strength:.2f})")
 
-        cci_value = cci_data.get('values', {}).get('value', 0)
+        cci_value = (cci_data.get('values') or {}).get('value', 0.0)
         cci_threshold = cfg.get('cci_threshold', 100.0)
         if (direction == "BUY" and cci_value > cci_threshold) or \
            (direction == "SELL" and cci_value < -cci_threshold):
             score += weights.get('cci_thrust', 3)
             confirmations.append(f"CCI Thrust ({cci_value:.2f})")
-
+        
+        # ✅ FIX: HTF check is now correctly using the weighted engine from BaseStrategy
         if cfg.get('htf_confirmation_enabled'):
             if self._get_trend_confirmation(direction):
                 score += weights.get('htf_alignment', 2)
@@ -78,24 +78,28 @@ class KeltnerMomentumBreakout(BaseStrategy):
         required_names = ['keltner_channel', 'adx', 'cci', 'atr']
         if cfg.get('candlestick_confirmation_enabled'):
             required_names.append('patterns')
+        # Also add HTF dependencies to the check
+        if cfg.get('htf_confirmation_enabled'):
+            htf_rules = cfg.get('htf_confirmations', {})
+            if "supertrend" in htf_rules: required_names.append('supertrend')
+            if "adx" in htf_rules: required_names.append('adx')
         
         indicators = {name: self.get_indicator(name) for name in list(set(required_names))}
-        missing_indicators = [name for name, data in indicators.items() if data is None]
-        
-        data_is_ok = not missing_indicators
-        reason = f"Invalid/Missing indicators: {', '.join(missing_indicators)}" if not data_is_ok else "All required indicator data is valid."
-        self._log_criteria("Data Availability", data_is_ok, reason)
+        missing = [name for name, data in indicators.items() if data is None]
+        data_is_ok = not missing
+        self._log_criteria("Data Availability", data_is_ok, f"Invalid/Missing: {', '.join(missing)}" if not data_is_ok else "All required data is valid.")
         if not data_is_ok:
-            self._log_final_decision("HOLD", reason)
+            self._log_final_decision("HOLD", "Indicators missing.")
             return None
 
         # --- 2. Primary Trigger (Keltner Channel Breakout) ---
         keltner_data = indicators['keltner_channel']
-        keltner_pos = keltner_data.get('analysis', {}).get('position')
-        signal_direction = "BUY" if "Breakout Above" in keltner_pos else "SELL" if "Breakdown Below" in keltner_pos else None
+        # ✅ FIX: Safe handling of None value from indicator analysis
+        keltner_pos = str((keltner_data.get('analysis') or {}).get('position', '')).lower()
+        signal_direction = "BUY" if "breakout above" in keltner_pos else "SELL" if "breakdown below" in keltner_pos else None
         
         trigger_is_ok = signal_direction is not None
-        self._log_criteria("Primary Trigger (Keltner Breakout)", trigger_is_ok, f"Price is not breaking out of Keltner Channel. (Position: {keltner_pos})")
+        self._log_criteria("Primary Trigger (Keltner Breakout)", trigger_is_ok, f"Position: {keltner_pos.title()}")
         if not trigger_is_ok:
             self._log_final_decision("HOLD", "No primary trigger.")
             return None
@@ -104,8 +108,7 @@ class KeltnerMomentumBreakout(BaseStrategy):
         momentum_score, score_details = self._calculate_momentum_score(signal_direction, indicators['adx'], indicators['cci'])
         min_score = cfg.get('min_momentum_score', 4)
         score_is_ok = momentum_score >= min_score
-
-        self._log_criteria("Momentum Score Check", score_is_ok, f"Score of {momentum_score} is below minimum of {min_score}.")
+        self._log_criteria("Momentum Score Check", score_is_ok, f"Score={momentum_score} vs min={min_score}")
         if not score_is_ok:
             self._log_final_decision("HOLD", "Momentum score is too low.")
             return None
@@ -113,18 +116,18 @@ class KeltnerMomentumBreakout(BaseStrategy):
 
         # --- 4. Risk Management ---
         entry_price = self.price_data.get('close')
-        stop_loss = keltner_data.get('values', {}).get('middle_band')
+        stop_loss = (keltner_data.get('values') or {}).get('middle_band')
 
         risk_data_ok = entry_price is not None and stop_loss is not None
-        self._log_criteria("Risk Data Availability", risk_data_ok, "Could not determine Entry or Keltner Stop Loss.")
+        self._log_criteria("Risk Data Availability", risk_data_ok, "Missing entry/SL for risk calc.")
         if not risk_data_ok:
-            self._log_final_decision("HOLD", "Missing data for risk calculation.")
+            self._log_final_decision("HOLD", "Risk data missing.")
             return None
             
         risk_params = self._calculate_smart_risk_management(entry_price, signal_direction, stop_loss)
         
         risk_calc_ok = risk_params and risk_params.get("targets")
-        self._log_criteria("Risk Calculation", risk_calc_ok, "Smart R/R calculation failed to produce targets.")
+        self._log_criteria("Risk Calculation", risk_calc_ok, "Smart R/R calc failed.")
         if not risk_calc_ok:
             self._log_final_decision("HOLD", "Risk parameter calculation failed.")
             return None
