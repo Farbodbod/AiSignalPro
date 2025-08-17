@@ -1,4 +1,4 @@
-# engines/indicator_analyzer.py (v17.0 - World-Class Final Edition)
+# engines/indicator_analyzer.py (v18.0 - Final Bug Fix)
 
 import pandas as pd
 import logging
@@ -35,14 +35,9 @@ def get_indicator_config_key(name: str, params: Dict[str, Any]) -> str:
 
 class IndicatorAnalyzer:
     """
-    The Self-Aware Analysis Engine for AiSignalPro (v17.0 - World-Class Edition)
+    The Self-Aware Analysis Engine for AiSignalPro (v18.0 - Final Edition)
     ------------------------------------------------------------------------------------------
-    This version is the result of an expert peer review, incorporating massive
-    performance and stability upgrades.
-    - Indicator calculations are now fully parallelized with asyncio.gather.
-    - Data overwrite risks (df.update, summary overwrite) have been eliminated.
-    - DataFrame concatenation is hardened against timezone/duplicate issues.
-    - The engine is now future-proof with support for async analyze() methods.
+    This version includes the final fix for the core dependency resolution bug.
     """
 
     def __init__(
@@ -92,24 +87,23 @@ class IndicatorAnalyzer:
 
         self._indicator_configs: Dict[str, Dict[str, Any]] = {}
         self._indicator_instances: Dict[str, BaseIndicator] = {}
+        self.adj: Dict[str, List[str]] = {}  # ✅ FIX: Defined as class attributes
+        self.in_degree: Dict[str, int] = {}  # ✅ FIX: Defined as class attributes
         self._calculation_order: List[str] = self._resolve_dependencies()
         self.final_df: Optional[pd.DataFrame] = None
 
     def _resolve_dependencies(self) -> List[str]:
-        # Logic remains the same, it's robust.
-        adj, in_degree = {}, {}
-
         def discover_nodes(ind_name: str, params: Dict[str, Any]):
             key = get_indicator_config_key(ind_name, params)
             if key in self._indicator_configs:
                 return
             self._indicator_configs[key] = {"name": ind_name, "params": params}
-            adj[key], in_degree[key] = [], 0
+            self.adj[key], self.in_degree[key] = [], 0  # ✅ FIX: Use self.adj and self.in_degree
             for dep_name, dep_params in (params.get("dependencies") or {}).items():
                 discover_nodes(dep_name, dep_params)
                 dep_key = get_indicator_config_key(dep_name, dep_params)
-                adj[dep_key].append(key)
-                in_degree[key] += 1
+                self.adj[dep_key].append(key)
+                self.in_degree[key] += 1
 
         for name, params in self.indicators_config.items():
             if params.get("enabled", False):
@@ -124,14 +118,14 @@ class IndicatorAnalyzer:
                 for alias, order in indicator_orders.items():
                     discover_nodes(order["name"], order["params"])
 
-        queue = deque([k for k, deg in in_degree.items() if deg == 0])
+        queue = deque([k for k, deg in self.in_degree.items() if deg == 0])
         sorted_order: List[str] = []
         while queue:
             key = queue.popleft()
             sorted_order.append(key)
-            for neighbor in adj.get(key, []):
-                in_degree[neighbor] -= 1
-                if in_degree[neighbor] == 0:
+            for neighbor in self.adj.get(key, []):
+                self.in_degree[neighbor] -= 1
+                if self.in_degree[neighbor] == 0:
                     queue.append(neighbor)
 
         if len(sorted_order) != len(self._indicator_configs):
@@ -149,19 +143,17 @@ class IndicatorAnalyzer:
             logger.warning(f"Indicator class not found for key: {key}")
             return
 
-        # ✅ FIX: Prepare the correct dependency instances for injection
         dependencies = {}
         dep_configs = params.get("dependencies", {})
         for dep_name, dep_params in dep_configs.items():
             dep_key = get_indicator_config_key(dep_name, dep_params)
             dep_instance = self._indicator_instances.get(dep_key)
             
-            # ✅ FIX: Handle failed dependencies gracefully
             if not isinstance(dep_instance, BaseIndicator):
                 logger.error(
                     f"Dependency '{dep_name}' for '{name}' failed to calculate or is missing. Aborting calculation for '{name}'."
                 )
-                self._indicator_instances[key] = None  # Store None on failure
+                self._indicator_instances[key] = None
                 return
 
             dependencies[dep_name] = dep_instance
@@ -176,8 +168,7 @@ class IndicatorAnalyzer:
             logger.error(
                 f"Indicator calculation for '{key}' failed: {e}", exc_info=True
             )
-            self._indicator_instances[key] = None # Store None on failure
-            
+            self._indicator_instances[key] = None
 
     async def calculate_all(self) -> "IndicatorAnalyzer":
         df_for_calc = self.base_df.copy()
@@ -249,7 +240,6 @@ class IndicatorAnalyzer:
         )
 
         for unique_key, instance in self._indicator_instances.items():
-            # ✅ FIX: Check if the instance is valid before proceeding
             if not isinstance(instance, BaseIndicator):
                 logger.warning(f"Skipping analysis for '{unique_key}' due to failed calculation.")
                 summary[unique_key] = {"status": "Dependency Calculation Failed"}
