@@ -1,54 +1,79 @@
+# backend/engines/indicators/divergence_indicator.py
 import pandas as pd
 import logging
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any
 
 from .base import BaseIndicator
-from .zigzag import ZigzagIndicator # For standardized column naming
-from .rsi import RsiIndicator # For standardized column naming
 
 logger = logging.getLogger(__name__)
 
 class DivergenceIndicator(BaseIndicator):
     """
-    Divergence Engine - (v4.0 - Multi-Version Aware)
+    Divergence Engine - (v5.0 - Dependency Injection Native)
     -----------------------------------------------------------------------------------
-    This version is fully compatible with the IndicatorAnalyzer v9.0's Multi-Version
-    Engine. It intelligently reads its dependency configurations for both RSI and
-    ZigZag to request and use the specific versions it needs.
+    This version is rewritten to natively support the Dependency Injection architecture.
+    It no longer relies on static methods or 'guessing' column names. Instead, it
+    directly consumes the instances of its dependencies (RSI, ZigZag) passed to it
+    by the modern IndicatorAnalyzer, making it robust and decoupled.
     """
-    # ✅ MIRACLE UPGRADE: Dependencies are now declared in config.
-    dependencies: list = []
-
-    def __init__(self, df: pd.DataFrame, **kwargs):
-        super().__init__(df, **kwargs)
-        self.params = kwargs.get('params', {})
-        self.timeframe = self.params.get('timeframe', None)
+    def __init__(self, df: pd.DataFrame, params: Dict[str, Any], dependencies: Dict[str, BaseIndicator], **kwargs):
+        super().__init__(df, params=params, dependencies=dependencies, **kwargs)
+        self.timeframe = self.params.get('timeframe')
         self.lookback_pivots = int(self.params.get('lookback_pivots', 5))
         self.min_bar_distance = int(self.params.get('min_bar_distance', 5))
 
-        # ✅ MIRACLE UPGRADE: The indicator now reads its specific dependency configs.
-        dep_configs = self.params.get('dependencies', {})
-        self.zigzag_dependency_params = dep_configs.get('zigzag', {'deviation': 3.0})
-        self.rsi_dependency_params = dep_configs.get('rsi', {'period': 14})
+        # These will store the actual column names after they are found in calculate()
+        self.rsi_col: str | None = None
+        self.pivots_col: str | None = None
+        self.prices_col: str | None = None
 
     def calculate(self) -> 'DivergenceIndicator':
-        """ This is a pure analyzer; it relies on pre-calculated columns. """
+        """
+        Calculates divergence by consuming dependency data from RSI and ZigZag instances.
+        This method prepares the DataFrame for the analyze() method.
+        """
+        # 1. Directly receive dependency instances injected by the Analyzer
+        rsi_instance = self.dependencies.get('rsi')
+        zigzag_instance = self.dependencies.get('zigzag')
+
+        if not rsi_instance or not zigzag_instance:
+            logger.warning(f"[{self.__class__.__name__}] on {self.timeframe} missing critical dependencies (RSI or ZigZag). Skipping calculation.")
+            return self
+
+        # 2. Get the DataFrames from the dependencies
+        rsi_df = rsi_instance.df
+        zigzag_df = zigzag_instance.df
+        
+        # 3. Intelligently find the required columns from the dependency DataFrames
+        # This is robust because it doesn't rely on a fixed "magic string" name.
+        rsi_col_options = [col for col in rsi_df.columns if 'RSI' in col.upper()]
+        pivots_col_options = [col for col in zigzag_df.columns if 'PIVOTS' in col.upper()]
+        prices_col_options = [col for col in zigzag_df.columns if 'PRICES' in col.upper()]
+
+        if not rsi_col_options or not pivots_col_options or not prices_col_options:
+            logger.warning(f"[{self.__class__.__name__}] on {self.timeframe} could not find required columns in dependency dataframes.")
+            return self
+            
+        self.rsi_col = rsi_col_options[0]
+        self.pivots_col = pivots_col_options[0]
+        self.prices_col = prices_col_options[0]
+
+        # 4. Join the necessary columns into this indicator's main DataFrame
+        self.df = self.df.join(rsi_df[[self.rsi_col]], how='left')
+        self.df = self.df.join(zigzag_df[[self.pivots_col, self.prices_col]], how='left')
+        
         return self
 
     def analyze(self) -> Dict[str, Any]:
-        """ Analyzes the pre-calculated RSI and ZigZag data for divergences. """
-        # ✅ MIRACLE UPGRADE: Dynamically construct the required column names via contracts.
-        rsi_col = RsiIndicator.get_col_name(self.rsi_dependency_params, self.timeframe)
-        pivots_col = ZigzagIndicator.get_pivots_col_name(self.zigzag_dependency_params, self.timeframe)
-        prices_col = ZigzagIndicator.get_prices_col_name(self.zigzag_dependency_params, self.timeframe)
-
-        required_cols = [rsi_col, pivots_col, prices_col]
-        if any(col not in self.df.columns for col in required_cols):
-            logger.warning(f"[{self.__class__.__name__}] Missing one or more required columns on {self.timeframe}. Required: {required_cols}")
-            return {"status": "Error: Missing Dependency Columns"}
+        """ Analyzes the prepared DataFrame for divergences. """
+        required_cols = [self.rsi_col, self.pivots_col, self.prices_col]
+        
+        if any(col is None for col in required_cols) or any(col not in self.df.columns for col in required_cols):
+            logger.warning(f"[{self.__class__.__name__}] Missing required data columns for analysis on {self.timeframe}.")
+            return {"status": "Error: Missing Data for Analysis"}
 
         valid_df = self.df.dropna(subset=required_cols)
-        pivots_df = valid_df[valid_df[pivots_col] != 0]
+        pivots_df = valid_df[valid_df[self.pivots_col] != 0]
 
         if len(pivots_df) < 2:
             return {"status": "OK", "signals": []}
@@ -67,14 +92,14 @@ class DivergenceIndicator(BaseIndicator):
             if bar_distance < self.min_bar_distance:
                 continue
 
-            price1, rsi1 = prev_pivot[prices_col], self.df.loc[prev_pivot.name, rsi_col]
-            price2, rsi2 = last_pivot[prices_col], self.df.loc[last_pivot.name, rsi_col]
+            price1, rsi1 = prev_pivot[self.prices_col], self.df.loc[prev_pivot.name, self.rsi_col]
+            price2, rsi2 = last_pivot[self.prices_col], self.df.loc[last_pivot.name, self.rsi_col]
             divergence = None
             
-            if prev_pivot[pivots_col] == 1 and last_pivot[pivots_col] == 1: # Two peaks
+            if prev_pivot[self.pivots_col] == 1 and last_pivot[self.pivots_col] == 1: # Two peaks
                 if price2 > price1 and rsi2 < rsi1: divergence = {"type": "Regular Bearish"}
                 if price2 < price1 and rsi2 > rsi1: divergence = {"type": "Hidden Bearish"}
-            elif prev_pivot[pivots_col] == -1 and last_pivot[pivots_col] == -1: # Two troughs
+            elif prev_pivot[self.pivots_col] == -1 and last_pivot[self.pivots_col] == -1: # Two troughs
                 if price2 < price1 and rsi2 > rsi1: divergence = {"type": "Regular Bullish"}
                 if price2 > price1 and rsi2 < rsi1: divergence = {"type": "Hidden Bullish"}
             
@@ -88,4 +113,3 @@ class DivergenceIndicator(BaseIndicator):
                 })
                 
         return {"status": "OK", "signals": signals, "timeframe": self.timeframe or 'Base'}
-
