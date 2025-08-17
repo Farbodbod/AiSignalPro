@@ -1,4 +1,4 @@
-# engines/indicator_analyzer.py (v15.0 - Dependency Injection Architecture)
+# engines/indicator_analyzer.py (v15.1 - Hotfix for DI Logic)
 
 import pandas as pd
 import logging
@@ -32,12 +32,11 @@ def get_indicator_config_key(name: str, params: Dict[str, Any]) -> str:
 
 class IndicatorAnalyzer:
     """
-    The Self-Aware Analysis Engine for AiSignalPro (v15.0 - Dependency Injection)
+    The Self-Aware Analysis Engine for AiSignalPro (v15.1 - Hotfix for DI Logic)
     ------------------------------------------------------------------------------------------
-    This version introduces a robust Dependency Injection (DI) architecture. Instead of relying
-    on finding columns in a shared DataFrame (implicit dependency), each indicator is explicitly 
-    given the instances of the indicators it depends on. This permanently solves dependency chain
-    failures and column name mismatches, creating a far more resilient and maintainable system.
+    This version includes a critical hotfix to the dependency resolution logic within the
+    _calculate_indicator_task method to correctly parse the dependency 'name' from the
+    dictionary key instead of a value, aligning it with the config.json structure.
     """
     def __init__(self, df: pd.DataFrame, config: Dict[str, Any], strategies_config: Dict[str, Any], timeframe: str, previous_df: Optional[pd.DataFrame] = None):
         if not isinstance(df, pd.DataFrame):
@@ -48,9 +47,8 @@ class IndicatorAnalyzer:
         self.indicators_config = config
         self.strategies_config = strategies_config
         self.timeframe = timeframe
-        self.recalc_buffer = 250 # The number of rows to keep in the final_df for analysis context.
+        self.recalc_buffer = 250
         
-        # Mapping of indicator names to their respective class implementations.
         self._indicator_classes: Dict[str, Type[BaseIndicator]] = { 
             'rsi': RsiIndicator, 'macd': MacdIndicator, 'bollinger': BollingerIndicator, 
             'ichimoku': IchimokuIndicator, 'adx': AdxIndicator, 'supertrend': SuperTrendIndicator, 
@@ -67,32 +65,25 @@ class IndicatorAnalyzer:
         self._indicator_configs: Dict[str, Dict[str, Any]] = {}
         self._calculation_status: Dict[str, bool] = {}
         self._indicator_instances: Dict[str, BaseIndicator] = {}
-        # The master plan: A topologically sorted list ensuring dependencies are calculated first.
         self._calculation_order: List[str] = self._resolve_dependencies()
         self.final_df: Optional[pd.DataFrame] = None
 
     def _resolve_dependencies(self) -> List[str]:
-        """
-        Performs a topological sort (Kahn's algorithm) on all required indicators
-        to determine the correct, non-blocking calculation order.
-        """
-        adj, in_degree = {}, {} # Adjacency list and in-degree count for the graph nodes.
+        adj, in_degree = {}, {}
         
         def discover_nodes(ind_name: str, params: Dict[str, Any]):
             key = get_indicator_config_key(ind_name, params)
-            if key in self._indicator_configs: return # Avoid redundant processing
+            if key in self._indicator_configs: return
             
             self._indicator_configs[key] = {'name': ind_name, 'params': params}
             adj[key], in_degree[key] = [], 0
             
-            # Recursively discover dependency nodes first.
             for dep_name, dep_params in (params.get('dependencies') or {}).items():
                 discover_nodes(dep_name, dep_params)
                 dep_key = get_indicator_config_key(dep_name, dep_params)
                 adj[dep_key].append(key)
                 in_degree[key] += 1
         
-        # Discover all nodes from both general indicators and strategy-specific ones.
         for name, params in self.indicators_config.items():
             if params.get('enabled', False):
                 discover_nodes(name, params)
@@ -102,7 +93,6 @@ class IndicatorAnalyzer:
                 for alias, order in indicator_orders.items():
                     discover_nodes(order['name'], order['params'])
 
-        # Standard topological sort implementation.
         queue = deque([k for k, deg in in_degree.items() if deg == 0])
         sorted_order = []
         while queue:
@@ -120,11 +110,7 @@ class IndicatorAnalyzer:
         return sorted_order
 
     async def _calculate_indicator_task(self, unique_key: str, df: pd.DataFrame) -> Tuple[str, str, Optional[BaseIndicator]]:
-        """
-        Async task to calculate a single indicator with explicit dependency injection.
-        This is the core of the new, robust architecture.
-        """
-        await asyncio.sleep(0) # Yield control to the event loop.
+        await asyncio.sleep(0)
         
         config = self._indicator_configs[unique_key]
         name, params = config['name'], config['params']
@@ -132,22 +118,23 @@ class IndicatorAnalyzer:
         if not cls:
             return 'skipped', f"{unique_key}(class_not_found)", None
 
-        # --- CORE LOGIC: DEPENDENCY INJECTION ---
         dependency_instances = {}
         for dep_alias, dep_order in (params.get('dependencies') or {}).items():
-            dep_key = get_indicator_config_key(dep_order['name'], dep_order.get('params', {}))
+            
+            # ✅ --- CRITICAL HOTFIX --- ✅
+            # The dependency name is the KEY ('atr'), and its params are the VALUE ({'period': 14}).
+            # The previous version incorrectly looked for a 'name' field inside the value.
+            dep_key = get_indicator_config_key(dep_alias, dep_order)
+            
             if dep_key in self._indicator_instances:
                 dependency_instances[dep_alias] = self._indicator_instances[dep_key]
             else:
-                # If a required dependency was not calculated successfully, this indicator must also fail.
                 reason = f"Missing required dependency instance: '{dep_key}'"
                 logger.warning(f"Skipping calculation for {unique_key} on {self.timeframe}. Reason: {reason}")
                 return 'fail', f"{unique_key}({reason})", None
-        # --- END OF CORE LOGIC ---
         
         try:
             instance_params = {**params, 'timeframe': self.timeframe}
-            # The BaseIndicator __init__ has been upgraded to accept a 'dependencies' kwarg.
             instance = cls(df=df.copy(), params=instance_params, dependencies=dependency_instances).calculate()
             return 'success', unique_key, instance
         except Exception as e:
@@ -155,12 +142,7 @@ class IndicatorAnalyzer:
             return 'fail', f"{unique_key}({e})", None
 
     async def calculate_all(self) -> 'IndicatorAnalyzer':
-        """
-        Orchestrates the entire calculation pipeline for all indicators in the
-        correct, dependency-aware order.
-        """
         if self.previous_df is not None and not self.previous_df.empty:
-            # Concatenate historical state with new data for continuous calculations.
             df_for_calc = pd.concat([self.previous_df, self.base_df]).sort_index().pipe(lambda d: d[~d.index.duplicated(keep='last')])
         else:
             df_for_calc = self.base_df.copy()
@@ -172,7 +154,6 @@ class IndicatorAnalyzer:
             if status == 'success':
                 self._indicator_instances[result_key] = instance
                 self._calculation_status[result_key] = True
-                # Update the main DataFrame with the new columns from the successful calculation.
                 df_for_calc.update(instance.df, overwrite=True)
             else:
                  self._calculation_status[key] = False
@@ -185,10 +166,6 @@ class IndicatorAnalyzer:
         return self
 
     async def get_analysis_summary(self) -> Dict[str, Any]:
-        """
-        Aggregates the analysis results from all successfully calculated indicators
-        into a single, comprehensive package for the MasterOrchestrator.
-        """
         if self.final_df is None or len(self.final_df) < 2:
             return {"status": "Insufficient Data", "analysis": {}, "key_levels": {}}
 
@@ -216,7 +193,6 @@ class IndicatorAnalyzer:
                 
                 if analysis and analysis.get("status") == "OK":
                     summary[unique_key] = analysis
-                    # Also store by simple name if it's a globally defined indicator for easier access.
                     if is_globally_enabled:
                         summary[simple_name] = analysis
                 else:
@@ -228,4 +204,3 @@ class IndicatorAnalyzer:
         
         logger.info(f"✅ Analysis aggregation phase for {self.timeframe} complete.")
         return summary
-
