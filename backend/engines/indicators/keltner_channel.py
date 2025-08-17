@@ -1,66 +1,69 @@
+# backend/engines/indicators/keltner_channel.py
 import pandas as pd
 import numpy as np
 import logging
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 
 from .base import BaseIndicator
-from .atr import AtrIndicator # We need to import this to call its static method
 
 logger = logging.getLogger(__name__)
 
 class KeltnerChannelIndicator(BaseIndicator):
     """
-    Keltner Channel - (v5.0 - Multi-Version Aware)
+    Keltner Channel - (v6.0 - Dependency Injection Native)
     -----------------------------------------------------------------------------
-    This world-class version is fully compatible with the IndicatorAnalyzer v9.0's
-    Multi-Version Engine. It intelligently reads its dependency configuration
-    to request the specific version of ATR it needs, ensuring a robust and
-    error-free calculation process.
+    This world-class version is re-engineered to natively support the Dependency 
+    Injection (DI) architecture. It completely eliminates fragile dependencies on 
+    static methods and predicted column names. It directly and robustly consumes the 
+    ATR instance provided by the modern IndicatorAnalyzer, ensuring flawless and
+    decoupled execution.
     """
-    # ✅ MIRACLE UPGRADE: Dependency is now declared in config, not hardcoded here.
-    dependencies: list = []
-
-    def __init__(self, df: pd.DataFrame, **kwargs):
-        super().__init__(df, **kwargs)
-        self.params = kwargs.get('params', {})
+    def __init__(self, df: pd.DataFrame, params: Dict[str, Any], dependencies: Dict[str, BaseIndicator], **kwargs):
+        super().__init__(df, params=params, dependencies=dependencies, **kwargs)
         self.ema_period = int(self.params.get('ema_period', 20))
         self.atr_multiplier = float(self.params.get('atr_multiplier', 2.0))
-        self.timeframe = self.params.get('timeframe', None)
+        self.timeframe = self.params.get('timeframe')
         self.squeeze_period = int(self.params.get('squeeze_period', 50))
-        
-        # ✅ MIRACLE UPGRADE: The indicator now reads its specific dependency config.
-        # It defaults to a standard ATR(10) which was the original default for this indicator.
-        self.atr_dependency_params = self.params.get('dependencies', {}).get('atr', {'period': 10})
-        atr_period_for_naming = self.atr_dependency_params.get('period', 10)
 
-        # Column names now correctly reflect the specific ATR period being used
-        suffix = f'_{self.ema_period}_{atr_period_for_naming}_{self.atr_multiplier}'
-        if self.timeframe: suffix += f'_{self.timeframe}'
-        self.upper_col = f'keltner_upper{suffix}'
-        self.lower_col = f'keltner_lower{suffix}'
-        self.middle_col = f'keltner_middle{suffix}'
-        self.bandwidth_col = f'keltner_bw{suffix}'
+        # Simplified, robust, and locally-scoped column names.
+        self.upper_col = 'KC_U'
+        self.lower_col = 'KC_L'
+        self.middle_col = 'KC_M'
+        self.bandwidth_col = 'KC_BW'
 
     def calculate(self) -> 'KeltnerChannelIndicator':
-        """ Calculates Keltner Channels using its required, specific version of ATR. """
-        df_for_calc = self.df
+        """ 
+        Calculates Keltner Channels by directly consuming its ATR dependency instance.
+        The core mathematical logic of this method is 100% preserved.
+        """
+        # 1. Directly and safely receive the ATR instance injected by the Analyzer.
+        atr_instance = self.dependencies.get('atr')
+        if not atr_instance:
+            logger.warning(f"[{self.__class__.__name__}] on {self.timeframe} missing critical ATR dependency. Skipping calculation.")
+            return self
+
+        # 2. Intelligently find the required ATR column from the dependency's DataFrame.
+        atr_df = atr_instance.df
+        atr_col_options = [col for col in atr_df.columns if 'ATR' in col.upper()]
+        if not atr_col_options:
+            logger.warning(f"[{self.__class__.__name__}] on {self.timeframe} could not find ATR column in dependency dataframe.")
+            return self
+        atr_col_name = atr_col_options[0]
         
-        atr_period = self.atr_dependency_params.get('period', 10)
-        if len(df_for_calc) < max(self.ema_period, atr_period):
+        # 3. Join the necessary ATR data into this indicator's main DataFrame.
+        self.df = self.df.join(atr_df[[atr_col_name]], how='left')
+        atr_period = int(atr_instance.params.get('period', 10))
+
+        # 4. Perform the core Keltner Channel calculation (Formulation is 100% preserved).
+        if len(self.df) < max(self.ema_period, atr_period):
             logger.warning(f"Not enough data for Keltner Channel on {self.timeframe or 'base'}.")
             for col in [self.upper_col, self.lower_col, self.middle_col, self.bandwidth_col]:
                 self.df[col] = np.nan
             return self
 
-        # ✅ MIRACLE UPGRADE: Generates the required column name using the new universal language.
-        atr_col_name = AtrIndicator.get_col_name(self.atr_dependency_params, self.timeframe)
-        
-        if atr_col_name not in df_for_calc.columns:
-            raise ValueError(f"Required ATR column '{atr_col_name}' not found for Keltner Channel. Ensure ATR dependency is correctly configured.")
-        
-        typical_price = (df_for_calc['high'] + df_for_calc['low'] + df_for_calc['close']) / 3
+        typical_price = (self.df['high'] + self.df['low'] + self.df['close']) / 3
         middle_band = typical_price.ewm(span=self.ema_period, adjust=False).mean()
-        atr_value = df_for_calc[atr_col_name] * self.atr_multiplier
+        atr_value = self.df[atr_col_name] * self.atr_multiplier
         
         upper_band = middle_band + atr_value
         lower_band = middle_band - atr_value
@@ -74,7 +77,10 @@ class KeltnerChannelIndicator(BaseIndicator):
         return self
 
     def analyze(self) -> Dict[str, Any]:
-        """ Provides deep analysis of price action relative to the Keltner Channel. """
+        """ 
+        Provides deep analysis of price action relative to the Keltner Channel.
+        This entire method's logic is preserved 100% from the previous version.
+        """
         required_cols = [self.upper_col, self.lower_col, self.middle_col, self.bandwidth_col]
         valid_df = self.df.dropna(subset=required_cols)
         
