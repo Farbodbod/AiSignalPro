@@ -1,17 +1,15 @@
-# engines/indicator_analyzer.py (v16.0 - World-Class Peer-Reviewed Edition)
+# engines/indicator_analyzer.py (v17.0 - World-Class Final Edition)
 
 import pandas as pd
 import logging
 import json
 import asyncio
-import inspect  # ✅ For async analyze() check
+import inspect
 from typing import Dict, Any, Type, List, Optional, Tuple
 from collections import deque
-# import structlog  ✅ REMOVED: Replaced with standard logging
-
-logger = logging.getLogger(__name__)  # ✅ FIX: Correct logger initialization
 from .indicators import *
 
+logger = logging.getLogger(__name__)
 
 def get_indicator_config_key(name: str, params: Dict[str, Any]) -> str:
     """Creates a unique, stable, and hashable key from parameters."""
@@ -26,7 +24,7 @@ def get_indicator_config_key(name: str, params: Dict[str, Any]) -> str:
         param_str = json.dumps(filtered_params, sort_keys=True, separators=(",", ":"))
         return f"{name}_{param_str}"
     except TypeError as e:
-        logger.error("Could not serialize params", name=name, error=e)
+        logger.error(f"Could not serialize params for {name}: {e}")
         param_str = "_".join(
             f"{k}_{v}"
             for k, v in sorted(params.items())
@@ -37,7 +35,7 @@ def get_indicator_config_key(name: str, params: Dict[str, Any]) -> str:
 
 class IndicatorAnalyzer:
     """
-    The Self-Aware Analysis Engine for AiSignalPro (v16.0 - World-Class Edition)
+    The Self-Aware Analysis Engine for AiSignalPro (v17.0 - World-Class Edition)
     ------------------------------------------------------------------------------------------
     This version is the result of an expert peer review, incorporating massive
     performance and stability upgrades.
@@ -148,27 +146,42 @@ class IndicatorAnalyzer:
         name, params = config["name"], config["params"]
         cls = self._indicator_classes.get(name)
         if not cls:
-            logger.warning("Indicator class not found", indicator_key=key)
+            logger.warning(f"Indicator class not found for key: {key}")
             return
+
+        # ✅ FIX: Prepare the correct dependency instances for injection
+        dependencies = {}
+        dep_configs = params.get("dependencies", {})
+        for dep_name, dep_params in dep_configs.items():
+            dep_key = get_indicator_config_key(dep_name, dep_params)
+            dep_instance = self._indicator_instances.get(dep_key)
+            
+            # ✅ FIX: Handle failed dependencies gracefully
+            if not isinstance(dep_instance, BaseIndicator):
+                logger.error(
+                    f"Dependency '{dep_name}' for '{name}' failed to calculate or is missing. Aborting calculation for '{name}'."
+                )
+                self._indicator_instances[key] = None  # Store None on failure
+                return
+
+            dependencies[dep_name] = dep_instance
 
         try:
             instance_params = {**params, "timeframe": self.timeframe}
             instance = cls(
-                df=base_df.copy(), params=instance_params, dependencies=self._indicator_instances
+                df=base_df.copy(), params=instance_params, dependencies=dependencies
             ).calculate()
             self._indicator_instances[key] = instance
         except Exception as e:
             logger.error(
-                f"Indicator calculation failed for '{key}': {e}", exc_info=True
+                f"Indicator calculation for '{key}' failed: {e}", exc_info=True
             )
-            # Store the exception so `gather` doesn't hide it
-            self._indicator_instances[key] = e
+            self._indicator_instances[key] = None # Store None on failure
+            
 
     async def calculate_all(self) -> "IndicatorAnalyzer":
-        # ✅ FIX 5: Hardened DataFrame concatenation.
         df_for_calc = self.base_df.copy()
         if self.previous_df is not None and not self.previous_df.empty:
-            # Ensure timezone consistency before concatenating
             if df_for_calc.index.tz is None and self.previous_df.index.tz is not None:
                 df_for_calc.index = df_for_calc.index.tz_localize(self.previous_df.index.tz)
             elif df_for_calc.index.tz is not None and self.previous_df.index.tz is None:
@@ -177,22 +190,30 @@ class IndicatorAnalyzer:
             df_for_calc = pd.concat([self.previous_df, df_for_calc])
             df_for_calc = df_for_calc.sort_index()
             df_for_calc = df_for_calc[~df_for_calc.index.duplicated(keep="last")]
-
-        # ✅ FIX 2: Parallelize indicator calculations.
-        # We now iterate through dependencies sequentially but run each level in parallel.
-        # This is a more complex but robust way to handle the dependency graph with asyncio.
-        # For simplicity and robustness, we will keep the sequential loop which is guaranteed
-        # to respect dependencies, and note parallelization as a future optimization.
-        # The primary bottleneck is network I/O, which is already parallel in the worker.
+        
         logger.debug(
             f"Starting Sequential DI Calculations on {self.timeframe} with {len(self._calculation_order)} tasks."
         )
-        for key in self._calculation_order:
-            await self._calculate_and_store(key, df_for_calc)
-            # ✅ FIX 3: Remove the risky df.update. Each indicator is self-contained.
-            # The base df_for_calc is passed to each. Indicators get dependency data
-            # from the stored instances in self._indicator_instances.
-
+        
+        # Parallel execution of independent indicators at each level.
+        current_level_keys = deque([k for k, deg in self.in_degree.items() if deg == 0])
+        processed_keys = set()
+        
+        while current_level_keys:
+            tasks = [self._calculate_and_store(key, df_for_calc) for key in current_level_keys]
+            await asyncio.gather(*tasks)
+            
+            processed_keys.update(current_level_keys)
+            next_level_keys = deque()
+            for key in current_level_keys:
+                if key in self.adj:
+                    for neighbor_key in self.adj[key]:
+                        if neighbor_key not in processed_keys:
+                            self.in_degree[neighbor_key] -= 1
+                            if self.in_degree[neighbor_key] == 0:
+                                next_level_keys.append(neighbor_key)
+            current_level_keys = next_level_keys
+            
         self.final_df = df_for_calc
         success_count = sum(
             1 for v in self._indicator_instances.values() if isinstance(v, BaseIndicator)
@@ -228,13 +249,15 @@ class IndicatorAnalyzer:
         )
 
         for unique_key, instance in self._indicator_instances.items():
+            # ✅ FIX: Check if the instance is valid before proceeding
             if not isinstance(instance, BaseIndicator):
-                continue  # Skip failed calculations
+                logger.warning(f"Skipping analysis for '{unique_key}' due to failed calculation.")
+                summary[unique_key] = {"status": "Dependency Calculation Failed"}
+                continue
             try:
                 analyze_method = getattr(instance, "analyze", None)
                 analysis = None
                 if analyze_method:
-                    # ✅ FIX 6: Support async analyze() methods.
                     if inspect.iscoroutinefunction(analyze_method):
                         analysis = await analyze_method()
                     else:
@@ -245,7 +268,6 @@ class IndicatorAnalyzer:
                 if analysis and analysis.get("status") == "OK":
                     successful_analysis_count += 1
 
-                # ✅ FIX 4: Only use the unique_key to prevent overwrites.
                 summary[unique_key] = analysis
 
             except Exception as e:
