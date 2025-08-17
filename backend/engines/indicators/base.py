@@ -1,37 +1,47 @@
+# backend/engines/indicators/base.py
+from __future__ import annotations
 from abc import ABC, abstractmethod
 import pandas as pd
 import logging
-from typing import List, Dict, Any
+from typing import Dict, Any, Optional, TYPE_CHECKING
+
+# This is a standard Python practice for handling circular type hints
+if TYPE_CHECKING:
+    from .base import BaseIndicator
 
 logger = logging.getLogger(__name__)
 
 class BaseIndicator(ABC):
     """
-    Abstract Base Class for all AiSignalPro indicators (v3.0 - Dependency-Aware).
-    This version introduces a `dependencies` attribute to enable the legendary
-    IndicatorAnalyzer to dynamically resolve the calculation order.
+    Abstract Base Class for all AiSignalPro indicators (v4.0 - Dependency Injection Ready).
+    This version is designed to directly accept pre-calculated dependency instances
+    from the v15.0+ IndicatorAnalyzer, enabling a robust, error-proof architecture.
     """
-    # ✨ LEGENDARY UPGRADE: Each indicator class can now declare its prerequisites.
-    # The IndicatorAnalyzer will use this to build a dynamic dependency graph.
-    # Example in a child class: dependencies = ['atr', 'zigzag']
-    dependencies: List[str] = []
+    
+    # NOTE: The old `dependencies: List[str]` class attribute is now obsolete and removed.
+    # The config.json file is the single source of truth for dependency mapping,
+    # and the IndicatorAnalyzer handles the resolution.
 
-    def __init__(self, df: pd.DataFrame, **kwargs):
+    def __init__(self, df: pd.DataFrame, params: Dict[str, Any], dependencies: Optional[Dict[str, 'BaseIndicator']] = None, **kwargs):
         """
-        Initializes the indicator.
+        Initializes the indicator with its data, parameters, and direct dependencies.
         
         Args:
             df (pd.DataFrame): The main OHLCV DataFrame.
-            **kwargs: Indicator-specific parameters.
+            params (Dict[str, Any]): Indicator-specific parameters.
+            dependencies (Optional[Dict[str, 'BaseIndicator']]): A dictionary of pre-calculated 
+                                                                 dependency indicator instances.
         """
         if not isinstance(df, pd.DataFrame) or df.empty:
             raise ValueError("Input must be a non-empty pandas DataFrame.")
         
         self.df = df
-        # This pattern allows parameters to be passed directly or nested in a 'params' dict.
-        self.params = kwargs.get('params', kwargs)
+        self.params = params
         
-        logger.debug(f"Initialized {self.__class__.__name__} with params: {self.params}")
+        # ✅ CORE UPGRADE: Directly store the injected dependency instances.
+        self.dependencies = dependencies or {}
+        
+        logger.debug(f"Initialized {self.__class__.__name__} with params: {self.params} and {len(self.dependencies)} dependencies.")
 
     @abstractmethod
     def calculate(self) -> 'BaseIndicator':
@@ -48,3 +58,4 @@ class BaseIndicator(ABC):
         Must return a standardized dictionary and be designed to be bias-free.
         """
         pass
+
