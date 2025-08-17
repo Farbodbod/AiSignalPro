@@ -1,28 +1,24 @@
+# backend/engines/indicators/rsi.py (v5.1 - Final Dependency Fix)
+
 import pandas as pd
 import numpy as np
 import logging
 from typing import Dict, Any, List, Optional
 
 from .base import BaseIndicator
-from .zigzag import ZigzagIndicator # For standardized column naming
+from .zigzag import ZigzagIndicator
 
 logger = logging.getLogger(__name__)
 
 class RsiIndicator(BaseIndicator):
     """
-    RSI - (v5.0 - Harmonized API & Multi-Version Aware)
+    RSI - (v5.1 - Final Dependency Fix)
     ------------------------------------------------------------------
-    This world-class version acts as both a provider and a consumer within the
-    Multi-Version Engine. It provides a standardized `get_col_name` method for other
-    indicators and intelligently consumes its ZigZag dependency, making it a
-    fully harmonized and powerful component of the AiSignalPro ecosystem.
+    This version is fixed to correctly handle its ZigZag dependency.
     """
-    # ✅ MIRACLE UPGRADE: Dependencies are now declared in config.
-    dependencies: list = []
-
-    def __init__(self, df: pd.DataFrame, **kwargs):
-        super().__init__(df, **kwargs)
-        self.params = kwargs.get('params', {})
+    def __init__(self, df: pd.DataFrame, params: Dict[str, Any], dependencies: Dict[str, BaseIndicator], **kwargs):
+        # ✅ FIX: Pass dependencies to the parent class initializer
+        super().__init__(df, params=params, dependencies=dependencies, **kwargs)
         self.period = int(self.params.get('period', 14))
         self.timeframe = self.params.get('timeframe', None)
         self.signal_period = int(self.params.get('signal_period', 9))
@@ -30,28 +26,23 @@ class RsiIndicator(BaseIndicator):
         self.bb_period = int(self.params.get('bb_period', 20))
         self.bb_std_dev = float(self.params.get('bb_std_dev', 2.0))
         self.detect_divergence = bool(self.params.get('detect_divergence', True))
-        self.divergence_lookback = int(self.params.get('lookback_pivots', 5)) # Harmonized name
+        self.divergence_lookback = int(self.params.get('lookback_pivots', 5))
 
-        # ✅ MIRACLE UPGRADE: The indicator now reads its specific dependency config.
         self.zigzag_dependency_params = self.params.get('dependencies', {}).get('zigzag', {'deviation': 3.0})
 
-        # ✅ HARMONIZED: Column names are now generated using the official static method
         self.rsi_col = RsiIndicator.get_col_name(self.params, self.timeframe)
-        self.rsi_signal_col = f'rsi_signal_{self.signal_period}{self.rsi_col[3:]}' # Append to base rsi name
+        self.rsi_signal_col = f'rsi_signal_{self.signal_period}{self.rsi_col[3:]}'
         self.dyn_upper_col = f'rsi_dyn_upper_{self.bb_period}{self.rsi_col[3:]}'
         self.dyn_lower_col = f'rsi_dyn_lower_{self.bb_period}{self.rsi_col[3:]}'
 
     @staticmethod
     def get_col_name(params: Dict[str, Any], timeframe: Optional[str] = None) -> str:
-        """ ✅ NEW: The official, standardized method for generating the RSI column name. """
         period = params.get('period', 14)
         name = f'rsi_{period}'
-        if timeframe:
-            name += f'_{timeframe}'
+        if timeframe: name += f'_{timeframe}'
         return name
 
     def calculate(self) -> 'RsiIndicator':
-        """ Calculates RSI and its related metrics. """
         df_for_calc = self.df
         
         if len(df_for_calc) < max(self.period, self.bb_period):
@@ -78,17 +69,27 @@ class RsiIndicator(BaseIndicator):
         return self
     
     def _find_divergences(self, valid_df: pd.DataFrame) -> List[Dict[str, Any]]:
-        """ Finds divergences by consuming pre-calculated ZigZag columns via the new contract. """
         if not self.detect_divergence: return []
 
-        # ✅ MIRACLE UPGRADE: Gets column names from the ZigZag indicator's contract
-        pivot_col = ZigzagIndicator.get_pivots_col_name(self.zigzag_dependency_params, self.timeframe)
-        price_col = ZigzagIndicator.get_prices_col_name(self.zigzag_dependency_params, self.timeframe)
+        # ✅ FIX: Get the ZigZag instance and access its dataframe directly
+        zigzag_instance = self.dependencies.get('zigzag')
+        if not isinstance(zigzag_instance, BaseIndicator):
+            logger.warning(f"[{self.__class__.__name__}] on {self.timeframe} missing ZigZag dependency for divergence detection.")
+            return []
         
-        if not all(col in valid_df.columns for col in [pivot_col, price_col]):
-             return []
+        zigzag_df = zigzag_instance.df
+        pivot_col_options = [col for col in zigzag_df.columns if 'PIVOTS' in col.upper()]
+        price_col_options = [col for col in zigzag_df.columns if 'PRICES' in col.upper()]
 
-        pivots_df = valid_df[valid_df[pivot_col] != 0]
+        if not pivot_col_options or not price_col_options:
+            logger.warning(f"[{self.__class__.__name__}] on {self.timeframe} could not find required ZigZag columns.")
+            return []
+        
+        pivot_col = pivot_col_options[0]
+        price_col = price_col_options[0]
+
+        # The rest of the logic is unchanged and robust
+        pivots_df = zigzag_df[zigzag_df[pivot_col] != 0]
         if len(pivots_df) < 2: return []
         
         last_pivot = pivots_df.iloc[-1]
@@ -97,8 +98,11 @@ class RsiIndicator(BaseIndicator):
 
         for i in range(len(previous_pivots)):
             prev_pivot = previous_pivots.iloc[i]
-            price1, rsi1 = prev_pivot[price_col], prev_pivot[self.rsi_col]
-            price2, rsi2 = last_pivot[price_col], last_pivot[self.rsi_col]
+            
+            # Use `valid_df` for RSI values to ensure alignment
+            price1, rsi1 = prev_pivot[price_col], valid_df.loc[prev_pivot.name, self.rsi_col]
+            price2, rsi2 = last_pivot[price_col], valid_df.loc[last_pivot.name, self.rsi_col]
+            
             divergence = None
             if prev_pivot[pivot_col] == 1 and last_pivot[pivot_col] == 1:
                 if price2 > price1 and rsi2 < rsi1: divergences.append({'type': 'Regular Bearish'})
@@ -109,7 +113,6 @@ class RsiIndicator(BaseIndicator):
         return divergences
 
     def analyze(self) -> Dict[str, Any]:
-        """ Provides a multi-dimensional analysis of RSI. """
         required = [self.rsi_col, self.rsi_signal_col]
         if self.use_dynamic_levels: required.extend([self.dyn_upper_col, self.dyn_lower_col])
         valid_df = self.df.dropna(subset=required)
