@@ -7,10 +7,10 @@ import asyncio
 import inspect  # ✅ For async analyze() check
 from typing import Dict, Any, Type, List, Optional, Tuple
 from collections import deque
-import structlog
-from .indicators import *
+# import structlog  ✅ REMOVED: Replaced with standard logging
 
-logger = structlog.get_logger()  # ✅ FIX 1: Correct logger initialization
+logger = logging.getLogger(__name__)  # ✅ FIX: Correct logger initialization
+from .indicators import *
 
 
 def get_indicator_config_key(name: str, params: Dict[str, Any]) -> str:
@@ -159,7 +159,7 @@ class IndicatorAnalyzer:
             self._indicator_instances[key] = instance
         except Exception as e:
             logger.error(
-                "Indicator calculation failed", indicator_key=key, error=e, exc_info=True
+                f"Indicator calculation failed for '{key}': {e}", exc_info=True
             )
             # Store the exception so `gather` doesn't hide it
             self._indicator_instances[key] = e
@@ -185,9 +185,7 @@ class IndicatorAnalyzer:
         # to respect dependencies, and note parallelization as a future optimization.
         # The primary bottleneck is network I/O, which is already parallel in the worker.
         logger.debug(
-            "Starting Sequential DI Calculations",
-            timeframe=self.timeframe,
-            tasks=len(self._calculation_order),
+            f"Starting Sequential DI Calculations on {self.timeframe} with {len(self._calculation_order)} tasks."
         )
         for key in self._calculation_order:
             await self._calculate_and_store(key, df_for_calc)
@@ -201,7 +199,7 @@ class IndicatorAnalyzer:
         )
         failed_count = len(self._calculation_order) - success_count
         logger.info(
-            "DI Calculations complete", timeframe=self.timeframe, success=success_count, failed=failed_count
+            f"DI Calculations complete on {self.timeframe}: success={success_count}, failed={failed_count}"
         )
         return self
 
@@ -252,15 +250,12 @@ class IndicatorAnalyzer:
 
             except Exception as e:
                 logger.error(
-                    "Analysis CRASH during aggregation", indicator=unique_key, error=str(e), exc_info=True
+                    f"Analysis CRASH during aggregation for '{unique_key}': {e}", exc_info=True
                 )
                 summary[unique_key] = {"status": f"Analysis Error: {e}"}
 
         failed_or_no_result_count = total_calculated_instances - successful_analysis_count
         logger.info(
-            "Analysis aggregation complete",
-            timeframe=self.timeframe,
-            success=successful_analysis_count,
-            no_result=failed_or_no_result_count,
+            f"Analysis aggregation complete on {self.timeframe}: success={successful_analysis_count}, no_result={failed_or_no_result_count}"
         )
         return summary
