@@ -1,4 +1,5 @@
 # backend/engines/indicators/keltner_channel.py
+
 import pandas as pd
 import numpy as np
 import logging
@@ -10,13 +11,10 @@ logger = logging.getLogger(__name__)
 
 class KeltnerChannelIndicator(BaseIndicator):
     """
-    Keltner Channel - (v6.0 - Dependency Injection Native)
+    Keltner Channel - (v6.1 - Robust DI Edition)
     -----------------------------------------------------------------------------
-    This world-class version is re-engineered to natively support the Dependency 
-    Injection (DI) architecture. It completely eliminates fragile dependencies on 
-    static methods and predicted column names. It directly and robustly consumes the 
-    ATR instance provided by the modern IndicatorAnalyzer, ensuring flawless and
-    decoupled execution.
+    This version includes robustness fixes to gracefully handle cases with
+    insufficient data, preventing runtime errors.
     """
     def __init__(self, df: pd.DataFrame, params: Dict[str, Any], dependencies: Dict[str, BaseIndicator], **kwargs):
         super().__init__(df, params=params, dependencies=dependencies, **kwargs)
@@ -25,36 +23,36 @@ class KeltnerChannelIndicator(BaseIndicator):
         self.timeframe = self.params.get('timeframe')
         self.squeeze_period = int(self.params.get('squeeze_period', 50))
 
-        # Simplified, robust, and locally-scoped column names.
         self.upper_col = 'KC_U'
         self.lower_col = 'KC_L'
         self.middle_col = 'KC_M'
         self.bandwidth_col = 'KC_BW'
 
     def calculate(self) -> 'KeltnerChannelIndicator':
-        """ 
-        Calculates Keltner Channels by directly consuming its ATR dependency instance.
-        The core mathematical logic of this method is 100% preserved.
-        """
-        # 1. Directly and safely receive the ATR instance injected by the Analyzer.
         atr_instance = self.dependencies.get('atr')
         if not atr_instance:
             logger.warning(f"[{self.__class__.__name__}] on {self.timeframe} missing critical ATR dependency. Skipping calculation.")
+            # ✅ FIX: Initialize columns with NaN to prevent KeyError in analyze()
+            self.df[self.upper_col] = np.nan
+            self.df[self.lower_col] = np.nan
+            self.df[self.middle_col] = np.nan
+            self.df[self.bandwidth_col] = np.nan
             return self
 
-        # 2. Intelligently find the required ATR column from the dependency's DataFrame.
         atr_df = atr_instance.df
         atr_col_options = [col for col in atr_df.columns if 'ATR' in col.upper()]
         if not atr_col_options:
             logger.warning(f"[{self.__class__.__name__}] on {self.timeframe} could not find ATR column in dependency dataframe.")
+            self.df[self.upper_col] = np.nan
+            self.df[self.lower_col] = np.nan
+            self.df[self.middle_col] = np.nan
+            self.df[self.bandwidth_col] = np.nan
             return self
         atr_col_name = atr_col_options[0]
         
-        # 3. Join the necessary ATR data into this indicator's main DataFrame.
         self.df = self.df.join(atr_df[[atr_col_name]], how='left')
         atr_period = int(atr_instance.params.get('period', 10))
 
-        # 4. Perform the core Keltner Channel calculation (Formulation is 100% preserved).
         if len(self.df) < max(self.ema_period, atr_period):
             logger.warning(f"Not enough data for Keltner Channel on {self.timeframe or 'base'}.")
             for col in [self.upper_col, self.lower_col, self.middle_col, self.bandwidth_col]:
@@ -77,13 +75,14 @@ class KeltnerChannelIndicator(BaseIndicator):
         return self
 
     def analyze(self) -> Dict[str, Any]:
-        """ 
-        Provides deep analysis of price action relative to the Keltner Channel.
-        This entire method's logic is preserved 100% from the previous version.
-        """
         required_cols = [self.upper_col, self.lower_col, self.middle_col, self.bandwidth_col]
         valid_df = self.df.dropna(subset=required_cols)
         
+        # ✅ FIX: Handle empty DataFrame gracefully
+        if valid_df.empty:
+            logger.warning(f"[{self.__class__.__name__}] on {self.timeframe} has an empty valid_df. Analysis aborted.")
+            return {"status": "Insufficient Data"}
+
         if len(valid_df) < self.squeeze_period:
             return {"status": "Insufficient Data"}
 
