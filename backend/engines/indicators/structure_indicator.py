@@ -1,37 +1,63 @@
-# backend/engines/indicators/structure.py (v5.1 - Hardened Output)
-
+# backend/engines/indicators/structure_indicator.py
 import pandas as pd
 import numpy as np
 import logging
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List
 
 from .base import BaseIndicator
-from .zigzag import ZigzagIndicator
 
 logger = logging.getLogger(__name__)
 
 class StructureIndicator(BaseIndicator):
     """
-    Market Structure Analyzer - (v5.1 - Hardened Output)
+    Market Structure Analyzer - (v6.0 - Dependency Injection Native)
     -----------------------------------------------------------------------------------------
-    This version hardens the analyze method to always return a consistent data
-    structure (contract), ensuring the 'analysis' key is always present, even
-    if empty, to prevent downstream crashes.
+    This version is re-engineered to natively support the Dependency Injection (DI)
+    architecture. It robustly consumes the ZigZag instance to perform its complex
+    analysis, eliminating fragile dependencies while ensuring the core clustering
+    and analysis algorithms remain 100% intact.
     """
-    dependencies: list = []
-
-    def __init__(self, df: pd.DataFrame, **kwargs):
-        super().__init__(df, **kwargs)
-        self.params = kwargs.get('params', {})
-        self.timeframe = self.params.get('timeframe', None)
+    def __init__(self, df: pd.DataFrame, params: Dict[str, Any], dependencies: Dict[str, BaseIndicator], **kwargs):
+        super().__init__(df, params=params, dependencies=dependencies, **kwargs)
+        self.timeframe = self.params.get('timeframe')
         self.num_key_levels = int(self.params.get('num_key_levels', 10))
         self.zone_proximity_pct = float(self.params.get('zone_proximity_pct', 0.1))
-        self.zigzag_dependency_params = self.params.get('dependencies', {}).get('zigzag', {'deviation': 3.0})
+
+        # These attributes will store the actual column names after discovery in calculate()
+        self.pivot_col: str | None = None
+        self.price_col: str | None = None
 
     def calculate(self) -> 'StructureIndicator':
+        """
+        Prepares the indicator's DataFrame by consuming and joining data from its
+        ZigZag dependency.
+        """
+        # 1. Directly and safely receive the ZigZag instance injected by the Analyzer.
+        zigzag_instance = self.dependencies.get('zigzag')
+        if not zigzag_instance:
+            logger.warning(f"[{self.__class__.__name__}] on {self.timeframe} missing critical ZigZag dependency. Skipping calculation.")
+            return self
+
+        # 2. Intelligently find the required columns from the dependency's DataFrame.
+        zigzag_df = zigzag_instance.df
+        pivots_col_options = [col for col in zigzag_df.columns if 'PIVOTS' in col.upper()]
+        prices_col_options = [col for col in zigzag_df.columns if 'PRICES' in col.upper()]
+
+        if not pivots_col_options or not prices_col_options:
+            logger.warning(f"[{self.__class__.__name__}] on {self.timeframe} could not find required columns in ZigZag dependency dataframe.")
+            return self
+            
+        self.pivot_col = pivots_col_options[0]
+        self.price_col = prices_col_options[0]
+
+        # 3. Join the necessary columns into this indicator's main DataFrame for analysis.
+        self.df = self.df.join(zigzag_df[[self.pivot_col, self.price_col]], how='left')
         return self
 
     def _cluster_pivots_into_zones(self, pivots: List[float]) -> List[Dict[str, Any]]:
+        """
+        Core clustering algorithm. This method is 100% preserved from the previous version.
+        """
         if not pivots: return []
         pivots = sorted(pivots)
         zones = []
@@ -47,15 +73,15 @@ class StructureIndicator(BaseIndicator):
         return sorted(zones, key=lambda x: x['strength'], reverse=True)
 
     def analyze(self) -> Dict[str, Any]:
-        pivot_col = ZigzagIndicator.get_pivots_col_name(self.zigzag_dependency_params, self.timeframe)
-        price_col = ZigzagIndicator.get_prices_col_name(self.zigzag_dependency_params, self.timeframe)
-
-        # ✅ FIX: Always return a consistent structure, even on failure
+        """
+        Performs the full market structure analysis. The entire analytical logic of this
+        method is 100% preserved from the previous version.
+        """
         empty_analysis = {"analysis": {}, "key_levels": {}}
 
-        if not all(col in self.df.columns for col in [pivot_col, price_col]):
-            logger.warning(f"[{self.__class__.__name__}] Missing ZigZag columns on {self.timeframe}.")
-            return {"status": "Error: Missing Dependency Columns", **empty_analysis}
+        if not self.pivot_col or not self.price_col or not all(col in self.df.columns for col in [self.pivot_col, self.price_col]):
+            logger.warning(f"[{self.__class__.__name__}] Missing prepared ZigZag columns for analysis on {self.timeframe}.")
+            return {"status": "Error: Missing Prepared Dependency Data", **empty_analysis}
 
         if len(self.df) < 2:
             return {"status": "Insufficient Data", **empty_analysis}
@@ -63,21 +89,21 @@ class StructureIndicator(BaseIndicator):
         last_closed_candle = self.df.iloc[-2]
         current_price = last_closed_candle['close']
         
-        valid_df = self.df.dropna(subset=[pivot_col, price_col])
-        pivots_df = valid_df[valid_df[pivot_col] != 0]
+        valid_df = self.df.dropna(subset=[self.pivot_col, self.price_col])
+        pivots_df = valid_df[valid_df[self.pivot_col] != 0]
 
         if len(pivots_df) < 2:
             return {"status": "Awaiting Pivots", **empty_analysis}
 
-        all_supports_raw = pivots_df[pivots_df[pivot_col] == -1][price_col].tolist()
-        all_resistances_raw = pivots_df[pivots_df[pivot_col] == 1][price_col].tolist()
+        all_supports_raw = pivots_df[pivots_df[self.pivot_col] == -1][self.price_col].tolist()
+        all_resistances_raw = pivots_df[pivots_df[self.pivot_col] == 1][self.price_col].tolist()
         support_zones = self._cluster_pivots_into_zones(all_supports_raw)
         resistance_zones = self._cluster_pivots_into_zones(all_resistances_raw)
         key_supports = support_zones[:self.num_key_levels]
         key_resistances = resistance_zones[:self.num_key_levels]
 
         last_pivot = pivots_df.iloc[-1]
-        last_pivot_type = "Support" if last_pivot[pivot_col] == -1 else "Resistance"
+        last_pivot_type = "Support" if last_pivot[self.pivot_col] == -1 else "Resistance"
         
         nearest_support_zone = min([s for s in support_zones if s['price'] < current_price], key=lambda x: current_price - x['price'], default=None)
         nearest_resistance_zone = min([r for r in resistance_zones if r['price'] > current_price], key=lambda x: x['price'] - current_price, default=None)
@@ -96,12 +122,12 @@ class StructureIndicator(BaseIndicator):
             "analysis": {
                 "current_price": round(current_price, 5),
                 "position": position,
-                "last_pivot": {"type": last_pivot_type, "price": round(last_pivot[price_col], 5)},
+                "last_pivot": {"type": last_pivot_type, "price": round(last_pivot[self.price_col], 5)},
                 "proximity": {
                     "nearest_support_details": nearest_support_zone,
                     "nearest_resistance_details": nearest_resistance_zone,
-                    "is_testing_support": dist_to_support / current_price * 100 < self.zone_proximity_pct if dist_to_support else False,
-                    "is_testing_resistance": dist_to_resistance / current_price * 100 < self.zone_proximity_pct if dist_to_resistance else False
+                    "is_testing_support": dist_to_support / current_price * 100 < self.zone_proximity_pct if dist_to_support is not None else False,
+                    "is_testing_resistance": dist_to_resistance / current_price * 100 < self.zone_proximity_pct if dist_to_resistance is not None else False
                 }
             },
             "key_levels": { "supports": key_supports, "resistances": key_resistances }
