@@ -4,7 +4,7 @@ import pandas as pd
 import logging
 import json
 import asyncio
-from typing import Dict, Any, Type, List, Optional
+from typing import Dict, Any, Type, List, Optional, Tuple
 from collections import deque
 from .indicators import *
 
