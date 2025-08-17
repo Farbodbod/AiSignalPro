@@ -1,35 +1,33 @@
-# backend/engines/indicators/rsi.py (v5.1 - Final Dependency Fix)
+# backend/engines/indicators/rsi.py (v6.0 - Final Fix & Logical Refactor)
 
 import pandas as pd
 import numpy as np
 import logging
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, Optional
 
 from .base import BaseIndicator
-from .zigzag import ZigzagIndicator
 
 logger = logging.getLogger(__name__)
 
 class RsiIndicator(BaseIndicator):
     """
-    RSI - (v5.1 - Final Dependency Fix)
+    RSI - (v6.0 - Logical Refactor & Independence)
     ------------------------------------------------------------------
-    This version is fixed to correctly handle its ZigZag dependency.
+    This version is refactored to be a standalone indicator. It no longer
+    has a dependency on ZigZag, and its only purpose is to calculate
+    the RSI value and its associated signal lines and dynamic levels.
     """
     def __init__(self, df: pd.DataFrame, params: Dict[str, Any], dependencies: Dict[str, BaseIndicator], **kwargs):
-        # ✅ FIX: Pass dependencies to the parent class initializer
-        super().__init__(df, params=params, dependencies=dependencies, **kwargs)
+        # ✅ FIX: No longer requires or uses dependencies
+        super().__init__(df, params=params, dependencies={}, **kwargs)
         self.period = int(self.params.get('period', 14))
         self.timeframe = self.params.get('timeframe', None)
         self.signal_period = int(self.params.get('signal_period', 9))
         self.use_dynamic_levels = bool(self.params.get('use_dynamic_levels', True))
         self.bb_period = int(self.params.get('bb_period', 20))
         self.bb_std_dev = float(self.params.get('bb_std_dev', 2.0))
-        self.detect_divergence = bool(self.params.get('detect_divergence', True))
-        self.divergence_lookback = int(self.params.get('lookback_pivots', 5))
-
-        self.zigzag_dependency_params = self.params.get('dependencies', {}).get('zigzag', {'deviation': 3.0})
-
+        
+        # ✅ FIX: Removed divergence-related parameters and logic
         self.rsi_col = RsiIndicator.get_col_name(self.params, self.timeframe)
         self.rsi_signal_col = f'rsi_signal_{self.signal_period}{self.rsi_col[3:]}'
         self.dyn_upper_col = f'rsi_dyn_upper_{self.bb_period}{self.rsi_col[3:]}'
@@ -68,50 +66,6 @@ class RsiIndicator(BaseIndicator):
             
         return self
     
-    def _find_divergences(self, valid_df: pd.DataFrame) -> List[Dict[str, Any]]:
-        if not self.detect_divergence: return []
-
-        # ✅ FIX: Get the ZigZag instance and access its dataframe directly
-        zigzag_instance = self.dependencies.get('zigzag')
-        if not isinstance(zigzag_instance, BaseIndicator):
-            logger.warning(f"[{self.__class__.__name__}] on {self.timeframe} missing ZigZag dependency for divergence detection.")
-            return []
-        
-        zigzag_df = zigzag_instance.df
-        pivot_col_options = [col for col in zigzag_df.columns if 'PIVOTS' in col.upper()]
-        price_col_options = [col for col in zigzag_df.columns if 'PRICES' in col.upper()]
-
-        if not pivot_col_options or not price_col_options:
-            logger.warning(f"[{self.__class__.__name__}] on {self.timeframe} could not find required ZigZag columns.")
-            return []
-        
-        pivot_col = pivot_col_options[0]
-        price_col = price_col_options[0]
-
-        # The rest of the logic is unchanged and robust
-        pivots_df = zigzag_df[zigzag_df[pivot_col] != 0]
-        if len(pivots_df) < 2: return []
-        
-        last_pivot = pivots_df.iloc[-1]
-        previous_pivots = pivots_df.iloc[-self.divergence_lookback:-1]
-        divergences = []
-
-        for i in range(len(previous_pivots)):
-            prev_pivot = previous_pivots.iloc[i]
-            
-            # Use `valid_df` for RSI values to ensure alignment
-            price1, rsi1 = prev_pivot[price_col], valid_df.loc[prev_pivot.name, self.rsi_col]
-            price2, rsi2 = last_pivot[price_col], valid_df.loc[last_pivot.name, self.rsi_col]
-            
-            divergence = None
-            if prev_pivot[pivot_col] == 1 and last_pivot[pivot_col] == 1:
-                if price2 > price1 and rsi2 < rsi1: divergences.append({'type': 'Regular Bearish'})
-                if price2 < price1 and rsi2 > rsi1: divergences.append({'type': 'Hidden Bearish'})
-            elif prev_pivot[pivot_col] == -1 and last_pivot[pivot_col] == -1:
-                if price2 < price1 and rsi2 > rsi1: divergences.append({'type': 'Regular Bullish'})
-                if price2 > price1 and rsi2 < rsi1: divergences.append({'type': 'Hidden Bullish'})
-        return divergences
-
     def analyze(self) -> Dict[str, Any]:
         required = [self.rsi_col, self.rsi_signal_col]
         if self.use_dynamic_levels: required.extend([self.dyn_upper_col, self.dyn_lower_col])
@@ -134,11 +88,11 @@ class RsiIndicator(BaseIndicator):
         if prev[self.rsi_col] <= prev[self.rsi_signal_col] and last_rsi > last[self.rsi_signal_col]: signals.append("Bullish Signal Line Cross")
         if prev[self.rsi_col] >= prev[self.rsi_signal_col] and last_rsi < last[self.rsi_signal_col]: signals.append("Bearish Signal Line Cross")
 
-        divergences = self._find_divergences(valid_df)
+        # ✅ FIX: Removed divergence analysis from RSI
         
         return {
             "status": "OK", "timeframe": self.timeframe or 'Base',
             "values": {"rsi": round(last_rsi, 2), "signal_line": round(last[self.rsi_signal_col], 2)},
             "levels": {"overbought": round(ob_level, 2), "oversold": round(os_level, 2), "is_dynamic": self.use_dynamic_levels},
-            "analysis": { "position": position, "crossover_signals": signals, "divergences": divergences }
+            "analysis": { "position": position, "crossover_signals": signals }
         }
