@@ -169,8 +169,8 @@ class ExchangeFetcher:
         for k in data:
             try:
                 raw_ts = k[0]
-                if isinstance(raw_ts, str):
-                    ts_int = int(pd.to_datetime(raw_ts).timestamp() * 1000)
+                if isinstance(raw_ts, str) and not raw_ts.isdigit():
+                ts_int = int(pd.to_datetime(raw_ts).timestamp() * 1000)
                 else:
                     ts_int = int(raw_ts)
 
