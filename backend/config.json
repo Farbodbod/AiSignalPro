@@ -127,7 +127,7 @@
     "obv":              { "enabled": true },
     "patterns":         { "enabled": true },
     "pivots":           { "enabled": true },
-    "rsi":              { "enabled": true,  "period": 14, "detect_divergence": true },
+    "rsi":              { "enabled": true,  "period": 14 },
     "stochastic":       { "enabled": true,  "k_period": 14, "d_period": 3, "dependencies": { "zigzag": { "deviation": 3.0 } } },
     "structure":        { "enabled": true,  "dependencies": { "zigzag": { "deviation": 3.0 } }, "zone_proximity_pct": 0.1 },
     "supertrend":       { "enabled": true,  "period": 10, "multiplier": 3.0, "dependencies": { "atr": { "period": 14 } } },
