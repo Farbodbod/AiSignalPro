@@ -2,6 +2,7 @@
 import pandas as pd
 import numpy as np
 import logging
+import json
 from typing import Dict, Any
 
 from .base import BaseIndicator
@@ -11,10 +12,11 @@ logger = logging.getLogger(__name__)
 
 class KeltnerChannelIndicator(BaseIndicator):
     """
-    Keltner Channel - (v6.5 - Ultimate Debug Edition)
+    Keltner Channel - (v6.4 - Final Integrity Hotfix)
     -----------------------------------------------------------------------------
-    This is the ultimate debug version to solve the paradox of missing columns.
-    It logs memory IDs of the instance and its DataFrame to trace their lifecycle.
+    This version contains the definitive hotfix for a subtle bug where the middle
+    band column was not being assigned, causing downstream analysis failures.
+    This version restores full data integrity.
     """
     def __init__(self, df: pd.DataFrame, params: Dict[str, Any], dependencies: Dict[str, BaseIndicator], **kwargs):
         super().__init__(df, params=params, dependencies=dependencies, **kwargs)
@@ -35,13 +37,13 @@ class KeltnerChannelIndicator(BaseIndicator):
         atr_instance = self.dependencies.get(atr_unique_key)
         
         if not isinstance(atr_instance, BaseIndicator):
-            logger.warning(f"KELTNER_ULTIMATE_DEBUG on {self.timeframe}: Exiting calculate() - ATR dependency instance not found for key '{atr_unique_key}'.")
+            logger.warning(f"[{self.__class__.__name__}] on {self.timeframe} missing critical ATR instance ('{atr_unique_key}'). Skipping.")
             return self
 
         atr_df = atr_instance.df
         atr_col_options = [col for col in atr_df.columns if 'ATR' in col.upper()]
         if not atr_col_options:
-            logger.warning(f"KELTNER_ULTIMATE_DEBUG on {self.timeframe}: Exiting calculate() - no ATR column found in dependency dataframe.")
+            logger.warning(f"[{self.__class__.__name__}] on {self.timeframe} could not find ATR column in dependency.")
             return self
         atr_col_name = atr_col_options[0]
         
@@ -49,43 +51,31 @@ class KeltnerChannelIndicator(BaseIndicator):
         atr_period = int(atr_instance.params.get('period', 10))
 
         if len(self.df) < max(self.ema_period, atr_period):
-            logger.warning(f"KELTNER_ULTIMATE_DEBUG on {self.timeframe}: Exiting calculate() - insufficient data rows. Have {len(self.df)}, need {max(self.ema_period, atr_period)}.")
+            logger.warning(f"Not enough data for Keltner Channel on {self.timeframe or 'base'}. Have {len(self.df)}, need {max(self.ema_period, atr_period)}.")
             return self
 
         typical_price = (self.df['high'] + self.df['low'] + self.df['close']) / 3
         middle_band = typical_price.ewm(span=self.ema_period, adjust=False).mean()
-        atr_value = self.df[atr_col_name].dropna() * self.atr_multiplier # This bug is intentionally left for now to see the flow
+        atr_value = self.df[atr_col_name].dropna() * self.atr_multiplier
         
-        self.df[self.upper_col] = middle_band + atr_value
-        self.df[self.lower_col] = middle_band - atr_value
-        self.df[self.bandwidth_col] = ((self.df[self.upper_col] - self.df[self.lower_col]) / middle_band.replace(0, np.nan)) * 100
+        upper_band = middle_band + atr_value
+        lower_band = middle_band - atr_value
         
-        # ✅ ULTIMATE DEBUG LOG
-        logger.critical(
-            f"KELTNER_ULTIMATE_DEBUG on {self.timeframe}: AT THE END OF CALCULATE.\n"
-            f"  - Instance ID: {id(self)}\n"
-            f"  - DataFrame ID: {id(self.df)}\n"
-            f"  - DF Columns: {self.df.columns.tolist()}"
-        )
+        self.df[self.upper_col] = upper_band
+        self.df[self.lower_col] = lower_band
+        # ✅ DEFINITIVE FIX: Restored the missing middle_band assignment.
+        self.df[self.middle_col] = middle_band
+        self.df[self.bandwidth_col] = ((self.df[self.upper_col] - self.df[self.lower_col]) / self.df[self.middle_col].replace(0, np.nan)) * 100
+        
         return self
 
     def analyze(self) -> Dict[str, Any]:
-        # ✅ ULTIMATE DEBUG LOG
-        logger.critical(
-            f"KELTNER_ULTIMATE_DEBUG on {self.timeframe}: AT THE START OF ANALYZE.\n"
-            f"  - Instance ID: {id(self)}\n"
-            f"  - DataFrame ID: {id(self.df)}\n"
-            f"  - DF Columns: {self.df.columns.tolist()}"
-        )
-
         required_cols = [self.upper_col, self.lower_col, self.middle_col, self.bandwidth_col]
         if not all(col in self.df.columns for col in required_cols):
-            logger.warning(f"KELTNER_ULTIMATE_DEBUG on {self.timeframe}: Exiting analyze() because required columns are missing.")
             return {"status": "Calculation Incomplete - Required columns missing"}
 
         valid_df = self.df.dropna(subset=required_cols)
         if len(valid_df) < self.squeeze_period:
-            logger.warning(f"KELTNER_ULTIMATE_DEBUG on {self.timeframe}: Exiting analyze() because valid data rows ({len(valid_df)}) are less than squeeze_period ({self.squeeze_period}).")
             return {"status": "Insufficient Data"}
 
         last = valid_df.iloc[-1]
