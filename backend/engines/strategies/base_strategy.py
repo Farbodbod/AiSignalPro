@@ -1,4 +1,4 @@
-# strategies/base_strategy.py (v7.1 - Stable Fallback Version)
+# strategies/base_strategy.py (v8.3 - Definitive GetIndicator Hotfix)
 
 from __future__ import annotations
 from abc import ABC, abstractmethod
@@ -25,36 +25,26 @@ def deep_merge(dict1: Dict[str, Any], dict2: Dict[str, Any]) -> Dict[str, Any]:
     """Recursively merges two dictionaries."""
     result = deepcopy(dict1)
     for k, v in dict2.items():
-        if k in result and isinstance(result[k], dict) and isinstance(v, dict):
-            result[k] = deep_merge(result[k], v)
-        else:
-            result[k] = v
+        if k in result and isinstance(result[k], dict) and isinstance(v, dict): result[k] = deep_merge(result[k], v)
+        else: result[k] = v
     return result
 
 class BaseStrategy(ABC):
     """
-    World-Class Base Strategy Framework - (v7.1 - Stable Fallback Version)
+    World-Class Base Strategy Framework - (v8.3 - Definitive GetIndicator Hotfix)
     ---------------------------------------------------------------------------------------------
-    This is a stable fallback version that uses standard Python logging. It contains the
-    critical hotfix for the AttributeError in _get_candlestick_confirmation and uses the
-    correctly merged config for name resolution, preventing crashes and ensuring stability.
+    This version contains a critical hotfix for the get_indicator method. The fallback
+    logic for global indicators was broken after a change in the IndicatorAnalyzer.
+    This version correctly reconstructs the unique_key for global indicators,
+    preventing silent failures and ensuring strategies always receive their data.
     """
     strategy_name: str = "BaseStrategy"
     default_config: ClassVar[Dict[str, Any]] = {}
 
     def __init__(self, primary_analysis: Dict[str, Any], config: Dict[str, Any], main_config: Dict[str, Any], primary_timeframe: str, symbol: str, htf_analysis: Optional[Dict[str, Any]] = None):
-        self.analysis = primary_analysis
-        self.config = deep_merge(self.default_config, config or {})
-        self.main_config = main_config
-        self.htf_analysis = htf_analysis or {}
-        self.primary_timeframe = primary_timeframe
-        self.symbol = symbol
-        self.price_data = self.analysis.get('price_data')
-        self.df = self.analysis.get('final_df')
-        self.indicator_configs = self.config.get('indicator_configs', {})
-        self.log_details = {"criteria_results": [], "indicator_trace": [], "risk_trace": []}
-        # ✅ FIX: Use the correctly merged self.config to get the name
-        self.name = self.config.get('name', self.strategy_name)
+        self.analysis, self.config, self.main_config, self.htf_analysis = primary_analysis, deep_merge(self.default_config, config or {}), main_config, htf_analysis or {}
+        self.primary_timeframe, self.symbol, self.price_data, self.df = primary_timeframe, symbol, self.analysis.get('price_data'), self.analysis.get('final_df')
+        self.indicator_configs, self.log_details, self.name = self.config.get('indicator_configs', {}), {"criteria_results": [], "indicator_trace": [], "risk_trace": []}, self.config.get('name', self.strategy_name)
 
     def _log_criteria(self, criterion_name: str, status: bool, reason: str = ""):
         focus_symbol = self.main_config.get("general", {}).get("logging_focus_symbol")
@@ -73,44 +63,63 @@ class BaseStrategy(ABC):
         logger.info(f"{signal_emoji} Final Decision: {self.name} on {self.symbol} {self.primary_timeframe} -> Signal: {signal}. Reason: {reason}")
 
     @abstractmethod
-    def check_signal(self) -> Optional[Dict[str, Any]]:
-        pass
+    def check_signal(self) -> Optional[Dict[str, Any]]: pass
 
     def get_indicator(self, name_or_alias: str, analysis_source: Optional[Dict] = None) -> Optional[Dict[str, Any]]:
         source = analysis_source if analysis_source is not None else self.analysis
         if not source: return None
-        indicator_data = None
-        if name_or_alias in self.indicator_configs:
-            order = self.indicator_configs[name_or_alias]; unique_key = get_indicator_config_key(order['name'], order.get('params', {})); indicator_data = source.get(unique_key)
-        else: indicator_data = source.get(name_or_alias)
-        if not indicator_data or not isinstance(indicator_data, dict):
-            self._log_indicator_trace(name_or_alias, None, status="FAILED", reason="Missing or invalid data object."); return None
-        status = indicator_data.get("status", "").lower()
-        if "error" in status or "failed" in status:
-            self._log_indicator_trace(name_or_alias, status, status="FAILED", reason=f"Indicator reported status: {status}"); return None
-        self._log_indicator_trace(name_or_alias, "OK"); return indicator_data
-
-    def _get_candlestick_confirmation(self, direction: str, min_reliability: str = 'Medium') -> Optional[Dict[str, Any]]:
-        pattern_analysis = self.get_indicator('patterns')
-        if not pattern_analysis or 'analysis' not in pattern_analysis: return None
         
-        # ✅ CRITICAL BUG FIX is PRESERVED here
-        reliability_map = {'Low': 0, 'Medium': 1, 'Strong': 2}
-        min_reliability_score = reliability_map.get(min_reliability, 1)
+        indicator_data = None
+        unique_key = None
+        
+        if name_or_alias in self.indicator_configs:
+            # Logic for getting a strategy-specific "aliased" indicator (this part was already correct)
+            order = self.indicator_configs[name_or_alias]
+            unique_key = get_indicator_config_key(order['name'], order.get('params', {}))
+            indicator_data = source.get(unique_key)
+        else:
+            # ✅ DEFINITIVE FIX: New, robust fallback logic for global indicators
+            # 1. Get the config for the requested global indicator from the main config file.
+            global_indicator_config = self.main_config.get('indicators', {}).get(name_or_alias)
+            
+            if not global_indicator_config:
+                # The requested global indicator doesn't even exist in the main config.
+                self._log_indicator_trace(name_or_alias, None, status="FAILED", reason="Not defined in global indicator config.")
+                return None
+            
+            # 2. Reconstruct the full, correct unique_key using its global parameters.
+            # The simple name is the key (e.g., "rsi"), and the value is the dict of params.
+            unique_key = get_indicator_config_key(name_or_alias, global_indicator_config)
+            indicator_data = source.get(unique_key)
+        
+        if not indicator_data or not isinstance(indicator_data, dict):
+            self._log_indicator_trace(name_or_alias, None, status="FAILED", reason=f"Missing data object for key: {unique_key}.")
+            return None
+        
+        status = indicator_data.get("status", "").lower()
+        if "error" in status or "failed" in status or status == "calculation incomplete - required columns missing":
+            self._log_indicator_trace(name_or_alias, status, status="FAILED", reason=f"Indicator reported failure status: {status}")
+            return None
+        
+        self._log_indicator_trace(name_or_alias, "OK")
+        return indicator_data
 
+    # ... All other helper methods (_get_candlestick_confirmation, etc.) are unchanged and correct ...
+    def _get_candlestick_confirmation(self, direction: str, min_reliability: str = 'Medium') -> Optional[Dict[str, Any]]:
+        pattern_analysis = self.get_indicator('patterns');
+        if not pattern_analysis or 'analysis' not in pattern_analysis: return None
+        reliability_map = {'Low': 0, 'Medium': 1, 'Strong': 2}; min_reliability_score = reliability_map.get(min_reliability, 1)
         target_pattern_list = 'bullish_patterns' if direction.upper() == "BUY" else 'bearish_patterns'
         found_patterns = (pattern_analysis.get('analysis') or {}).get(target_pattern_list, [])
         for pattern in found_patterns:
             if reliability_map.get(pattern.get('reliability'), 0) >= min_reliability_score: return pattern
         return None
-
     def _get_volume_confirmation(self) -> bool:
-        whale_analysis = self.get_indicator('whales')
+        whale_analysis = self.get_indicator('whales');
         if not whale_analysis: return False
         min_spike_score, analysis = self.config.get('min_whale_spike_score', 1.5), whale_analysis.get('analysis') or {}
         is_whale_activity, spike_score = analysis.get('is_whale_activity', False), analysis.get('spike_score', 0)
         return is_whale_activity and spike_score >= min_spike_score
-
     def _get_trend_confirmation(self, direction: str) -> bool:
         htf_map, target_htf = self.config.get('htf_map', {}), self.config.get(self.primary_timeframe)
         if not target_htf: return True
@@ -132,7 +141,6 @@ class BaseStrategy(ABC):
                 if ind_dir and direction.upper() in ind_dir.upper(): current_score += weight
         self._log_indicator_trace(f"HTF_Score", current_score, reason=f"Required: {min_required_score}")
         return current_score >= min_required_score
-
     def _calculate_smart_risk_management(self, entry_price: float, direction: str, stop_loss: float) -> Dict[str, Any]:
         if not isinstance(entry_price, (int, float)) or not isinstance(stop_loss, (int, float)):
             logger.debug(f"Risk calc skipped due to invalid inputs. Entry: {entry_price}, SL: {stop_loss}"); return {}
