@@ -1,7 +1,7 @@
-# engines/indicator_analyzer.py (v16.1 - Stable Rollback Edition)
+# engines/indicator_analyzer.py (v16.2 - Deep Debug Edition)
 
 import pandas as pd
-import logging # ✅ Rollback to standard logging
+import logging
 import json
 import asyncio
 import inspect
@@ -9,10 +9,10 @@ from typing import Dict, Any, Type, List, Optional, Tuple
 from collections import deque
 from .indicators import *
 
-logger = logging.getLogger(__name__) # ✅ Rollback to standard logging
+logger = logging.getLogger(__name__)
 
 def get_indicator_config_key(name: str, params: Dict[str, Any]) -> str:
-    # This function is unchanged and robust
+    # This function is unchanged
     try:
         filtered_params = {k: v for k, v in params.items() if k not in ["enabled", "dependencies", "name"]}
         if not filtered_params: return name
@@ -24,14 +24,7 @@ def get_indicator_config_key(name: str, params: Dict[str, Any]) -> str:
         return f"{name}_{param_str}" if param_str else name
 
 class IndicatorAnalyzer:
-    """
-    The Self-Aware Analysis Engine for AiSignalPro (v16.1 - Stable Rollback Edition)
-    ------------------------------------------------------------------------------------------
-    This is the definitive, peer-reviewed version, aligned with the project's rollback
-    to standard logging. It incorporates all stability and performance upgrades,
-    including the elimination of data overwrite risks (no df.update), hardened DataFrame
-    concatenation, and future-proof support for async analyze() methods.
-    """
+    # __init__ and _resolve_dependencies are unchanged from v16.1
     def __init__(self, df: pd.DataFrame, config: Dict[str, Any], strategies_config: Dict[str, Any], timeframe: str, previous_df: Optional[pd.DataFrame] = None):
         if not isinstance(df, pd.DataFrame): raise ValueError("Input must be a pandas DataFrame.")
         self.base_df, self.previous_df, self.indicators_config, self.strategies_config, self.timeframe, self.recalc_buffer = df, previous_df, config, strategies_config, timeframe, 250
@@ -40,9 +33,7 @@ class IndicatorAnalyzer:
         self._indicator_instances: Dict[str, BaseIndicator] = {}
         self._calculation_order: List[str] = self._resolve_dependencies()
         self.final_df: Optional[pd.DataFrame] = None
-
     def _resolve_dependencies(self) -> List[str]:
-        # This logic is robust and unchanged.
         adj, in_degree = {}, {}
         def discover_nodes(ind_name: str, params: Dict[str, Any]):
             key = get_indicator_config_key(ind_name, params);
@@ -67,7 +58,6 @@ class IndicatorAnalyzer:
         return sorted_order
 
     async def _calculate_and_store(self, key: str, base_df: pd.DataFrame) -> None:
-        """Helper to run a single indicator task and store the result."""
         config = self._indicator_configs[key]; name, params = config["name"], config["params"]; cls = self._indicator_classes.get(name)
         if not cls: logger.warning(f"Indicator class not found for key '{key}'"); return
         try:
@@ -75,7 +65,7 @@ class IndicatorAnalyzer:
             instance = cls(df=base_df.copy(), params=instance_params, dependencies=self._indicator_instances).calculate()
             self._indicator_instances[key] = instance
         except Exception as e:
-            logger.error(f"Indicator calculation failed for key '{key}': {e}", exc_info=True)
+            logger.error(f"Indicator calculation CRASHED for key '{key}': {e}", exc_info=True)
             self._indicator_instances[key] = e 
 
     async def calculate_all(self) -> "IndicatorAnalyzer":
@@ -85,17 +75,25 @@ class IndicatorAnalyzer:
             elif df_for_calc.index.tz is not None and self.previous_df.index.tz is None: self.previous_df.index = self.previous_df.index.tz_localize(df_for_calc.index.tz)
             df_for_calc = pd.concat([self.previous_df, df_for_calc]); df_for_calc = df_for_calc.sort_index(); df_for_calc = df_for_calc[~df_for_calc.index.duplicated(keep="last")]
         
-        logger.info(f"--- Starting DI Calculations for {self.timeframe} ({len(self._calculation_order)} tasks) ---")
+        logger.critical(f"--- STARTING CALCULATION CHAIN FOR {self.timeframe} ---")
+        logger.info(f"Initial DF for {self.timeframe} has columns: {df_for_calc.columns.tolist()} and {len(df_for_calc)} rows.")
+
+        # ✅ DEEP DEBUG LOGGING
         for key in self._calculation_order:
+            logger.warning(f"--> [{self.timeframe}] Attempting to calculate: {key}")
             await self._calculate_and_store(key, df_for_calc)
+            status = 'Success' if isinstance(self._indicator_instances.get(key), BaseIndicator) else 'FAIL'
+            logger.warning(f"<-- [{self.timeframe}] Finished calculation for: {key}. Status: {status}")
         
         self.final_df = df_for_calc
         success_count = sum(1 for v in self._indicator_instances.values() if isinstance(v, BaseIndicator))
         failed_count = len(self._calculation_order) - success_count
         logger.info(f"✅ DI Calculations complete for {self.timeframe}: {success_count} succeeded, {failed_count} failed/skipped.")
+        logger.critical(f"--- FINISHED CALCULATION CHAIN FOR {self.timeframe} ---")
         return self
 
     async def get_analysis_summary(self) -> Dict[str, Any]:
+        # This method is unchanged from v16.1
         if self.final_df is None: return {"status": "Calculation Not Run"}
         if len(self.final_df) < 2: return {"status": "Insufficient Data"}
         summary: Dict[str, Any] = {"status": "OK", "final_df": self.final_df.tail(self.recalc_buffer + 50)}
@@ -103,11 +101,8 @@ class IndicatorAnalyzer:
             summary["price_data"] = {"open": self.final_df.iloc[-2]["open"], "high": self.final_df.iloc[-2]["high"], "low": self.final_df.iloc[-2]["low"], "close": self.final_df.iloc[-2]["close"], "volume": self.final_df.iloc[-2]["volume"], "timestamp": str(self.final_df.index[-2]),}
         except IndexError:
             return {"status": "Insufficient Data after calculations"}
-
-        successful_analysis_count = 0
-        total_calculated_instances = sum(1 for v in self._indicator_instances.values() if isinstance(v, BaseIndicator))
+        successful_analysis_count, total_calculated_instances = 0, sum(1 for v in self._indicator_instances.values() if isinstance(v, BaseIndicator))
         logger.info(f"--- Starting Analysis Aggregation for {self.timeframe} ({total_calculated_instances} successful instances) ---")
-
         for unique_key, instance in self._indicator_instances.items():
             if not isinstance(instance, BaseIndicator):
                 summary[unique_key] = {"status": "Calculation Failed"}
@@ -123,7 +118,6 @@ class IndicatorAnalyzer:
                 summary[unique_key] = analysis
             except Exception as e:
                 logger.error(f"Analysis CRASH during aggregation for '{unique_key}': {e}", exc_info=True); summary[unique_key] = {"status": f"Analysis Error: {e}"}
-        
         failed_or_no_result_count = total_calculated_instances - successful_analysis_count
         logger.info(f"✅ Analysis aggregation phase for {self.timeframe} complete.")
         logger.info(f"📊 Analysis Summary for {self.timeframe}: {successful_analysis_count} succeeded, {failed_or_no_result_count} had no result.")
