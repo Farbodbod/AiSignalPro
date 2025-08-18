@@ -2,21 +2,22 @@
 import pandas as pd
 import numpy as np
 import logging
+import json
 from typing import Dict, Any
 
 from .base import BaseIndicator
-from .utils import get_indicator_config_key # ✅ World-Class Practice: Import from shared utils
+from .utils import get_indicator_config_key
 
 logger = logging.getLogger(__name__)
 
 class KeltnerChannelIndicator(BaseIndicator):
     """
-    Keltner Channel - (v6.2 - Definitive Dependency Hotfix)
+    Keltner Channel - (v6.3 - Silent Corruption Hotfix)
     -----------------------------------------------------------------------------
-    This version contains the definitive, world-class fix for dependency lookup.
-    It now correctly reconstructs the unique_key of its dependency (ATR) from
-    its own configuration, ensuring a flawless and robust connection to the
-    data provider. It also includes the guard clause to prevent KeyErrors.
+    This version contains a critical hotfix for a silent data corruption bug
+    in the calculate() method caused by an incorrect .dropna() call. This fix
+    ensures Keltner Channel values are calculated correctly under all conditions,
+    resolving downstream strategy failures.
     """
     def __init__(self, df: pd.DataFrame, params: Dict[str, Any], dependencies: Dict[str, BaseIndicator], **kwargs):
         super().__init__(df, params=params, dependencies=dependencies, **kwargs)
@@ -30,7 +31,6 @@ class KeltnerChannelIndicator(BaseIndicator):
         """ 
         Calculates Keltner Channels by correctly looking up its ATR dependency instance.
         """
-        # ✅ DEFINITIVE FIX: The correct way to look up a dependency.
         my_deps_config = self.params.get("dependencies", {})
         atr_order_params = my_deps_config.get('atr')
         if not atr_order_params:
@@ -55,11 +55,16 @@ class KeltnerChannelIndicator(BaseIndicator):
         atr_period = int(atr_instance.params.get('period', 10))
 
         if len(self.df) < max(self.ema_period, atr_period):
+            # Added a log for better debugging, as discussed.
+            logger.warning(f"Not enough data for Keltner Channel on {self.timeframe or 'base'}. Have {len(self.df)}, need {max(self.ema_period, atr_period)}.")
             return self
 
         typical_price = (self.df['high'] + self.df['low'] + self.df['close']) / 3
         middle_band = typical_price.ewm(span=self.ema_period, adjust=False).mean()
-        atr_value = self.df[atr_col_name].dropna() * self.atr_multiplier
+        
+        # ✅ CRITICAL FIX: Removed the unnecessary and destructive .dropna() call.
+        # Pandas vector operations handle NaNs correctly by default.
+        atr_value = self.df[atr_col_name] * self.atr_multiplier
         
         self.df[self.upper_col] = middle_band + atr_value
         self.df[self.lower_col] = middle_band - atr_value
