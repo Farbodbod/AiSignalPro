@@ -10,13 +10,12 @@ logger = logging.getLogger(__name__)
 
 class KeltnerChannelIndicator(BaseIndicator):
     """
-    Keltner Channel - (v6.0 - Dependency Injection Native)
+    Keltner Channel - (v6.1 - KeyError Hotfix)
     -----------------------------------------------------------------------------
-    This world-class version is re-engineered to natively support the Dependency 
-    Injection (DI) architecture. It completely eliminates fragile dependencies on 
-    static methods and predicted column names. It directly and robustly consumes the 
-    ATR instance provided by the modern IndicatorAnalyzer, ensuring flawless and
-    decoupled execution.
+    This version includes a critical hotfix in the analyze() method. A guard
+    clause has been added to prevent a fatal KeyError when the calculate() method
+    exits early (e.g., due to missing dependencies or insufficient data),
+    ensuring the indicator fails gracefully instead of crashing the analysis phase.
     """
     def __init__(self, df: pd.DataFrame, params: Dict[str, Any], dependencies: Dict[str, BaseIndicator], **kwargs):
         super().__init__(df, params=params, dependencies=dependencies, **kwargs)
@@ -34,15 +33,12 @@ class KeltnerChannelIndicator(BaseIndicator):
     def calculate(self) -> 'KeltnerChannelIndicator':
         """ 
         Calculates Keltner Channels by directly consuming its ATR dependency instance.
-        The core mathematical logic of this method is 100% preserved.
         """
-        # 1. Directly and safely receive the ATR instance injected by the Analyzer.
         atr_instance = self.dependencies.get('atr')
         if not atr_instance:
             logger.warning(f"[{self.__class__.__name__}] on {self.timeframe} missing critical ATR dependency. Skipping calculation.")
             return self
 
-        # 2. Intelligently find the required ATR column from the dependency's DataFrame.
         atr_df = atr_instance.df
         atr_col_options = [col for col in atr_df.columns if 'ATR' in col.upper()]
         if not atr_col_options:
@@ -50,15 +46,12 @@ class KeltnerChannelIndicator(BaseIndicator):
             return self
         atr_col_name = atr_col_options[0]
         
-        # 3. Join the necessary ATR data into this indicator's main DataFrame.
         self.df = self.df.join(atr_df[[atr_col_name]], how='left')
         atr_period = int(atr_instance.params.get('period', 10))
 
-        # 4. Perform the core Keltner Channel calculation (Formulation is 100% preserved).
         if len(self.df) < max(self.ema_period, atr_period):
             logger.warning(f"Not enough data for Keltner Channel on {self.timeframe or 'base'}.")
-            for col in [self.upper_col, self.lower_col, self.middle_col, self.bandwidth_col]:
-                self.df[col] = np.nan
+            # Do not create columns if there's not enough data
             return self
 
         typical_price = (self.df['high'] + self.df['low'] + self.df['close']) / 3
@@ -79,9 +72,12 @@ class KeltnerChannelIndicator(BaseIndicator):
     def analyze(self) -> Dict[str, Any]:
         """ 
         Provides deep analysis of price action relative to the Keltner Channel.
-        This entire method's logic is preserved 100% from the previous version.
         """
+        # ✅ KEY FIX: Add a guard clause to prevent KeyError if calculate() exited early.
         required_cols = [self.upper_col, self.lower_col, self.middle_col, self.bandwidth_col]
+        if not all(col in self.df.columns for col in required_cols):
+            return {"status": "Calculation Incomplete - Required columns missing"}
+
         valid_df = self.df.dropna(subset=required_cols)
         
         if len(valid_df) < self.squeeze_period:
