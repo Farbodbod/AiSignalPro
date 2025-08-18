@@ -1,4 +1,4 @@
-# backend/engines/indicators/chandelier_exit.py (v5.2 - Final & Inherited Init)
+# backend/engines/indicators/chandelier_exit.py
 import logging
 import pandas as pd
 from typing import Dict, Any, Optional
@@ -9,12 +9,12 @@ logger = logging.getLogger(__name__)
 
 class ChandelierExitIndicator(BaseIndicator):
     """
-    Chandelier Exit - (v5.2 - Final & Inherited Init)
+    Chandelier Exit - (v5.3 - AttributeError Hotfix)
     -----------------------------------------------------------------------------
-    This definitive version is re-engineered to natively support the Dependency
-    Injection (DI) architecture. It robustly consumes the ATR instance, eliminating
-    fragile dependencies while ensuring the core calculation and analysis logic
-    remain 100% intact. The unnecessary __init__ is removed for cleaner code.
+    This version contains a critical hotfix to resolve a fatal AttributeError by
+    re-introducing a standardized __init__ method to correctly set the 'timeframe'
+    attribute, which is required by the calculate and analyze methods. All core
+    trading logic and DI-native capabilities are 100% preserved.
     """
     strategy_name: "ChandelierExitIndicator"
 
@@ -22,9 +22,17 @@ class ChandelierExitIndicator(BaseIndicator):
         "atr_multiplier": 3.0
     }
     
-    # NOTE: No __init__ method is needed. This class now correctly inherits the
-    # powerful constructor from BaseIndicator, making the code cleaner.
-    
+    # ✅ KEY FIX: Restored the __init__ method to correctly set instance attributes.
+    def __init__(self, df: pd.DataFrame, params: Dict[str, Any], dependencies: Dict[str, BaseIndicator], **kwargs):
+        """
+        Initializes the indicator, calling the base constructor and setting
+        indicator-specific attributes like timeframe.
+        """
+        # First, call the parent constructor to set up all base attributes
+        super().__init__(df, params=params, dependencies=dependencies, **kwargs)
+        # Now, perform indicator-specific setup
+        self.timeframe = self.params.get('timeframe')
+
     def calculate(self) -> 'ChandelierExitIndicator':
         """ 
         Calculates the Chandelier Exit lines by directly consuming its ATR dependency.
