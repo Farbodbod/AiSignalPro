@@ -5,17 +5,18 @@ import logging
 from typing import Dict, Any
 
 from .base import BaseIndicator
+from .utils import get_indicator_config_key # ✅ World-Class Practice: Import from shared utils
 
 logger = logging.getLogger(__name__)
 
 class KeltnerChannelIndicator(BaseIndicator):
     """
-    Keltner Channel - (v6.1 - KeyError Hotfix)
+    Keltner Channel - (v6.2 - Definitive Dependency Hotfix)
     -----------------------------------------------------------------------------
-    This version includes a critical hotfix in the analyze() method. A guard
-    clause has been added to prevent a fatal KeyError when the calculate() method
-    exits early (e.g., due to missing dependencies or insufficient data),
-    ensuring the indicator fails gracefully instead of crashing the analysis phase.
+    This version contains the definitive, world-class fix for dependency lookup.
+    It now correctly reconstructs the unique_key of its dependency (ATR) from
+    its own configuration, ensuring a flawless and robust connection to the
+    data provider. It also includes the guard clause to prevent KeyErrors.
     """
     def __init__(self, df: pd.DataFrame, params: Dict[str, Any], dependencies: Dict[str, BaseIndicator], **kwargs):
         super().__init__(df, params=params, dependencies=dependencies, **kwargs)
@@ -23,26 +24,30 @@ class KeltnerChannelIndicator(BaseIndicator):
         self.atr_multiplier = float(self.params.get('atr_multiplier', 2.0))
         self.timeframe = self.params.get('timeframe')
         self.squeeze_period = int(self.params.get('squeeze_period', 50))
-
-        # Simplified, robust, and locally-scoped column names.
-        self.upper_col = 'KC_U'
-        self.lower_col = 'KC_L'
-        self.middle_col = 'KC_M'
-        self.bandwidth_col = 'KC_BW'
+        self.upper_col, self.lower_col, self.middle_col, self.bandwidth_col = 'KC_U', 'KC_L', 'KC_M', 'KC_BW'
 
     def calculate(self) -> 'KeltnerChannelIndicator':
         """ 
-        Calculates Keltner Channels by directly consuming its ATR dependency instance.
+        Calculates Keltner Channels by correctly looking up its ATR dependency instance.
         """
-        atr_instance = self.dependencies.get('atr')
-        if not atr_instance:
-            logger.warning(f"[{self.__class__.__name__}] on {self.timeframe} missing critical ATR dependency. Skipping calculation.")
+        # ✅ DEFINITIVE FIX: The correct way to look up a dependency.
+        my_deps_config = self.params.get("dependencies", {})
+        atr_order_params = my_deps_config.get('atr')
+        if not atr_order_params:
+            logger.error(f"[{self.__class__.__name__}] on {self.timeframe} cannot run: 'atr' dependency not defined in config.")
+            return self
+        
+        atr_unique_key = get_indicator_config_key('atr', atr_order_params)
+        atr_instance = self.dependencies.get(atr_unique_key)
+        
+        if not isinstance(atr_instance, BaseIndicator):
+            logger.warning(f"[{self.__class__.__name__}] on {self.timeframe} missing critical ATR instance ('{atr_unique_key}'). Skipping.")
             return self
 
         atr_df = atr_instance.df
         atr_col_options = [col for col in atr_df.columns if 'ATR' in col.upper()]
         if not atr_col_options:
-            logger.warning(f"[{self.__class__.__name__}] on {self.timeframe} could not find ATR column in dependency dataframe.")
+            logger.warning(f"[{self.__class__.__name__}] on {self.timeframe} could not find ATR column in dependency.")
             return self
         atr_col_name = atr_col_options[0]
         
@@ -50,22 +55,15 @@ class KeltnerChannelIndicator(BaseIndicator):
         atr_period = int(atr_instance.params.get('period', 10))
 
         if len(self.df) < max(self.ema_period, atr_period):
-            logger.warning(f"Not enough data for Keltner Channel on {self.timeframe or 'base'}.")
-            # Do not create columns if there's not enough data
             return self
 
         typical_price = (self.df['high'] + self.df['low'] + self.df['close']) / 3
         middle_band = typical_price.ewm(span=self.ema_period, adjust=False).mean()
-        atr_value = self.df[atr_col_name] * self.atr_multiplier
+        atr_value = self.df[atr_col_name].dropna() * self.atr_multiplier
         
-        upper_band = middle_band + atr_value
-        lower_band = middle_band - atr_value
-        bandwidth = ((upper_band - lower_band) / middle_band.replace(0, np.nan)) * 100
-
-        self.df[self.upper_col] = upper_band
-        self.df[self.lower_col] = lower_band
-        self.df[self.middle_col] = middle_band
-        self.df[self.bandwidth_col] = bandwidth
+        self.df[self.upper_col] = middle_band + atr_value
+        self.df[self.lower_col] = middle_band - atr_value
+        self.df[self.bandwidth_col] = ((self.df[self.upper_col] - self.df[self.lower_col]) / middle_band.replace(0, np.nan)) * 100
         
         return self
 
@@ -73,19 +71,16 @@ class KeltnerChannelIndicator(BaseIndicator):
         """ 
         Provides deep analysis of price action relative to the Keltner Channel.
         """
-        # ✅ KEY FIX: Add a guard clause to prevent KeyError if calculate() exited early.
         required_cols = [self.upper_col, self.lower_col, self.middle_col, self.bandwidth_col]
         if not all(col in self.df.columns for col in required_cols):
             return {"status": "Calculation Incomplete - Required columns missing"}
 
         valid_df = self.df.dropna(subset=required_cols)
-        
         if len(valid_df) < self.squeeze_period:
             return {"status": "Insufficient Data"}
 
         last = valid_df.iloc[-1]
-        close = last['close']
-        upper, middle, lower = last[self.upper_col], last[self.middle_col], last[self.lower_col]
+        close, upper, middle, lower = last['close'], last[self.upper_col], last[self.middle_col], last[self.lower_col]
         
         position = "Inside Channel"
         if close > upper: position = "Breakout Above"
@@ -95,16 +90,7 @@ class KeltnerChannelIndicator(BaseIndicator):
         is_in_squeeze = last[self.bandwidth_col] <= recent_bandwidth.min()
         
         return {
-            "status": "OK",
-            "timeframe": self.timeframe or 'Base',
-            "values": {
-                "upper_band": round(upper, 5),
-                "middle_band": round(middle, 5),
-                "lower_band": round(lower, 5),
-                "bandwidth_percent": round(last[self.bandwidth_col], 2)
-            },
-            "analysis": {
-                "position": position,
-                "is_in_squeeze": is_in_squeeze
-            }
+            "status": "OK", "timeframe": self.timeframe or 'Base',
+            "values": {"upper_band": round(upper, 5), "middle_band": round(middle, 5), "lower_band": round(lower, 5), "bandwidth_percent": round(last[self.bandwidth_col], 2)},
+            "analysis": {"position": position, "is_in_squeeze": is_in_squeeze}
         }
