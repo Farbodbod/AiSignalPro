@@ -11,12 +11,12 @@ logger = logging.getLogger(__name__)
 
 class FibonacciIndicator(BaseIndicator):
     """
-    Fibonacci Analysis Suite - (v5.1 - Definitive Dependency Hotfix)
+    Fibonacci Analysis Suite - (v5.2 - Unified Utils)
     -------------------------------------------------------------------------
-    This version contains the definitive, world-class fix for dependency lookup.
-    It now correctly reconstructs the unique_key of its dependency (ZigZag) from
-    its own configuration, ensuring a flawless and robust connection to the
-    data provider. All core analytical algorithms remain 100% intact.
+    This definitive version is fully DI-native and hardened. It no longer contains
+    a local copy of the helper functions, instead importing them from the shared
+    `utils.py` module, adhering to the DRY principle and professional software
+    engineering standards. All logic is 100% preserved.
     """
     def __init__(self, df: pd.DataFrame, params: Dict[str, Any], dependencies: Dict[str, BaseIndicator], **kwargs):
         super().__init__(df, params=params, dependencies=dependencies, **kwargs)
@@ -33,7 +33,6 @@ class FibonacciIndicator(BaseIndicator):
         """
         Prepares the indicator's DataFrame by correctly looking up its ZigZag dependency.
         """
-        # ✅ DEFINITIVE FIX: The correct way to look up a dependency.
         my_deps_config = self.params.get("dependencies", {})
         zigzag_order_params = my_deps_config.get('zigzag')
         if not zigzag_order_params:
