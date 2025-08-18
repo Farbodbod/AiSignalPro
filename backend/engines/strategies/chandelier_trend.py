@@ -17,7 +17,7 @@ class ChandelierTrendRider(BaseStrategy):
     removed, allowing the class to cleanly inherit its constructor from the
     powerful BaseStrategy. All core trading logic is 100% preserved.
     """
-    strategy_name: "ChandelierTrendRider"
+    strategy_name = "ChandelierTrendRider"
 
     default_config = {
         "default_params": {
