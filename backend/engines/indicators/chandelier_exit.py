@@ -5,18 +5,17 @@ import json
 from typing import Dict, Any, Optional
 
 from .base import BaseIndicator
-from .utils import get_indicator_config_key # ✅ World-Class Practice: Import from shared utils
+from .utils import get_indicator_config_key
 
 logger = logging.getLogger(__name__)
 
 class ChandelierExitIndicator(BaseIndicator):
     """
-    Chandelier Exit - (v5.5 - Unified Utils)
+    Chandelier Exit - (v5.6 - Critical AttributeError Hotfix)
     -----------------------------------------------------------------------------
-    This definitive version is fully DI-native and hardened. It no longer contains
-    a local copy of the helper functions, instead importing them from the shared
-    `utils.py` module, adhering to the DRY principle and professional software
-    engineering standards. All logic is 100% preserved.
+    This version contains a critical hotfix to resolve a fatal AttributeError
+    caused by incorrectly trying to access 'self.config' instead of 'self.params'.
+    Unnecessary strategy-only attributes have also been removed for cleanliness.
     """
     def __init__(self, df: pd.DataFrame, params: Dict[str, Any], dependencies: Dict[str, BaseIndicator], **kwargs):
         super().__init__(df, params=params, dependencies=dependencies, **kwargs)
@@ -26,18 +25,13 @@ class ChandelierExitIndicator(BaseIndicator):
         """ 
         Calculates the Chandelier Exit lines by correctly looking up its ATR dependency.
         """
-        # 1. Get this indicator's own dependency configuration from its parameters.
         my_deps_config = self.params.get("dependencies", {})
         atr_order_params = my_deps_config.get('atr')
-
         if not atr_order_params:
             logger.error(f"[{self.__class__.__name__}] on {self.timeframe} cannot run because 'atr' dependency is not defined in its config.")
             return self
             
-        # 2. Reconstruct the full, unique key for the required dependency.
         atr_unique_key = get_indicator_config_key('atr', atr_order_params)
-        
-        # 3. Get the dependency instance using the correct, full unique key.
         atr_instance = self.dependencies.get(atr_unique_key)
         
         if not isinstance(atr_instance, BaseIndicator):
@@ -54,15 +48,18 @@ class ChandelierExitIndicator(BaseIndicator):
         self.df = self.df.join(atr_df[[atr_col_name]], how='left')
         
         atr_period = int(atr_instance.params.get('period', 22))
-        atr_multiplier = float(self.config.get('atr_multiplier', 3.0))
+        # ✅ CRITICAL FIX: Parameters for indicators must be read from self.params, not self.config.
+        atr_multiplier = float(self.params.get('atr_multiplier', 3.0))
 
         if len(self.df) < atr_period:
             return self
         
-        atr_values = self.df[atr_col_name].dropna() * atr_multiplier
+        # Ensure we don't calculate on rows where ATR is NaN (especially at the start)
+        valid_df = self.df.dropna(subset=[atr_col_name])
+        atr_values = valid_df[atr_col_name] * atr_multiplier
         
-        highest_high = self.df['high'].rolling(window=atr_period).max()
-        lowest_low = self.df['low'].rolling(window=atr_period).min()
+        highest_high = valid_df['high'].rolling(window=atr_period).max()
+        lowest_low = valid_df['low'].rolling(window=atr_period).min()
         
         self.df['CHEX_L'] = highest_high - atr_values
         self.df['CHEX_S'] = lowest_low + atr_values
