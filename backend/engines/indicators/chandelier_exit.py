@@ -1,31 +1,22 @@
-# backend/engines/indicators/chandelier_exit.py (v5.4 - Definitive Dependency Hotfix)
+# backend/engines/indicators/chandelier_exit.py
 import logging
 import pandas as pd
+import json
 from typing import Dict, Any, Optional
 
 from .base import BaseIndicator
-# We need this helper function, let's assume it's in a shared utils file or define it here
-# For now, let's copy it from our analyzer to make this file standalone and correct.
-def get_indicator_config_key(name: str, params: Dict[str, Any]) -> str:
-    try:
-        filtered_params = {k: v for k, v in params.items() if k not in ["enabled", "dependencies", "name"]}
-        if not filtered_params: return name
-        param_str = json.dumps(filtered_params, sort_keys=True, separators=(",", ":"))
-        return f"{name}_{param_str}"
-    except TypeError:
-        param_str = "_".join(f"{k}_{v}" for k, v in sorted(params.items()) if k not in ["enabled", "dependencies", "name"])
-        return f"{name}_{param_str}" if param_str else name
+from .utils import get_indicator_config_key # ✅ World-Class Practice: Import from shared utils
 
 logger = logging.getLogger(__name__)
 
 class ChandelierExitIndicator(BaseIndicator):
     """
-    Chandelier Exit - (v5.4 - Definitive Dependency Hotfix)
+    Chandelier Exit - (v5.5 - Unified Utils)
     -----------------------------------------------------------------------------
-    This version contains the definitive, world-class fix for dependency lookup.
-    It now correctly reconstructs the unique_key of its dependency (ATR) from
-    its own configuration, ensuring a flawless and robust connection to the
-    data provider. This resolves all downstream calculation and analysis errors.
+    This definitive version is fully DI-native and hardened. It no longer contains
+    a local copy of the helper functions, instead importing them from the shared
+    `utils.py` module, adhering to the DRY principle and professional software
+    engineering standards. All logic is 100% preserved.
     """
     def __init__(self, df: pd.DataFrame, params: Dict[str, Any], dependencies: Dict[str, BaseIndicator], **kwargs):
         super().__init__(df, params=params, dependencies=dependencies, **kwargs)
@@ -35,7 +26,6 @@ class ChandelierExitIndicator(BaseIndicator):
         """ 
         Calculates the Chandelier Exit lines by correctly looking up its ATR dependency.
         """
-        # ✅ DEFINITIVE FIX: The correct way to look up a dependency.
         # 1. Get this indicator's own dependency configuration from its parameters.
         my_deps_config = self.params.get("dependencies", {})
         atr_order_params = my_deps_config.get('atr')
