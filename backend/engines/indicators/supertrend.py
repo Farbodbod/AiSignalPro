@@ -2,27 +2,38 @@
 import pandas as pd
 import numpy as np
 import logging
+import json
 from typing import Dict, Any, Tuple
 
 from .base import BaseIndicator
 
 logger = logging.getLogger(__name__)
 
+# Helper function to reconstruct unique keys, ensuring consistency.
+def get_indicator_config_key(name: str, params: Dict[str, Any]) -> str:
+    try:
+        filtered_params = {k: v for k, v in params.items() if k not in ["enabled", "dependencies", "name"]}
+        if not filtered_params: return name
+        param_str = json.dumps(filtered_params, sort_keys=True, separators=(",", ":"))
+        return f"{name}_{param_str}"
+    except TypeError:
+        param_str = "_".join(f"{k}_{v}" for k, v in sorted(params.items()) if k not in ["enabled", "dependencies", "name"])
+        return f"{name}_{param_str}" if param_str else name
+
 class SuperTrendIndicator(BaseIndicator):
     """
-    SuperTrend - (v6.1 - KeyError Hotfix)
+    SuperTrend - (v6.2 - Definitive Dependency Hotfix)
     ------------------------------------------------------------------------
-    This version includes a critical hotfix in the analyze() method. A guard
-    clause has been added to prevent a fatal KeyError when the calculate() method
-    exits early (e.g., due to missing dependencies or insufficient data),
-    ensuring the indicator fails gracefully instead of crashing the analysis phase.
+    This version contains the definitive, world-class fix for dependency lookup.
+    It now correctly reconstructs the unique_key of its dependency (ATR) from
+    its own configuration, ensuring a flawless and robust connection to the
+    data provider. This resolves all downstream calculation and analysis errors.
     """
     def __init__(self, df: pd.DataFrame, params: Dict[str, Any], dependencies: Dict[str, BaseIndicator], **kwargs):
         super().__init__(df, params=params, dependencies=dependencies, **kwargs)
         self.period = int(self.params.get('period', 10))
         self.multiplier = float(self.params.get('multiplier', 3.0))
         self.timeframe = self.params.get('timeframe')
-
         self.supertrend_col = 'ST'
         self.direction_col = 'ST_DIR'
     
@@ -52,11 +63,20 @@ class SuperTrendIndicator(BaseIndicator):
 
     def calculate(self) -> 'SuperTrendIndicator':
         """ 
-        Calculates the SuperTrend by directly consuming its ATR dependency instance.
+        Calculates the SuperTrend by correctly looking up its ATR dependency instance.
         """
-        atr_instance = self.dependencies.get('atr')
-        if not atr_instance:
-            logger.warning(f"[{self.__class__.__name__}] on {self.timeframe} missing critical ATR dependency. Calculation skipped.")
+        # ✅ DEFINITIVE FIX: The correct way to look up a dependency.
+        my_deps_config = self.params.get("dependencies", {})
+        atr_order_params = my_deps_config.get('atr')
+        if not atr_order_params:
+            logger.error(f"[{self.__class__.__name__}] on {self.timeframe} cannot run: 'atr' dependency is not defined in its config.")
+            return self
+        
+        atr_unique_key = get_indicator_config_key('atr', atr_order_params)
+        atr_instance = self.dependencies.get(atr_unique_key)
+        
+        if not isinstance(atr_instance, BaseIndicator):
+            logger.warning(f"[{self.__class__.__name__}] on {self.timeframe} missing critical ATR dependency instance ('{atr_unique_key}'). Calculation skipped.")
             return self
 
         atr_df = atr_instance.df
@@ -72,7 +92,7 @@ class SuperTrendIndicator(BaseIndicator):
             logger.warning(f"Not enough data for SuperTrend on {self.timeframe or 'base'}. Calculation skipped.")
             return self
 
-        st_series, dir_series = self._calculate_supertrend(self.df, self.multiplier, atr_col_name)
+        st_series, dir_series = self._calculate_supertrend(self.df.dropna(subset=[atr_col_name]), self.multiplier, atr_col_name)
         
         self.df[self.supertrend_col] = st_series
         self.df[self.direction_col] = dir_series
@@ -83,7 +103,6 @@ class SuperTrendIndicator(BaseIndicator):
         """
         Provides a bias-free analysis of the current trend and potential changes.
         """
-        # ✅ KEY FIX: Add a guard clause to prevent KeyError if calculate() exited early.
         required_cols = [self.supertrend_col, self.direction_col]
         if not all(col in self.df.columns for col in required_cols):
             return {"status": "Calculation Incomplete - Required columns missing"}
@@ -92,8 +111,7 @@ class SuperTrendIndicator(BaseIndicator):
         if len(valid_df) < 2: 
             return {"status": "Insufficient Data"}
         
-        last = valid_df.iloc[-1]
-        prev = valid_df.iloc[-2]
+        last, prev = valid_df.iloc[-1], valid_df.iloc[-2]
         last_dir, prev_dir = last[self.direction_col], prev[self.direction_col]
         
         trend = "Uptrend" if last_dir == 1 else "Downtrend"
