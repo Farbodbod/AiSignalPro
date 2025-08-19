@@ -147,7 +147,6 @@ class BaseStrategy(ABC):
                 return None
 
             # 2. Reconstruct the full, correct unique_key using its global parameters.
-            # The simple name is the key (e.g., "rsi"), and the value is the dict of params.
             unique_key = get_indicator_config_key(name_or_alias, global_indicator_config)
             indicator_data = source.get(unique_key)
 
@@ -209,7 +208,6 @@ class BaseStrategy(ABC):
         if not self.htf_analysis or self.htf_analysis.get("price_data") is None:
             return False
 
-        # ---- FIX باگ شماره ۱: استفاده از htf_rules قبل از تعریف ----
         htf_rules = self.config.get("htf_confirmations", {})
         current_score = 0
         min_required_score = htf_rules.get("min_required_score", 1)
@@ -262,7 +260,6 @@ class BaseStrategy(ABC):
 
         total_risk_per_unit = risk_per_unit + (entry_price * fees_pct) + (entry_price * slippage_pct)
 
-        # ---- FIX: جلوگیری از UnboundLocalError با مقداردهی مرحله‌ای ----
         structure_data = self.get_indicator("structure")
         key_levels = (structure_data.get("key_levels") if structure_data else {}) or {}
 
@@ -291,7 +288,6 @@ class BaseStrategy(ABC):
         if not targets:
             return {}
 
-        # ---- FIX باگ شماره ۳: محاسبه صحیح reward_per_unit با لحاظ کارمزد روی entry و target ----
         reward_per_unit = abs(targets[0] - entry_price) - ((entry_price + targets[0]) * fees_pct)
 
         actual_rr = round(reward_per_unit / total_risk_per_unit, 2) if total_risk_per_unit > 0 else 0
@@ -304,3 +300,4 @@ class BaseStrategy(ABC):
 
         self.log_details["risk_trace"].append(final_params)
         return final_params
+
