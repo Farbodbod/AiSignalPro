@@ -1,4 +1,4 @@
-# engines/master_orchestrator.py (v30.0 - The Definitive Edition)
+# engines/master_orchestrator.py (v30.1 - The Anti-Fragile AI Edition)
 
 import pandas as pd
 import logging
@@ -16,12 +16,12 @@ logger = logging.getLogger(__name__)
 
 class MasterOrchestrator:
     """
-    The strategic mastermind of AiSignalPro (v30.0 - The Definitive Edition).
+    The strategic mastermind of AiSignalPro (v30.1 - The Anti-Fragile AI Edition).
     -------------------------------------------------------------------------
-    This is the final, world-class, production-ready version. It incorporates all
-    peer-reviewed hardening fixes, the Data Integrity Shield to prevent corrupt
-    data propagation, and a Prompt Engineering Hotfix for robust AI validation.
-    The system is now at its peak stability and intelligence.
+    This version hardens the AI interaction layer, making the schema validation
+    flexible enough to handle minor deviations in the AI's response format (e.g.,
+    accepting both 'confidence' and 'confidence_percent'). This anti-fragile
+    approach ensures valuable signals are not lost due to LLM non-determinism.
     """
 
     def __init__(self, config: Dict[str, Any]):
@@ -34,8 +34,8 @@ class MasterOrchestrator:
         ]
         self.gemini_handler = GeminiHandler()
         self.last_gemini_call_times: Dict[Tuple[str, str], float] = {}
-        self.ENGINE_VERSION = "30.0.0"
-        logger.info(f"MasterOrchestrator v{self.ENGINE_VERSION} (Definitive Edition) initialized.")
+        self.ENGINE_VERSION = "30.1.0"
+        logger.info(f"MasterOrchestrator v{self.ENGINE_VERSION} (Anti-Fragile AI Edition) initialized.")
 
     async def run_analysis_pipeline(
         self,
@@ -168,11 +168,23 @@ Here is the signal data to analyze:
         
         try:
             if not isinstance(ai_response, dict): raise TypeError("Response is not a dictionary.")
+            
             validated_signal = str(ai_response["signal"])
             if validated_signal.upper() not in ["BUY", "SELL", "HOLD"]: raise ValueError(f"Invalid signal value: {validated_signal}")
-            validated_confidence = int(ai_response["confidence_percent"])
+            
+            # ✅ THE ANTI-FRAGILE AI FIX (v30.1): Accept both 'confidence_percent' and 'confidence'
+            confidence_val = ai_response.get("confidence_percent")
+            if confidence_val is None:
+                confidence_val = ai_response.get("confidence") # Fallback to the simpler key
+
+            if confidence_val is None:
+                raise KeyError("Missing 'confidence_percent' or 'confidence' key.")
+
+            validated_confidence = int(confidence_val)
             if not (0 <= validated_confidence <= 100): raise ValueError(f"Confidence out of range: {validated_confidence}")
+            
             if "explanation_fa" not in ai_response: raise KeyError("Missing 'explanation_fa' key.")
+
         except (TypeError, ValueError, KeyError, AttributeError) as e:
             logger.critical(f"FATAL: AI response schema validation failed for {symbol}@{timeframe}. Error: {e}. Response: {ai_response}")
             return None
