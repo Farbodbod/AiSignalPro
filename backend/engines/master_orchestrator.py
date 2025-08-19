@@ -1,4 +1,4 @@
-# engines/master_orchestrator.py (v29.3 - The Data Integrity Shield)
+# engines/master_orchestrator.py (v30.0 - The Definitive Edition)
 
 import pandas as pd
 import logging
@@ -16,12 +16,12 @@ logger = logging.getLogger(__name__)
 
 class MasterOrchestrator:
     """
-    The strategic mastermind of AiSignalPro (v29.3 - The Data Integrity Shield).
+    The strategic mastermind of AiSignalPro (v30.0 - The Definitive Edition).
     -------------------------------------------------------------------------
-    This definitive version incorporates the final piece of our hardening process:
-    A Data Integrity Shield. It now validates the incoming DataFrame for NaN values
-    before passing it to the analysis engine, preventing silent calculation failures
-    caused by corrupt upstream data. This is the final, production-ready version.
+    This is the final, world-class, production-ready version. It incorporates all
+    peer-reviewed hardening fixes, the Data Integrity Shield to prevent corrupt
+    data propagation, and a Prompt Engineering Hotfix for robust AI validation.
+    The system is now at its peak stability and intelligence.
     """
 
     def __init__(self, config: Dict[str, Any]):
@@ -34,8 +34,8 @@ class MasterOrchestrator:
         ]
         self.gemini_handler = GeminiHandler()
         self.last_gemini_call_times: Dict[Tuple[str, str], float] = {}
-        self.ENGINE_VERSION = "29.3.0"
-        logger.info(f"MasterOrchestrator v{self.ENGINE_VERSION} (Data Integrity Shield) initialized.")
+        self.ENGINE_VERSION = "30.0.0"
+        logger.info(f"MasterOrchestrator v{self.ENGINE_VERSION} (Definitive Edition) initialized.")
 
     async def run_analysis_pipeline(
         self,
@@ -80,18 +80,13 @@ class MasterOrchestrator:
     ) -> Optional[Dict[str, Any]]:
         valid_signals = []
         strategies_config = self.config.get("strategies", {})
-
         for sc in self._strategy_classes:
             strategy_name = sc.strategy_name
             strategy_config = strategies_config.get(strategy_name, {})
-            
-            if not strategy_config.get("enabled", True):
-                continue
-
+            if not strategy_config.get("enabled", True): continue
             try:
                 htf_analysis = {}
                 merged_strat_config = {**sc.default_config, **strategy_config}
-                
                 if merged_strat_config.get("htf_confirmation_enabled"):
                     htf_map = merged_strat_config.get("htf_map", {})
                     target_htf = htf_map.get(timeframe)
@@ -103,15 +98,9 @@ class MasterOrchestrator:
                             if isinstance(htf_df, pd.DataFrame) and len(htf_df) >= min_rows:
                                 htf_analysis = temp_htf_analysis
                             else:
-                                logger.warning(
-                                    f"Strategy '{strategy_name}' on {timeframe} ignored HTF data for '{target_htf}' "
-                                    f"because it had too few rows or invalid type."
-                                )
+                                logger.warning(f"Strategy '{strategy_name}' on {timeframe} ignored HTF data for '{target_htf}' because it had too few rows or invalid type.")
                         else:
-                            logger.warning(
-                                f"Strategy '{strategy_name}' on {timeframe} requires HTF data for '{target_htf}', "
-                                f"but it was not found."
-                            )
+                            logger.warning(f"Strategy '{strategy_name}' on {timeframe} requires HTF data for '{target_htf}', but it was not found.")
                 instance = sc(primary_analysis, strategy_config, self.config, timeframe, symbol, htf_analysis=htf_analysis)
                 signal = instance.check_signal()
                 if signal:
@@ -122,48 +111,33 @@ class MasterOrchestrator:
             except Exception as e:
                 logger.error(f"Error running strategy '{strategy_name}' on {timeframe}: {e}", exc_info=True)
         
-        if not valid_signals:
-            return {"status": "NEUTRAL", "message": "No strategy conditions met.", "full_analysis": primary_analysis, "engine_version": self.ENGINE_VERSION}
-        
-        min_rr = self.config.get("general", {}).get("min_risk_reward_ratio", 2.0)
-        qualified_signals = [s for s in valid_signals if s.get("risk_reward_ratio", 0) >= min_rr]
-        if not qualified_signals:
-            return {"status": "NEUTRAL", "message": "Signals found but failed R/R quality check.", "full_analysis": primary_analysis, "engine_version": self.ENGINE_VERSION}
+        if not valid_signals: return {"status": "NEUTRAL", "message": "No strategy conditions met.", "full_analysis": primary_analysis, "engine_version": self.ENGINE_VERSION}
+        min_rr = self.config.get("general", {}).get("min_risk_reward_ratio", 2.0); qualified_signals = [s for s in valid_signals if s.get("risk_reward_ratio", 0) >= min_rr]
+        if not qualified_signals: return {"status": "NEUTRAL", "message": "Signals found but failed R/R quality check.", "full_analysis": primary_analysis, "engine_version": self.ENGINE_VERSION}
         
         best_signal = self._find_super_signal(qualified_signals)
         if not best_signal:
-            priority_list = self.config.get("strategy_priority", [])
-            qualified_signals.sort(key=lambda s: priority_list.index(s["strategy_name"]) if s["strategy_name"] in priority_list else 99)
-            best_signal = qualified_signals[0]
+            priority_list = self.config.get("strategy_priority", []); qualified_signals.sort(key=lambda s: priority_list.index(s["strategy_name"]) if s["strategy_name"] in priority_list else 99); best_signal = qualified_signals[0]
 
         ai_confirmation = await self._get_ai_confirmation(best_signal, symbol, timeframe)
-        if ai_confirmation is None:
-            return {"status": "NEUTRAL", "message": "Signal was vetoed by AI or AI response was invalid.", "full_analysis": primary_analysis, "engine_version": self.ENGINE_VERSION}
+        if ai_confirmation is None: return {"status": "NEUTRAL", "message": "Signal was vetoed by AI or AI response was invalid.", "full_analysis": primary_analysis, "engine_version": self.ENGINE_VERSION}
 
         return {"status": "SUCCESS", "symbol": symbol, "timeframe": timeframe, "base_signal": best_signal, "ai_confirmation": ai_confirmation, "full_analysis": primary_analysis, "engine_version": self.ENGINE_VERSION}
 
     def _find_super_signal(self, signals: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
-        min_confluence = self.config.get("general", {}).get("min_confluence_for_super_signal", 3)
-        buy_signals = [s for s in signals if s["direction"] == "BUY"]
-        sell_signals = [s for s in signals if s["direction"] == "SELL"]
-        super_direction, contributing_strategies = (None, [])
+        min_confluence = self.config.get("general", {}).get("min_confluence_for_super_signal", 3); buy_signals = [s for s in signals if s["direction"] == "BUY"]; sell_signals = [s for s in signals if s["direction"] == "SELL"]; super_direction, contributing_strategies = (None, [])
         if len(buy_signals) >= min_confluence: super_direction, contributing_strategies = ("BUY", buy_signals)
         elif len(sell_signals) >= min_confluence: super_direction, contributing_strategies = ("SELL", sell_signals)
         if not super_direction: return None
-        priority_list = self.config.get("strategy_priority", [])
-        contributing_strategies.sort(key=lambda s: priority_list.index(s["strategy_name"]) if s["strategy_name"] in priority_list else 99)
-        primary_signal = contributing_strategies[0]
+        priority_list = self.config.get("strategy_priority", []); contributing_strategies.sort(key=lambda s: priority_list.index(s["strategy_name"]) if s["strategy_name"] in priority_list else 99); primary_signal = contributing_strategies[0]
         super_signal = {"strategy_name": "SuperSignal Confluence", "direction": super_direction, "entry_price": primary_signal["entry_price"], "stop_loss": primary_signal["stop_loss"], "targets": primary_signal["targets"], "risk_reward_ratio": primary_signal["risk_reward_ratio"], "confirmations": {"confluence_count": len(contributing_strategies), "contributing_strategies": [s["strategy_name"] for s in contributing_strategies]}}
         logger.info(f"🔥🔥 SUPER SIGNAL FOUND! {super_direction} with {len(contributing_strategies)} confirmations. 🔥🔥")
         return super_signal
 
     async def _get_ai_confirmation(self, signal: Dict[str, Any], symbol: str, timeframe: str) -> Optional[Dict[str, Any]]:
-        cooldown_key = (symbol, timeframe)
-        cooldown = self.config.get("general", {}).get("gemini_cooldown_seconds", 300)
-        last_call_time = self.last_gemini_call_times.get(cooldown_key, 0)
+        cooldown_key = (symbol, timeframe); cooldown = self.config.get("general", {}).get("gemini_cooldown_seconds", 300); last_call_time = self.last_gemini_call_times.get(cooldown_key, 0)
         if (time.time() - last_call_time) < cooldown:
-            logger.info(f"Gemini call for {symbol}@{timeframe} skipped due to cooldown.")
-            return {"signal": "N/A", "confidence_percent": 0, "explanation_fa": "AI analysis skipped due to per-symbol cooldown."}
+            logger.info(f"Gemini call for {symbol}@{timeframe} skipped due to cooldown."); return {"signal": "N/A", "confidence_percent": 0, "explanation_fa": "AI analysis skipped due to per-symbol cooldown."}
         
         prompt_context = {"signal_details": {k: v for k, v in signal.items() if k not in ["confirmations", "strategy_name"]}, "system_strategy": signal.get("strategy_name"), "system_reasons": signal.get("confirmations")}
         json_data = json.dumps(prompt_context, indent=2, ensure_ascii=False, default=str)
@@ -173,7 +147,7 @@ Act as a professional algorithmic trading signal validator with expertise in mul
 TASK: Analyze the provided structured JSON data for a trade signal on {symbol} ({timeframe}). Validate if a high-probability trade exists.
 RULES:
 1.  Respond ONLY with a valid JSON object. Do not include any additional text, comments, markdown, or explanations before or after the JSON block.
-2.  Your output MUST strictly follow this exact schema:
+2.  Your output MUST strictly follow this exact schema. CRITICAL: The key for confidence MUST be "confidence_percent". Do NOT use "confidence".
     {{
       "signal": "BUY" | "SELL" | "HOLD",
       "confidence_percent": integer (a whole number between 0 and 100, no decimals),
