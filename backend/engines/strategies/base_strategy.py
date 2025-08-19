@@ -1,4 +1,4 @@
-# strategies/base_strategy.py (v8.4 - The Definitive Edition)
+# strategies/base_strategy.py (v9.0 - The Manifest Edition)
 
 from __future__ import annotations
 from abc import ABC, abstractmethod
@@ -10,8 +10,8 @@ from copy import deepcopy
 
 logger = logging.getLogger(__name__)
 
+# This helper function should ideally be in a shared utils file.
 def get_indicator_config_key(name: str, params: Dict[str, Any]) -> str:
-    """Creates a unique, stable, and hashable key from parameters."""
     try:
         filtered_params = {k: v for k, v in params.items() if k not in ['enabled', 'dependencies', 'name']}
         if not filtered_params: return name
@@ -22,7 +22,6 @@ def get_indicator_config_key(name: str, params: Dict[str, Any]) -> str:
         return f"{name}_{param_str}" if param_str else name
 
 def deep_merge(dict1: Dict[str, Any], dict2: Dict[str, Any]) -> Dict[str, Any]:
-    """Recursively merges two dictionaries."""
     result = deepcopy(dict1)
     for k, v in dict2.items():
         if k in result and isinstance(result[k], dict) and isinstance(v, dict): result[k] = deep_merge(result[k], v)
@@ -31,12 +30,12 @@ def deep_merge(dict1: Dict[str, Any], dict2: Dict[str, Any]) -> Dict[str, Any]:
 
 class BaseStrategy(ABC):
     """
-    World-Class Base Strategy Framework - (v8.4 - The Definitive Edition)
+    World-Class Base Strategy Framework - (v9.0 - The Manifest Edition)
     ---------------------------------------------------------------------------------------------
-    This is the definitive, peer-reviewed, and fully hardened version. It incorporates
-    all critical hotfixes, including the definitive `get_indicator` logic to prevent
-    silent failures, fixes for all identified UnboundLocalError bugs, and an improved
-    R/R calculation logic. This is the final, stable foundation for all strategies.
+    This definitive version perfects the system's architecture. The get_indicator
+    method no longer depends on the main_config. Instead, it uses a smart '_indicator_map'
+    (the "manifest") provided by the IndicatorAnalyzer. This completely decouples
+    the strategy from external configs, making it a true "plug-and-play" module.
     """
     strategy_name: str = "BaseStrategy"
     default_config: ClassVar[Dict[str, Any]] = {}
@@ -47,19 +46,16 @@ class BaseStrategy(ABC):
         self.indicator_configs, self.log_details, self.name = self.config.get('indicator_configs', {}), {"criteria_results": [], "indicator_trace": [], "risk_trace": []}, self.config.get('name', self.strategy_name)
 
     def _log_criteria(self, criterion_name: str, status: bool, reason: str = ""):
-        focus_symbol = self.main_config.get("general", {}).get("logging_focus_symbol")
+        focus_symbol = self.main_config.get("general", {}).get("logging_focus_symbol");
         if focus_symbol and self.symbol != focus_symbol: return
         self.log_details["criteria_results"].append({"criterion": criterion_name, "status": status, "reason": reason})
-        status_emoji = "✅" if status else "❌"
-        logger.info(f"  {status_emoji} Criterion: {self.name} on {self.primary_timeframe} - '{criterion_name}': {status}. Reason: {reason}")
-    
+        status_emoji = "✅" if status else "❌"; logger.info(f"  {status_emoji} Criterion: {self.name} on {self.primary_timeframe} - '{criterion_name}': {status}. Reason: {reason}")
     def _log_indicator_trace(self, indicator_name: str, value: Any, status: str = "OK", reason: str = ""):
-        self.log_details["indicator_trace"].append({"indicator": indicator_name, "value": str(value), "status": status, "reason": reason})
+        self.log_details["indicator_trace"].append({"indicator": indicator_name, "value": str(value), "status": status, "reason": reason});
         logger.debug(f"    [Trace] Indicator: {indicator_name} -> Value: {value}, Status: {status}, Reason: {reason}")
-
     def _log_final_decision(self, signal: str, reason: str = ""):
         self.log_details["final_signal"], self.log_details["final_reason"] = signal, reason
-        signal_emoji = "🟢" if signal == "BUY" else "🔴" if signal == "SELL" else "⚪️"
+        signal_emoji = "🟢" if signal == "BUY" else "🔴" if signal == "SELL" else "⚪️";
         logger.info(f"{signal_emoji} Final Decision: {self.name} on {self.symbol} {self.primary_timeframe} -> Signal: {signal}. Reason: {reason}")
 
     @abstractmethod
@@ -68,18 +64,25 @@ class BaseStrategy(ABC):
     def get_indicator(self, name_or_alias: str, analysis_source: Optional[Dict] = None) -> Optional[Dict[str, Any]]:
         source = analysis_source if analysis_source is not None else self.analysis
         if not source: return None
+        
+        # ✅ THE MANIFEST FIX: The waiter now uses the menu provided by the chef.
+        indicator_map = source.get('_indicator_map', {})
         indicator_data, unique_key = None, None
+        
         if name_or_alias in self.indicator_configs:
+            # Logic for aliased, strategy-specific indicators
             order = self.indicator_configs[name_or_alias]
             unique_key = get_indicator_config_key(order['name'], order.get('params', {}))
-            indicator_data = source.get(unique_key)
-        else:
-            global_indicator_config = self.main_config.get('indicators', {}).get(name_or_alias)
-            if not global_indicator_config:
-                self._log_indicator_trace(name_or_alias, None, status="FAILED", reason="Not defined in global indicator config.")
-                return None
-            unique_key = get_indicator_config_key(name_or_alias, global_indicator_config)
-            indicator_data = source.get(unique_key)
+        elif name_or_alias in indicator_map:
+            # Logic for global indicators, using the manifest
+            unique_key = indicator_map.get(name_or_alias)
+        
+        if not unique_key:
+            self._log_indicator_trace(name_or_alias, None, status="FAILED", reason="Indicator key could not be resolved from map or aliases.")
+            return None
+
+        indicator_data = source.get(unique_key)
+        
         if not indicator_data or not isinstance(indicator_data, dict):
             self._log_indicator_trace(name_or_alias, None, status="FAILED", reason=f"Missing data object for key: {unique_key}.")
             return None
@@ -98,14 +101,12 @@ class BaseStrategy(ABC):
         for pattern in found_patterns:
             if reliability_map.get(pattern.get('reliability'), 0) >= min_reliability_score: return pattern
         return None
-
     def _get_volume_confirmation(self) -> bool:
         whale_analysis = self.get_indicator('whales');
         if not whale_analysis: return False
         min_spike_score, analysis = self.config.get('min_whale_spike_score', 1.5), whale_analysis.get('analysis') or {}
         is_whale_activity, spike_score = analysis.get('is_whale_activity', False), analysis.get('spike_score', 0)
         return is_whale_activity and spike_score >= min_spike_score
-
     def _get_trend_confirmation(self, direction: str) -> bool:
         htf_map, target_htf = self.config.get('htf_map', {}), self.config.get(self.primary_timeframe)
         if not target_htf: return True
@@ -128,7 +129,6 @@ class BaseStrategy(ABC):
                 if ind_dir and direction.upper() in ind_dir.upper(): current_score += weight
         self._log_indicator_trace(f"HTF_Score", current_score, reason=f"Required: {min_required_score}")
         return current_score >= min_required_score
-
     def _calculate_smart_risk_management(self, entry_price: float, direction: str, stop_loss: float) -> Dict[str, Any]:
         if not isinstance(entry_price, (int, float)) or not isinstance(stop_loss, (int, float)):
             logger.debug(f"Risk calc skipped due to invalid inputs. Entry: {entry_price}, SL: {stop_loss}"); return {}
