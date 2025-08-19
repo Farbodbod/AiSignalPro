@@ -1,4 +1,4 @@
-# backend/engines/strategies/vwap_reversion.py (v5.0 - Peer-Reviewed & Hardened)
+# backend/engines/strategies/vwap_reversion.py (v5.1 - Enhanced Robustness Edition)
 
 from __future__ import annotations
 import logging
@@ -10,13 +10,13 @@ logger = logging.getLogger(__name__)
 
 class VwapMeanReversion(BaseStrategy):
     """
-    VwapMeanReversion - (v5.0 - Peer-Reviewed & Hardened)
+    VwapMeanReversion - (v5.1 - Enhanced Robustness Edition)
     ---------------------------------------------------------------------------
-    This version is hardened based on an expert peer review. It includes:
-    - Safe float normalization for all numeric inputs (ADX/oscillators).
-    - Dynamic and accurate logging messages for all criteria.
-    - Robust handling of None, Series, or 0.0 values to prevent crashes.
-    - Enhanced type hints and ClassVar for professional code quality.
+    This version enhances v5.0 by addressing a critical edge case. The unsafe
+    default value for ADX strength has been replaced with an explicit check
+    for None. This prevents misleading logs (e.g., ADX=100.0) when indicator
+    data is temporarily unavailable and provides crystal-clear logging for
+    more robust and reliable automated analysis, as befits a world-class system.
     """
     strategy_name: str = "VwapMeanReversion"
     default_config: ClassVar[Dict[str, Any]] = {
@@ -101,13 +101,24 @@ class VwapMeanReversion(BaseStrategy):
         self._log_criteria("Data Availability", True, "All required indicator data is valid.")
 
         # 2) Market Regime & Primary Trigger
-        adx_strength = self._to_float((indicators['adx'].get('values') or {}).get('adx'), default=100.0)
+        # [AI-Signal-Pro Enhancement]: Replaced unsafe default=100.0 with an explicit check for None.
+        # This provides robust handling of failed indicator calculations and prevents misleading logs.
+        adx_strength = self._to_float((indicators['adx'].get('values') or {}).get('adx'), default=None)
+
+        if adx_strength is None:
+            self._log_criteria("Market Regime (ADX)", False, "ADX value calculation failed or was invalid.")
+            self._log_final_decision("HOLD", "ADX data was not available for market regime check.")
+            return None
+
         max_adx = float(cfg.get('max_adx_for_reversion', 25.0))
         adx_ok = adx_strength <= max_adx
         regime_msg = f"Ranging (ADX={adx_strength:.2f} <= {max_adx:.2f})" if adx_ok else f"Trending (ADX={adx_strength:.2f} > {max_adx:.2f})"
         self._log_criteria("Market Regime (ADX)", adx_ok, regime_msg)
+        
         if not adx_ok:
-            self._log_final_decision("HOLD", "ADX filter failed.")
+            # [AI-Signal-Pro Enhancement]: The final log reason is now dynamic and precise.
+            final_reason = f"ADX filter failed. {regime_msg}"
+            self._log_final_decision("HOLD", final_reason)
             return None
 
         vwap_data = indicators['vwap_bands'] or {}
@@ -194,3 +205,4 @@ class VwapMeanReversion(BaseStrategy):
         self._log_final_decision(signal_direction, "All criteria met. VWAP Mean Reversion signal confirmed.")
         
         return { "direction": signal_direction, "entry_price": entry_price, **risk_params, "confirmations": confirmations }
+
