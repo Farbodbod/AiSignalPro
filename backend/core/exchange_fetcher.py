@@ -1,4 +1,4 @@
-# core/exchange_fetcher.py (v8.5 - The OKX Hotfix Edition)
+# core/exchange_fetcher.py (v8.6 - The Universal Normalizer Edition)
 
 import asyncio
 import time
@@ -40,23 +40,23 @@ def is_retryable_exception(exception: BaseException) -> bool:
 
 class ExchangeFetcher:
     """
-    ExchangeFetcher (v8.5 - The OKX Hotfix Edition)
+    ExchangeFetcher (v8.6 - The Universal Normalizer Edition)
     ----------------------------------------------------------------
-    This definitive version integrates a critical hotfix for OKX's inverted
-    High/Low data anomaly. By mathematically correcting the candle data at the
-    source, this version eliminates the root cause of the `high < low` errors,
-    ensuring pristine data quality enters the analysis pipeline.
+    This definitive version extends its data correction logic to handle inverted
+    High/Low anomalies from both OKX and KuCoin. By creating a universal
+    normalization layer, this module ensures the highest possible data integrity
+    from multiple, often inconsistent, sources.
     """
     def __init__(self, config: Dict[str, Any] = None, cache_ttl: int = 60, cache_max_size: int = 256):
         effective_config = config or {}
         self.config = effective_config
-        headers = {'User-Agent': 'AiSignalPro/8.5.0', 'Accept': 'application/json'}
+        headers = {'User-Agent': 'AiSignalPro/8.6.0', 'Accept': 'application/json'}
         timeout_cfg = self.config.get("http_timeout", 20.0)
         self.client = httpx.AsyncClient(headers=headers, timeout=httpx.Timeout(timeout_cfg), follow_redirects=True)
         self.cache, self.cache_ttl, self.cache_max_size, self.cache_lock = {}, cache_ttl, cache_max_size, asyncio.Lock()
         self.exchange_config = self.config.get("exchange_specific", EXCHANGE_CONFIG)
         self.symbol_map = self.config.get("symbol_map", SYMBOL_MAP)
-        logger.info("ExchangeFetcher (v8.5 - The OKX Hotfix Edition) initialized.")
+        logger.info("ExchangeFetcher (v8.6 - The Universal Normalizer Edition) initialized.")
 
     def _get_cache_key(self, prefix: str, exchange: str, symbol: str, timeframe: Optional[str] = None, limit: Optional[int] = None) -> str:
         key = f"{prefix}:{exchange}:{symbol}"
@@ -125,11 +125,9 @@ class ExchangeFetcher:
                 c = float(mapping.get('c', np.nan))
                 v = float(mapping.get('v', np.nan))
 
-                # ✅ THE CRITICAL OKX HOTFIX (v8.5):
-                # Re-implementing the logic to handle OKX's known inverted High/Low candle quirk.
-                if source == 'okx':
-                    # OKX sometimes returns candles where the high value is in the low field and vice-versa.
-                    # We mathematically correct this to ensure data integrity before it enters the cleaning stage.
+                # ✅ UNIVERSAL NORMALIZER (v8.6):
+                # Mathematically correct inverted H/L candles from known quirky exchanges.
+                if source == 'okx' or source == 'kucoin':
                     actual_high = max(h, l)
                     actual_low = min(h, l)
                     h = actual_high
