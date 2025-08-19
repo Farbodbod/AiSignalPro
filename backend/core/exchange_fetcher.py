@@ -1,4 +1,4 @@
-# core/exchange_fetcher.py (v8.3 - The Timekeeper's Patch)
+# core/exchange_fetcher.py (v8.4 - The Gatekeeper's Edition)
 
 import asyncio
 import time
@@ -11,6 +11,7 @@ from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_excep
 
 logger = logging.getLogger(__name__)
 
+# ... [EXCHANGE_CONFIG and SYMBOL_MAP remain unchanged] ...
 EXCHANGE_CONFIG = {
     'mexc': {
         'base_url': 'https://api.mexc.com', 'kline_endpoint': '/api/v3/klines', 'ticker_endpoint': '/api/v3/ticker/24hr', 
@@ -40,24 +41,25 @@ def is_retryable_exception(exception: BaseException) -> bool:
 
 class ExchangeFetcher:
     """
-    ExchangeFetcher (v8.3 - The Timekeeper's Patch)
+    ExchangeFetcher (v8.4 - The Gatekeeper's Edition)
     ----------------------------------------------------------------
-    This version includes a critical hotfix for a timezone localization bug in the
-    incomplete candle rejection logic. It ensures the timestamp comparison is
-    always accurate, making the data pipeline's final defense mechanism fully
-    operational and robust.
+    This definitive version integrates the Timekeeper's Patch (v8.3) with a new
+    "Quality Gate" to reject dataframes with insufficient historical rows. This
+    solves both the timezone bug and the "too few rows" HTF warnings, ensuring
+    only high-quality, sufficient data enters the analysis pipeline.
     """
     def __init__(self, config: Dict[str, Any] = None, cache_ttl: int = 60, cache_max_size: int = 256):
         effective_config = config or {}
-        headers = {'User-Agent': 'AiSignalPro/8.3.0', 'Accept': 'application/json'}
-        timeout_cfg = effective_config.get("http_timeout", 20.0)
+        self.config = effective_config # Store config for later use
+        headers = {'User-Agent': 'AiSignalPro/8.4.0', 'Accept': 'application/json'}
+        timeout_cfg = self.config.get("http_timeout", 20.0)
         self.client = httpx.AsyncClient(headers=headers, timeout=httpx.Timeout(timeout_cfg), follow_redirects=True)
         self.cache, self.cache_ttl, self.cache_max_size, self.cache_lock = {}, cache_ttl, cache_max_size, asyncio.Lock()
-        self.exchange_config = effective_config.get("exchange_specific", EXCHANGE_CONFIG)
-        self.symbol_map = effective_config.get("symbol_map", SYMBOL_MAP)
-        logger.info("ExchangeFetcher (v8.3 - The Timekeeper's Patch) initialized.")
+        self.exchange_config = self.config.get("exchange_specific", EXCHANGE_CONFIG)
+        self.symbol_map = self.config.get("symbol_map", SYMBOL_MAP)
+        logger.info("ExchangeFetcher (v8.4 - The Gatekeeper's Edition) initialized.")
 
-    # ... [All helper methods _get_cache_key, _format_symbol, etc. remain unchanged] ...
+    # ... [helpers like _get_cache_key, _format_symbol, etc. are unchanged] ...
     def _get_cache_key(self, prefix: str, exchange: str, symbol: str, timeframe: Optional[str] = None, limit: Optional[int] = None) -> str:
         key = f"{prefix}:{exchange}:{symbol}"
         if timeframe: key += f":{timeframe}"
@@ -157,7 +159,7 @@ class ExchangeFetcher:
             else:
                 df = df.tz_convert('UTC')
             
-            # ✅ PATCH (v8.3): Correctly use the already tz-aware timestamp from utcnow()
+            # This is the fix from v8.3
             now_utc = pd.Timestamp.utcnow()
             
             offset = pd.tseries.frequencies.to_offset(freq)
@@ -174,7 +176,6 @@ class ExchangeFetcher:
             logger.error(f"Failed to drop incomplete candle for {timeframe}: {e}. Returning original data.")
             return df
 
-    # ... [The rest of the file, from _resample_and_fill_gaps onwards, is unchanged from v8.2] ...
     def _resample_and_fill_gaps(self, df: pd.DataFrame, timeframe: str, symbol: str) -> pd.DataFrame:
         if df.empty: return df
         try:
@@ -210,6 +211,7 @@ class ExchangeFetcher:
             return df
 
     async def get_klines_from_one_exchange(self, exchange: str, symbol: str, timeframe: str, limit: int = 500) -> Optional[List[Dict]]:
+        # ... [Unchanged] ...
         cache_key = self._get_cache_key("kline", exchange, symbol, timeframe, limit)
         async with self.cache_lock:
             if cache_key in self.cache and (time.time() - self.cache[cache_key]['timestamp']) < self.cache_ttl:
@@ -269,6 +271,11 @@ class ExchangeFetcher:
         return None
 
     async def get_first_successful_klines(self, symbol: str, timeframe: str, limit: int = 200) -> Tuple[Optional[pd.DataFrame], Optional[str]]:
+        # ✅ PATCH (v8.4): Add the Quality Gate check
+        # This now uses the main config instance stored in __init__
+        general_cfg = self.config.get("general", {})
+        min_rows = general_cfg.get("min_rows_for_analysis", 300)
+
         exchanges = list(self.exchange_config.keys())
         
         async def fetch_and_tag(exchange: str):
@@ -279,10 +286,17 @@ class ExchangeFetcher:
                 df.set_index('timestamp', inplace=True)
                 df = df[~df.index.duplicated(keep='first')]
                 df.sort_index(inplace=True)
+                
                 df = self._drop_incomplete_current_candle(df, timeframe)
                 df = self._resample_and_fill_gaps(df, timeframe, symbol)
                 df = self._clean_and_validate_dataframe(df, symbol, timeframe)
                 df = df.tail(limit)
+                
+                # THE QUALITY GATE
+                if len(df) < min_rows:
+                    logger.warning(f"Data from '{exchange}' for {symbol}@{timeframe} passed cleaning but was rejected by Quality Gate: too few rows ({len(df)} < {min_rows}).")
+                    return None, None
+                
                 if df.empty: return None, None
                 return exchange, df
             return None, None
@@ -296,7 +310,7 @@ class ExchangeFetcher:
                     if exchange_res and df_res is not None and not df_res.empty:
                         for task in tasks:
                             if not task.done(): task.cancel()
-                        logger.info(f"Klines acquired, cleaned & resampled from '{exchange_res}' for {symbol}@{timeframe} with {len(df_res)} rows.")
+                        logger.info(f"Klines acquired, cleaned & passed Quality Gate from '{exchange_res}' for {symbol}@{timeframe} with {len(df_res)} rows.")
                         return df_res, exchange_res
                 except Exception as exc:
                     logger.warning(f"A fetcher task for {symbol}@{timeframe} failed: {exc}", exc_info=False)
@@ -307,6 +321,7 @@ class ExchangeFetcher:
         logger.error(f"Critical Failure: Could not fetch klines for {symbol}@{timeframe} from any exchange.")
         return None, None
 
+    # ... [get_ticker_from_one_exchange and get_first_successful_ticker are unchanged from v8.3 hotfix] ...
     async def get_ticker_from_one_exchange(self, exchange: str, symbol: str) -> Optional[Dict]:
         cache_key = self._get_cache_key("ticker", exchange, symbol)
         async with self.cache_lock:
@@ -381,4 +396,3 @@ class ExchangeFetcher:
 
     async def close(self):
         await self.client.aclose()
-
