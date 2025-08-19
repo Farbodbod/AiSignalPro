@@ -1,4 +1,4 @@
-# engines/indicator_analyzer.py (v17.0 - The Manifest Edition)
+# engines/indicator_analyzer.py (v17.1 - The Manifest Edition)
 
 import pandas as pd
 import logging
@@ -24,7 +24,7 @@ def get_indicator_config_key(name: str, params: Dict[str, Any]) -> str:
 
 class IndicatorAnalyzer:
     """
-    The Self-Aware Analysis Engine for AiSignalPro (v17.0 - The Manifest Edition)
+    The Self-Aware Analysis Engine for AiSignalPro (v17.1 - The Manifest Edition)
     ------------------------------------------------------------------------------------------
     This definitive version introduces the 'Manifest' architecture. It now creates an
     '_indicator_map' in its summary, mapping simple names to unique keys. This
@@ -103,14 +103,14 @@ class IndicatorAnalyzer:
         
         # ✅ THE MANIFEST: Create a map from simple names to unique keys for global indicators.
         indicator_map = {}
-        for unique_key in self._indicator_instances:
-            simple_name = self._indicator_configs[unique_key]['name']
-            if self.indicators_config.get(simple_name): # Is it a global indicator?
+        for unique_key, config in self._indicator_configs.items():
+            simple_name = config['name']
+            # Only map the primary, global indicators, not every custom variant
+            if simple_name in self.indicators_config:
                 indicator_map[simple_name] = unique_key
         summary["_indicator_map"] = indicator_map
 
-        successful_analysis_count = 0
-        total_calculated_instances = sum(1 for v in self._indicator_instances.values() if isinstance(v, BaseIndicator))
+        successful_analysis_count, total_calculated_instances = 0, sum(1 for v in self._indicator_instances.values() if isinstance(v, BaseIndicator))
         logger.info(f"--- Starting Analysis Aggregation for {self.symbol}@{self.timeframe} ({total_calculated_instances} successful instances) ---")
 
         for unique_key, instance in self._indicator_instances.items():
