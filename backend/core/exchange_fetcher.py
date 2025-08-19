@@ -11,7 +11,6 @@ from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_excep
 
 logger = logging.getLogger(__name__)
 
-# ... (EXCHANGE_CONFIG, SYMBOL_MAP, and is_retryable_exception are unchanged) ...
 EXCHANGE_CONFIG = {
     'mexc': {'base_url': 'https://api.mexc.com', 'kline_endpoint': '/api/v3/klines', 'ticker_endpoint': '/api/v3/ticker/24hr', 'max_limit_per_req': 500, 'symbol_template': '{base}{quote}', 'timeframe_map': {'5m': '5m', '15m': '15m', '1h': '1h', '4h': '4h', '1d': '1d'}, 'rate_limit_delay': 0.5},
     'kucoin': {'base_url': 'https://api.kucoin.com', 'kline_endpoint': '/api/v1/market/candles', 'ticker_endpoint': '/api/v1/market/stats', 'max_limit_per_req': 1500, 'symbol_template': '{base}-{quote}', 'timeframe_map': {'5m': '5min', '15m': '15min', '1h': '1hour', '4h': '4hour', '1d': '1day'}, 'rate_limit_delay': 0.5},
@@ -38,7 +37,6 @@ class ExchangeFetcher:
         effective_config = config or {}; self.exchange_config = effective_config.get("exchange_specific", EXCHANGE_CONFIG); self.symbol_map = effective_config.get("symbol_map", SYMBOL_MAP)
         logging.info("ExchangeFetcher (v6.1 - Resampling Engine) initialized.")
 
-    # ... (_get_cache_key, _format_symbol, etc. are unchanged) ...
     def _get_cache_key(self, prefix: str, exchange: str, symbol: str, timeframe: Optional[str] = None) -> str:
         key = f"{prefix}:{exchange}:{symbol}"; return key + f":{timeframe}" if timeframe else key
     def _format_symbol(self, s: str, e: str) -> Optional[str]:
@@ -82,39 +80,47 @@ class ExchangeFetcher:
                 continue
         return normalized_data
 
-    # ✅ THE MIRACLE FIX: Resampling and Gap Filling Engine
+    def _clean_and_validate_dataframe(self, df: pd.DataFrame, symbol: str, timeframe: str) -> pd.DataFrame:
+        cleaned_df = df.copy()
+        required_cols = ['open', 'high', 'low', 'close', 'volume']
+        for col in required_cols:
+            if col != 'timestamp': cleaned_df[col] = cleaned_df[col].replace(0, np.nan)
+        invalid_candles = cleaned_df[cleaned_df['high'] < cleaned_df['low']]
+        if not invalid_candles.empty:
+            logger.warning(f"{len(invalid_candles)} candles with high < low found for {symbol}@{timeframe}. Nullifying them.")
+            cleaned_df.loc[invalid_candles.index, required_cols] = np.nan
+        nan_count = cleaned_df[required_cols].isnull().sum().sum()
+        if nan_count > 0:
+            logger.warning(f"DataFrame for {symbol}@{timeframe} contains {nan_count} NaN values after cleaning. The Data Integrity Shield will catch this.")
+        return cleaned_df
+
     def _resample_and_fill_gaps(self, df: pd.DataFrame, timeframe: str, symbol: str) -> pd.DataFrame:
         """Ensures the DataFrame has a contiguous time index, filling any gaps."""
         if df.empty: return df
-        # Create a complete date range for the expected frequency
-        resample_freq = timeframe.replace('m', 'T') # Convert '5m' to '5T' for pandas
-        full_date_range = pd.date_range(start=df.index.min(), end=df.index.max(), freq=resample_freq)
-        
-        # Reindex the DataFrame to this full range. Missing candles become rows of NaNs.
-        resampled_df = df.reindex(full_date_range)
-        
-        missing_count = resampled_df['open'].isnull().sum()
-        if missing_count > 0:
-            logger.warning(f"Detected and created {missing_count} missing candle(s) for {symbol}@{timeframe}.")
-            # Forward-fill the missing data. This is a common strategy.
-            # `close` is filled from the previous close.
-            resampled_df['close'] = resampled_df['close'].ffill()
-            # `open`, `high`, `low` for a missing candle are often set to the previous close.
-            resampled_df['open'] = resampled_df['open'].fillna(resampled_df['close'].shift(1))
-            resampled_df['high'] = resampled_df['high'].fillna(resampled_df['close'].shift(1))
-            resampled_df['low'] = resampled_df['low'].fillna(resampled_df['close'].shift(1))
-            # Missing volume is filled with 0.
-            resampled_df['volume'] = resampled_df['volume'].fillna(0)
-            logger.info(f"Missing candles for {symbol}@{timeframe} were forward-filled.")
-        
-        return resampled_df
+        try:
+            # Convert '5m', '1h', etc., to pandas frequency string '5T', '1H'
+            resample_freq = timeframe.upper().replace('M', 'T')
+            full_date_range = pd.date_range(start=df.index.min(), end=df.index.max(), freq=resample_freq)
+            resampled_df = df.reindex(full_date_range)
+            missing_count = resampled_df['open'].isnull().sum()
+            if missing_count > 0:
+                logger.warning(f"Detected and created {missing_count} missing candle(s) for {symbol}@{timeframe}.")
+                resampled_df['close'] = resampled_df['close'].ffill()
+                resampled_df['open'] = resampled_df['open'].fillna(resampled_df['close'].shift(1).fillna(resampled_df['close'].bfill()))
+                resampled_df['high'] = resampled_df['high'].fillna(resampled_df['close'].shift(1).fillna(resampled_df['close'].bfill()))
+                resampled_df['low'] = resampled_df['low'].fillna(resampled_df['close'].shift(1).fillna(resampled_df['close'].bfill()))
+                resampled_df['volume'] = resampled_df['volume'].fillna(0)
+                logger.info(f"Missing candles for {symbol}@{timeframe} were forward-filled.")
+            return resampled_df
+        except Exception as e:
+            logger.error(f"Failed to resample/fill gaps for {symbol}@{timeframe}: {e}. Returning original data.")
+            return df
 
     async def get_klines_from_one_exchange(self, exchange: str, symbol: str, timeframe: str, limit: int = 500) -> Optional[List[Dict]]:
-        # This method is unchanged
+        # This method's logic is unchanged
         cache_key = self._get_cache_key("kline", exchange, symbol, timeframe)
         async with self.cache_lock:
             if cache_key in self.cache and (time.time() - self.cache[cache_key]['timestamp']) < self.cache_ttl:
-                logger.info(f"Serving {len(self.cache[cache_key]['data'])} klines for {symbol} from cache ({exchange}).")
                 return self.cache[cache_key]['data']
         config, fmt_symbol, fmt_tf = self.exchange_config.get(exchange), self._format_symbol(symbol, exchange), self._format_timeframe(timeframe, exchange)
         if not all([config, fmt_symbol, fmt_tf]): return None
@@ -153,11 +159,8 @@ class ExchangeFetcher:
             if res: 
                 df = pd.DataFrame(res); df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms', utc=True); df.set_index('timestamp', inplace=True)
                 df = df[~df.index.duplicated(keep='first')]; df.sort_index(inplace=True)
-                
-                # ✅ Apply the new resampling and cleaning layer before returning
                 df = self._resample_and_fill_gaps(df, timeframe, symbol)
                 df = self._clean_and_validate_dataframe(df, symbol, timeframe)
-                
                 return exchange, df
             return None
         tasks = [asyncio.create_task(fetch_and_tag(ex)) for ex in exchanges]
@@ -175,8 +178,8 @@ class ExchangeFetcher:
         logger.error(f"Critical Failure: Could not fetch klines for {symbol}@{timeframe} from any exchange.")
         return None, None
 
-    # ... Ticker methods are unchanged ...
     async def get_ticker_from_one_exchange(self, exchange: str, symbol: str) -> Optional[Dict]:
+        # This method is unchanged
         cache_key = self._get_cache_key("ticker", exchange, symbol)
         async with self.cache_lock:
             if cache_key in self.cache and (time.time() - self.cache[cache_key]['timestamp']) < 15: return self.cache[cache_key]['data']
@@ -199,6 +202,7 @@ class ExchangeFetcher:
                     return result
         except Exception as e: logger.warning(f"Ticker data processing failed for {exchange} on {symbol}: {e}")
         return None
+        
     async def get_first_successful_ticker(self, symbol: str) -> Optional[Dict]:
         tasks = [asyncio.create_task(self.get_ticker_from_one_exchange(ex, symbol)) for ex in self.exchange_config.keys()]
         try:
@@ -212,5 +216,6 @@ class ExchangeFetcher:
             await asyncio.gather(*tasks, return_exceptions=True)
         logger.error(f"Critical Failure: Could not fetch ticker for {symbol} from any exchange.")
         return None
+
     async def close(self):
         await self.client.aclose()
