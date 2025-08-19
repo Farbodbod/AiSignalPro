@@ -1,10 +1,10 @@
-# engines/master_orchestrator.py (v29.2 - Symbol-Aware Analyzer)
+# engines/master_orchestrator.py (v29.3 - The Data Integrity Shield)
 
 import pandas as pd
 import logging
 import time
 import json
-import inspect  # For async Gemini call check
+import inspect
 from typing import Dict, Any, List, Type, Optional, Tuple
 import asyncio
 
@@ -14,15 +14,14 @@ from .strategies import *
 
 logger = logging.getLogger(__name__)
 
-
 class MasterOrchestrator:
     """
-    The strategic mastermind of AiSignalPro (v29.2 - Symbol-Aware Analyzer).
+    The strategic mastermind of AiSignalPro (v29.3 - The Data Integrity Shield).
     -------------------------------------------------------------------------
-    This version completes the symbol-aware logging upgrade by passing the
-    symbol context down to the IndicatorAnalyzer during instantiation. This
-    ensures all analysis logs are fully contextualized. All other hardened
-    logic and the full Gemini prompt are 100% preserved.
+    This definitive version incorporates the final piece of our hardening process:
+    A Data Integrity Shield. It now validates the incoming DataFrame for NaN values
+    before passing it to the analysis engine, preventing silent calculation failures
+    caused by corrupt upstream data. This is the final, production-ready version.
     """
 
     def __init__(self, config: Dict[str, Any]):
@@ -33,14 +32,10 @@ class MasterOrchestrator:
             KeltnerMomentumBreakout, PivotConfluenceSniper, ConfluenceSniper,
             EmaCrossoverStrategy,
         ]
-
         self.gemini_handler = GeminiHandler()
         self.last_gemini_call_times: Dict[Tuple[str, str], float] = {}
-        self.ENGINE_VERSION = "29.2.0"
-
-        logger.info(f"MasterOrchestrator v{self.ENGINE_VERSION} (Peer-Reviewed) initialized.")
-
-    # ----------------------------- PIPELINE: ANALYSIS -----------------------------
+        self.ENGINE_VERSION = "29.3.0"
+        logger.info(f"MasterOrchestrator v{self.ENGINE_VERSION} (Data Integrity Shield) initialized.")
 
     async def run_analysis_pipeline(
         self,
@@ -49,31 +44,32 @@ class MasterOrchestrator:
         timeframe: str,
         previous_df: Optional[pd.DataFrame] = None,
     ) -> Tuple[Optional[Dict[str, Any]], Optional[pd.DataFrame]]:
-        """
-        Runs indicator analysis pipeline with error safety.
-        """
         try:
+            # ✅ THE DATA INTEGRITY SHIELD: Final, critical check before analysis.
+            required_cols = ['open', 'high', 'low', 'close', 'volume']
+            if df[required_cols].isnull().values.any():
+                nan_info = df[required_cols].isnull().sum()
+                logger.error(
+                    f"CORRUPT DATA DETECTED for {symbol}@{timeframe}. "
+                    f"DataFrame contains NaN values, skipping analysis. NaN counts: {nan_info.to_dict()}"
+                )
+                return None, previous_df
+
             indicators_config = self.config.get("indicators", {})
             strategies_config = self.config.get("strategies", {})
-
-            # ✅ KEY FIX: Pass the 'symbol' into the IndicatorAnalyzer's constructor.
+            
             analyzer = IndicatorAnalyzer(
                 df, indicators_config, strategies_config, timeframe, symbol, previous_df
             )
-
             await analyzer.calculate_all()
             primary_analysis = await analyzer.get_analysis_summary()
-
             return primary_analysis, analyzer.final_df
-
         except Exception as e:
             logger.error(
                 f"Critical error in ANALYSIS pipeline for {symbol}@{timeframe}: {e}",
                 exc_info=True,
             )
             return None, previous_df
-
-    # ----------------------------- PIPELINE: STRATEGIES -----------------------------
 
     async def run_strategy_pipeline(
         self,
@@ -82,21 +78,20 @@ class MasterOrchestrator:
         symbol: str,
         timeframe: str,
     ) -> Optional[Dict[str, Any]]:
-        # This method's logic is 100% preserved from the peer-reviewed v29.1
         valid_signals = []
         strategies_config = self.config.get("strategies", {})
 
         for sc in self._strategy_classes:
             strategy_name = sc.strategy_name
             strategy_config = strategies_config.get(strategy_name, {})
-
+            
             if not strategy_config.get("enabled", True):
                 continue
 
             try:
                 htf_analysis = {}
                 merged_strat_config = {**sc.default_config, **strategy_config}
-
+                
                 if merged_strat_config.get("htf_confirmation_enabled"):
                     htf_map = merged_strat_config.get("htf_map", {})
                     target_htf = htf_map.get(timeframe)
@@ -126,7 +121,7 @@ class MasterOrchestrator:
                     valid_signals.append(signal)
             except Exception as e:
                 logger.error(f"Error running strategy '{strategy_name}' on {timeframe}: {e}", exc_info=True)
-
+        
         if not valid_signals:
             return {"status": "NEUTRAL", "message": "No strategy conditions met.", "full_analysis": primary_analysis, "engine_version": self.ENGINE_VERSION}
         
@@ -147,10 +142,10 @@ class MasterOrchestrator:
 
         return {"status": "SUCCESS", "symbol": symbol, "timeframe": timeframe, "base_signal": best_signal, "ai_confirmation": ai_confirmation, "full_analysis": primary_analysis, "engine_version": self.ENGINE_VERSION}
 
-    # The utility and AI confirmation methods are 100% preserved from v29.1
     def _find_super_signal(self, signals: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
         min_confluence = self.config.get("general", {}).get("min_confluence_for_super_signal", 3)
-        buy_signals = [s for s in signals if s["direction"] == "BUY"]; sell_signals = [s for s in signals if s["direction"] == "SELL"]
+        buy_signals = [s for s in signals if s["direction"] == "BUY"]
+        sell_signals = [s for s in signals if s["direction"] == "SELL"]
         super_direction, contributing_strategies = (None, [])
         if len(buy_signals) >= min_confluence: super_direction, contributing_strategies = ("BUY", buy_signals)
         elif len(sell_signals) >= min_confluence: super_direction, contributing_strategies = ("SELL", sell_signals)
@@ -169,9 +164,10 @@ class MasterOrchestrator:
         if (time.time() - last_call_time) < cooldown:
             logger.info(f"Gemini call for {symbol}@{timeframe} skipped due to cooldown.")
             return {"signal": "N/A", "confidence_percent": 0, "explanation_fa": "AI analysis skipped due to per-symbol cooldown."}
+        
         prompt_context = {"signal_details": {k: v for k, v in signal.items() if k not in ["confirmations", "strategy_name"]}, "system_strategy": signal.get("strategy_name"), "system_reasons": signal.get("confirmations")}
         json_data = json.dumps(prompt_context, indent=2, ensure_ascii=False, default=str)
-
+        
         prompt_template = f"""
 Act as a professional algorithmic trading signal validator with expertise in multi-timeframe confluence and strict JSON output. Your sole purpose is to provide a final, unbiased risk assessment.
 TASK: Analyze the provided structured JSON data for a trade signal on {symbol} ({timeframe}). Validate if a high-probability trade exists.
@@ -195,6 +191,7 @@ Here is the signal data to analyze:
             ai_response = await gemini_query_method(prompt_template)
         else:
             ai_response = await asyncio.to_thread(gemini_query_method, prompt_template)
+        
         try:
             if not isinstance(ai_response, dict): raise TypeError("Response is not a dictionary.")
             validated_signal = str(ai_response["signal"])
@@ -205,7 +202,9 @@ Here is the signal data to analyze:
         except (TypeError, ValueError, KeyError, AttributeError) as e:
             logger.critical(f"FATAL: AI response schema validation failed for {symbol}@{timeframe}. Error: {e}. Response: {ai_response}")
             return None
+        
         if validated_signal.upper() == "HOLD":
             logger.warning(f"AI VETOED for {symbol}@{timeframe}. Reason: {ai_response.get('explanation_fa')}")
             return None
+        
         return ai_response
