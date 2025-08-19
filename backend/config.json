@@ -18,14 +18,14 @@
     "max_concurrent_tasks": 5,
     "gemini_cooldown_seconds": 300,
     "logging_focus_symbol": "BTC/USDT",
-    "log_level": "INFO",
+    "log_level": "DEBUG",
     "min_confluence_for_super_signal": 3,
     "min_risk_reward_ratio": 2.0,
     "account_equity": 10000,
     "assumed_fees_pct": 0.001,
     "assumed_slippage_pct": 0.0005,
     "fetcher_limit": 500,
-    "min_rows_for_htf": 300
+    "min_rows_for_htf": 400
   },
 
   "exchange_settings": {
