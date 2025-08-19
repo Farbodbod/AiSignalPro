@@ -34,7 +34,7 @@ class IndicatorAnalyzer:
     def __init__(self, df: pd.DataFrame, config: Dict[str, Any], strategies_config: Dict[str, Any], timeframe: str, symbol: str, previous_df: Optional[pd.DataFrame] = None):
         if not isinstance(df, pd.DataFrame): raise ValueError("Input must be a pandas DataFrame.")
         self.base_df, self.previous_df, self.indicators_config, self.strategies_config = df, previous_df, config, strategies_config
-        self.timeframe, self.symbol, self.recalc_buffer = timeframe, symbol, 250
+        self.timeframe, self.symbol, self.recalc_buffer = timeframe, symbol, 350
         self._indicator_classes: Dict[str, Type[BaseIndicator]] = { 'rsi': RsiIndicator, 'macd': MacdIndicator, 'bollinger': BollingerIndicator, 'ichimoku': IchimokuIndicator, 'adx': AdxIndicator, 'supertrend': SuperTrendIndicator, 'obv': ObvIndicator, 'stochastic': StochasticIndicator, 'cci': CciIndicator, 'mfi': MfiIndicator, 'atr': AtrIndicator, 'patterns': PatternIndicator, 'divergence': DivergenceIndicator, 'pivots': PivotPointIndicator, 'structure': StructureIndicator, 'whales': WhaleIndicator, 'ema_cross': EMACrossIndicator, 'vwap_bands': VwapBandsIndicator, 'chandelier_exit': ChandelierExitIndicator, 'donchian_channel': DonchianChannelIndicator, 'fast_ma': FastMAIndicator, 'williams_r': WilliamsRIndicator, 'keltner_channel': KeltnerChannelIndicator, 'zigzag': ZigzagIndicator, 'fibonacci': FibonacciIndicator, }
         self._indicator_configs: Dict[str, Dict[str, Any]] = {}
         self._indicator_instances: Dict[str, BaseIndicator] = {}
