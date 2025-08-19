@@ -276,7 +276,7 @@ class ExchangeFetcher:
 
     async def get_first_successful_klines(self, symbol: str, timeframe: str, limit: int = 200) -> Tuple[Optional[pd.DataFrame], Optional[str]]:
         general_cfg = self.config.get("general", {})
-        min_rows = general_cfg.get("min_rows_for_analysis", 300)
+        min_rows = general_cfg.get("min_rows_for_analysis", 290)
 
         exchanges = list(self.exchange_config.keys())
 
