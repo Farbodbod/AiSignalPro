@@ -22,4 +22,4 @@ numpy==1.26.4
 pandas==2.2.2
 pandas-ta==0.3.14b0
 TA-Lib-Precompiled==0.4.25
-#final deploy trigger v29.2
+#final deploy trigger v30.0
