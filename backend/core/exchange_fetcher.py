@@ -1,4 +1,4 @@
-# core/exchange_fetcher.py (v8.2 - The Definitive Edition)
+# core/exchange_fetcher.py (v8.3 - The Timekeeper's Patch)
 
 import asyncio
 import time
@@ -40,24 +40,24 @@ def is_retryable_exception(exception: BaseException) -> bool:
 
 class ExchangeFetcher:
     """
-    ExchangeFetcher (v8.2 - The Definitive Edition)
+    ExchangeFetcher (v8.3 - The Timekeeper's Patch)
     ----------------------------------------------------------------
-    This is the final, production-hardened version, incorporating all peer-review
-    feedback. It features accurate source identification and a fully corrected,
-    documentation-aligned data normalization engine for MEXC, ensuring the
-    highest degree of data integrity and system transparency.
+    This version includes a critical hotfix for a timezone localization bug in the
+    incomplete candle rejection logic. It ensures the timestamp comparison is
+    always accurate, making the data pipeline's final defense mechanism fully
+    operational and robust.
     """
     def __init__(self, config: Dict[str, Any] = None, cache_ttl: int = 60, cache_max_size: int = 256):
         effective_config = config or {}
-        headers = {'User-Agent': 'AiSignalPro/8.2.0', 'Accept': 'application/json'}
+        headers = {'User-Agent': 'AiSignalPro/8.3.0', 'Accept': 'application/json'}
         timeout_cfg = effective_config.get("http_timeout", 20.0)
         self.client = httpx.AsyncClient(headers=headers, timeout=httpx.Timeout(timeout_cfg), follow_redirects=True)
         self.cache, self.cache_ttl, self.cache_max_size, self.cache_lock = {}, cache_ttl, cache_max_size, asyncio.Lock()
         self.exchange_config = effective_config.get("exchange_specific", EXCHANGE_CONFIG)
         self.symbol_map = effective_config.get("symbol_map", SYMBOL_MAP)
-        logger.info("ExchangeFetcher (v8.2 - The Definitive Edition) initialized.")
+        logger.info("ExchangeFetcher (v8.3 - The Timekeeper's Patch) initialized.")
 
-    # ... [All helper methods like _get_cache_key, _format_symbol, etc. remain unchanged from v8.1] ...
+    # ... [All helper methods _get_cache_key, _format_symbol, etc. remain unchanged] ...
     def _get_cache_key(self, prefix: str, exchange: str, symbol: str, timeframe: Optional[str] = None, limit: Optional[int] = None) -> str:
         key = f"{prefix}:{exchange}:{symbol}"
         if timeframe: key += f":{timeframe}"
@@ -157,7 +157,8 @@ class ExchangeFetcher:
             else:
                 df = df.tz_convert('UTC')
             
-            now_utc = pd.Timestamp.utcnow().tz_localize('UTC')
+            # ✅ PATCH (v8.3): Correctly use the already tz-aware timestamp from utcnow()
+            now_utc = pd.Timestamp.utcnow()
             
             offset = pd.tseries.frequencies.to_offset(freq)
             candle_end_times = df.index + offset
@@ -173,6 +174,7 @@ class ExchangeFetcher:
             logger.error(f"Failed to drop incomplete candle for {timeframe}: {e}. Returning original data.")
             return df
 
+    # ... [The rest of the file, from _resample_and_fill_gaps onwards, is unchanged from v8.2] ...
     def _resample_and_fill_gaps(self, df: pd.DataFrame, timeframe: str, symbol: str) -> pd.DataFrame:
         if df.empty: return df
         try:
@@ -208,7 +210,6 @@ class ExchangeFetcher:
             return df
 
     async def get_klines_from_one_exchange(self, exchange: str, symbol: str, timeframe: str, limit: int = 500) -> Optional[List[Dict]]:
-        # ... [Unchanged from v8.1] ...
         cache_key = self._get_cache_key("kline", exchange, symbol, timeframe, limit)
         async with self.cache_lock:
             if cache_key in self.cache and (time.time() - self.cache[cache_key]['timestamp']) < self.cache_ttl:
@@ -269,7 +270,7 @@ class ExchangeFetcher:
 
     async def get_first_successful_klines(self, symbol: str, timeframe: str, limit: int = 200) -> Tuple[Optional[pd.DataFrame], Optional[str]]:
         exchanges = list(self.exchange_config.keys())
-        # The fetch_and_tag helper needs to be defined inside or accessible to this method
+        
         async def fetch_and_tag(exchange: str):
             res = await self.get_klines_from_one_exchange(exchange, symbol, timeframe, limit=limit)
             if res: 
@@ -295,7 +296,6 @@ class ExchangeFetcher:
                     if exchange_res and df_res is not None and not df_res.empty:
                         for task in tasks:
                             if not task.done(): task.cancel()
-                        # ✅ PATCH (v8.2): Correctly log and return the actual source exchange
                         logger.info(f"Klines acquired, cleaned & resampled from '{exchange_res}' for {symbol}@{timeframe} with {len(df_res)} rows.")
                         return df_res, exchange_res
                 except Exception as exc:
@@ -330,7 +330,6 @@ class ExchangeFetcher:
                     elif isinstance(raw_data, dict): data = raw_data
                     if data:
                         price = float(data.get('lastPrice', 0))
-                        # ✅ PATCH (v8.2): Corrected percentage calculation for MEXC based on documentation
                         change = float(data.get('priceChangePercent', 0)) * 100
                 elif exchange == 'kucoin':
                     data = raw_data.get('data')
@@ -382,3 +381,4 @@ class ExchangeFetcher:
 
     async def close(self):
         await self.client.aclose()
+
