@@ -1,4 +1,4 @@
-# Backend/engines/signal_adapter.py (v5.0 - The Miracle Edition)
+# Backend/engines/signal_adapter.py (v5.1 - The Universal Levels Protocol)
 
 import logging
 from typing import Dict, Any, Tuple, Optional, List
@@ -10,36 +10,50 @@ logger = logging.getLogger(__name__)
 
 class SignalAdapter:
     """
-    SignalAdapter (v5.0 - The Miracle Edition)
+    SignalAdapter (v5.1 - The Universal Levels Protocol)
     ---------------------------------------------------------------------------
-    This definitive version introduces a major architectural upgrade, making the
-    adapter self-aware of the indicator map ('_indicator_map'). This allows it
-    to intelligently find and parse data from indicators with dynamic keys,
-    like 'structure'. It also incorporates an anti-fragile fix for AI confidence
-    parsing and refactors data extraction for ultimate clarity and robustness.
+    This definitive version implements the "Universal Levels Protocol", a major
+    architectural upgrade. It intelligently prioritizes key levels provided
+    directly by a strategy over the global 'structure' indicator, creating a
+    truly modular and future-proof system. It also includes anti-fragile fixes
+    for AI confidence parsing and features enhanced, professional-grade code
+    structure, documentation, and type hinting.
     """
     def __init__(self, signal_package: Dict[str, Any]):
+        """
+        Initializes the adapter by extracting all necessary data from the signal package.
+        This clean separation of data extraction from presentation logic improves clarity.
+        """
         # --- Core Packages ---
-        self.package = signal_package
-        self.base_signal = signal_package.get("base_signal", {})
-        self.ai_confirmation = signal_package.get("ai_confirmation", {})
-        self.full_analysis = signal_package.get("full_analysis", {})
-        self.indicator_map = self.full_analysis.get("_indicator_map", {})
+        self.package: Dict[str, Any] = signal_package
+        self.base_signal: Dict[str, Any] = signal_package.get("base_signal", {})
+        self.ai_confirmation: Dict[str, Any] = signal_package.get("ai_confirmation", {})
+        self.full_analysis: Dict[str, Any] = signal_package.get("full_analysis", {})
+        self.indicator_map: Dict[str, str] = self.full_analysis.get("_indicator_map", {})
 
         # --- Primary Signal Details ---
-        self.symbol = signal_package.get("symbol", "N/A")
-        self.timeframe = signal_package.get("timeframe", "N/A")
-        self.strategy_name = self.base_signal.get('strategy_name', 'N/A')
-        self.direction = self.base_signal.get('direction', 'HOLD')
-        self.entry_price = self.base_signal.get('entry_price', 0.0)
-        self.stop_loss = self.base_signal.get('stop_loss', 0.0)
-        self.targets = self.base_signal.get('targets', [])
-        self.rr_ratio = self.base_signal.get('risk_reward_ratio', 0.0)
-        self.confirmations = self.base_signal.get('confirmations', {})
-        self.engine_version = self.package.get('engine_version', 'N/A')
+        self.symbol: str = signal_package.get("symbol", "N/A")
+        self.timeframe: str = signal_package.get("timeframe", "N/A")
+        self.strategy_name: str = self.base_signal.get('strategy_name', 'N/A')
+        self.direction: str = self.base_signal.get('direction', 'HOLD')
+        self.entry_price: float = self.base_signal.get('entry_price', 0.0)
+        self.stop_loss: float = self.base_signal.get('stop_loss', 0.0)
+        self.targets: List[float] = self.base_signal.get('targets', [])
+        self.rr_ratio: float = self.base_signal.get('risk_reward_ratio', 0.0)
+        self.confirmations: Dict[str, Any] = self.base_signal.get('confirmations', {})
+        self.engine_version: str = self.package.get('engine_version', 'N/A')
 
     def _get_indicator_analysis(self, indicator_name: str) -> Optional[Dict[str, Any]]:
-        """Intelligently finds an indicator's analysis using the indicator_map."""
+        """
+        Intelligently finds an indicator's full analysis object from the main
+        analysis package by using the essential '_indicator_map'.
+
+        Args:
+            indicator_name: The simple name of the indicator (e.g., 'structure').
+
+        Returns:
+            The full analysis dictionary for that indicator, or None if not found.
+        """
         unique_key = self.indicator_map.get(indicator_name)
         if not unique_key:
             logger.warning(f"Could not find unique key for '{indicator_name}' in indicator_map for {self.symbol}@{self.timeframe}")
@@ -47,6 +61,7 @@ class SignalAdapter:
         return self.full_analysis.get(unique_key)
 
     def _get_system_confidence(self) -> float:
+        """Calculates a heuristic system confidence based on strategy priority."""
         priority_map = {
             "SuperSignal Confluence": 99.0, "ConfluenceSniper": 96.0,
             "PivotConfluenceSniper": 95.0, "DivergenceSniperPro": 94.0,
@@ -59,6 +74,7 @@ class SignalAdapter:
         return priority_map.get(self.strategy_name, 75.0)
 
     def _get_valid_until(self) -> str:
+        """Generates a localized and Jalali-converted expiration timestamp."""
         ttl_map = {'5m': 2, '15m': 4, '1h': 8, '4h': 24, '1d': 72}
         hours_to_add = ttl_map.get(self.timeframe, 8)
         valid_until_utc = datetime.utcnow() + timedelta(hours=hours_to_add)
@@ -68,6 +84,7 @@ class SignalAdapter:
         return f"⏳ Valid Until: {jalali_dt.strftime('%Y/%m/%d, %H:%M')}"
 
     def _get_signal_summary(self) -> str:
+        """Generates a smart, context-aware conclusion for the signal."""
         if any(keyword in self.strategy_name for keyword in ["Confluence", "Sniper", "Reversal", "Reversion"]):
             return f"High-Probability {self.direction} Reversal"
         elif any(keyword in self.strategy_name for keyword in ["Trend", "Breakout", "Catalyst", "Ichimoku", "Cross"]):
@@ -75,40 +92,57 @@ class SignalAdapter:
         return f"System Signal: {self.direction}"
 
     def _get_signal_emoji_and_text(self) -> Tuple[str, str]:
+        """Returns the appropriate emoji and text for the signal direction."""
         if self.direction == 'BUY': return "🟢", "LONG"
         elif self.direction == 'SELL': return "🔴", "SHORT"
         return "⚪️", "NEUTRAL"
 
     def _format_targets(self) -> str:
+        """Formats the target prices for display."""
         if not self.targets: return "  (Calculated based on R/R)"
         return "\n".join([f"    🎯 TP{i+1}: `{t:,.4f}`" for i, t in enumerate(self.targets)])
 
     def _format_confirmations(self) -> str:
+        """Formats the strategy's confirmation details."""
         if not self.confirmations: return "No details available."
         lines = [f"    - {str(key).replace('_', ' ').title()}: `{value}`" for key, value in self.confirmations.items()]
         return "\n".join(lines)
 
     def _get_key_levels(self) -> Tuple[str, str]:
-        """Extracts and formats support and resistance levels."""
-        structure_analysis = self._get_indicator_analysis('structure')
+        """
+        Extracts and formats S/R levels using the Universal Levels Protocol.
+        Priority 1: Levels provided directly by the strategy in the base_signal.
+        Priority 2: Fallback to the global 'structure' indicator.
+        """
+        supports, resistances = [], []
+        
+        # Priority 1: Check the strategy's own signal package first.
+        if 'key_levels' in self.base_signal and isinstance(self.base_signal['key_levels'], dict):
+            logger.info(f"Using strategy-provided key levels from '{self.strategy_name}'.")
+            levels = self.base_signal['key_levels']
+            supports = levels.get('supports', [])
+            resistances = levels.get('resistances', [])
+        # Priority 2: Fallback to the global structure indicator.
+        else:
+            logger.info(f"No strategy-provided levels found. Falling back to global 'structure' indicator.")
+            structure_analysis = self._get_indicator_analysis('structure')
+            if structure_analysis and isinstance(structure_analysis.get('key_levels'), dict):
+                levels = structure_analysis['key_levels']
+                supports = levels.get('supports', [])
+                resistances = levels.get('resistances', [])
+
         supports_str = "Not Available"
         resistances_str = "Not Available"
 
-        if structure_analysis and isinstance(structure_analysis.get('key_levels'), dict):
-            supports = structure_analysis['key_levels'].get('supports', [])
-            resistances = structure_analysis['key_levels'].get('resistances', [])
-            
-            # ✅ FIX: Correctly access the 'price' key in the list of dicts
-            if supports:
-                supports_str = "\n".join([f"    - `{s.get('price', 0):,.4f}`" for s in supports[:3]])
-            if resistances:
-                resistances_str = "\n".join([f"    - `{r.get('price', 0):,.4f}`" for r in resistances[:3]])
+        if supports:
+            supports_str = "\n".join([f"    - `{s.get('price', 0):,.4f}`" for s in supports[:3]])
+        if resistances:
+            resistances_str = "\n".join([f"    - `{r.get('price', 0):,.4f}`" for r in resistances[:3]])
         
         return supports_str, resistances_str
 
     def _get_ai_details(self) -> Tuple[float, str]:
         """Extracts AI confidence and explanation with anti-fragile logic."""
-        # ✅ FIX: Accept both 'confidence_percent' and 'confidence' for robustness
         confidence_val = self.ai_confirmation.get("confidence_percent")
         if confidence_val is None:
             confidence_val = self.ai_confirmation.get("confidence") # Fallback
@@ -118,13 +152,21 @@ class SignalAdapter:
         return ai_confidence, ai_explanation
         
     def _get_timestamp(self) -> str:
+        """Generates a localized and Jalali-converted creation timestamp."""
         try:
-            utc_dt = datetime.utcnow(); tehran_tz = pytz.timezone("Asia/Tehran")
-            tehran_dt = utc_dt.astimezone(tehran_tz); jalali_dt = jdatetime.fromgregorian(datetime=tehran_dt)
+            utc_dt = datetime.utcnow()
+            tehran_tz = pytz.timezone("Asia/Tehran")
+            tehran_dt = utc_dt.astimezone(tehran_tz)
+            jalali_dt = jdatetime.fromgregorian(datetime=tehran_dt)
             return f"⏰ {jalali_dt.strftime('%Y/%m/%d, %H:%M:%S')}"
-        except Exception: return ""
+        except Exception: 
+            return ""
 
     def to_telegram_message(self) -> str:
+        """
+        Constructs the final, beautifully formatted Telegram message from all components.
+        This method is now purely for presentation.
+        """
         emoji, direction_text = self._get_signal_emoji_and_text()
         system_confidence = self._get_system_confidence()
         valid_until_str = self._get_valid_until()
@@ -155,4 +197,3 @@ class SignalAdapter:
             f"{self._get_timestamp()}\n"
             f"{valid_until_str}"
         )
-
