@@ -1,3 +1,5 @@
+# backend/engines/indicators/pattern_indicator.py (v3.2 - No-Compromise Edition)
+
 import pandas as pd
 import numpy as np
 import logging
@@ -15,11 +17,12 @@ logger = logging.getLogger(__name__)
 
 class PatternIndicator(BaseIndicator):
     """
-    Candlestick Pattern Engine - Definitive, World-Class Version (v3.0 - Final Architecture)
+    Candlestick Pattern Engine - (v3.2 - No-Compromise Edition)
     ---------------------------------------------------------------------------------------
-    This version acts as an intelligent interpretation layer on top of pandas_ta.
-    It adheres to the final AiSignalPro architecture by calculating on the
-    pre-resampled dataframe.
+    This definitive version implements a no-compromise, backward-compatible
+    output structure. The analysis results are provided under BOTH 'values'
+    (for the new Sentinel protocol) and 'analysis' (for legacy consumers) keys.
+    This ensures seamless integration across the entire system without regressions.
     """
     dependencies: list = []
     
@@ -54,7 +57,6 @@ class PatternIndicator(BaseIndicator):
         self.patterns_col = f'patterns{suffix}'
 
     def _calculate_patterns(self, df: pd.DataFrame) -> pd.DataFrame:
-        """The core logic to run pandas_ta and interpret its results."""
         res = pd.DataFrame(index=df.index)
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
@@ -85,10 +87,6 @@ class PatternIndicator(BaseIndicator):
         return res
 
     def calculate(self) -> 'PatternIndicator':
-        """
-        ✨ FINAL ARCHITECTURE: No resampling. Just pure calculation.
-        The dataframe received is already at the correct timeframe.
-        """
         df_for_calc = self.df
         
         if len(df_for_calc) == 0:
@@ -104,12 +102,8 @@ class PatternIndicator(BaseIndicator):
         return self
 
     def analyze(self) -> Dict[str, Any]:
-        """
-        Provides a bias-free analysis of the patterns found on the last closed candle.
-        This powerful analysis logic remains unchanged.
-        """
         if self.patterns_col not in self.df.columns or len(self.df) < 2:
-            return {"status": "No Data", "analysis": {}}
+            return {"status": "No Data", "values": {}, "analysis": {}}
         
         last_closed_patterns = self.df[self.patterns_col].iloc[-2]
         if not isinstance(last_closed_patterns, list): last_closed_patterns = []
@@ -120,14 +114,20 @@ class PatternIndicator(BaseIndicator):
         signal = "Neutral"
         if bullish_patterns and not bearish_patterns: signal = "Bullish"
         elif bearish_patterns and not bullish_patterns: signal = "Bearish"
+
+        # This is the content that both old and new consumers need.
+        analysis_content = {
+            "signal": signal,
+            "bullish_patterns": bullish_patterns,
+            "bearish_patterns": bearish_patterns,
+            "neutral_patterns": [p for p in last_closed_patterns if p.get('type') == 'Neutral'],
+            "pattern_count": len(last_closed_patterns)
+        }
             
         return {
-            "status": "OK", "timeframe": self.timeframe or 'Base',
-            "analysis": {
-                "signal": signal,
-                "bullish_patterns": bullish_patterns,
-                "bearish_patterns": bearish_patterns,
-                "neutral_patterns": [p for p in last_closed_patterns if p.get('type') == 'Neutral'],
-                "pattern_count": len(last_closed_patterns)
-            }
+            "status": "OK", 
+            "timeframe": self.timeframe or 'Base',
+            # ✅ THE NO-COMPROMISE FIX (v3.2): Provide BOTH keys for full compatibility.
+            "values": analysis_content,   # For the new Sentinel protocol
+            "analysis": analysis_content  # For backward compatibility with existing helpers
         }
