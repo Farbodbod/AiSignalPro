@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 EXCHANGE_CONFIG = {
     'mexc': {
         'base_url': 'https://api.mexc.com', 'kline_endpoint': '/api/v3/klines', 'ticker_endpoint': '/api/v3/ticker/24hr',
-        'max_limit_per_req': 500, 'symbol_template': '{base}{quote}',
+        'max_limit_per_req': 1000, 'symbol_template': '{base}{quote}',
         'timeframe_map': {'5m': '5m', '15m': '15m', '1h': '1h', '4h': '4h', '1d': '1d'},
         'rate_limit_delay': 0.5, 'kline_schema': ['ts', 'o', 'h', 'l', 'c', 'v']
     },
@@ -26,7 +26,7 @@ EXCHANGE_CONFIG = {
     },
     'okx': {
         'base_url': 'https://www.okx.com', 'kline_endpoint': '/api/v5/market/candles', 'ticker_endpoint': '/api/v5/market/ticker',
-        'max_limit_per_req': 300, 'symbol_template': '{base}-{quote}',
+        'max_limit_per_req': 500, 'symbol_template': '{base}-{quote}',
         'timeframe_map': {'5m': '5m', '15m': '15m', '1h': '1H', '4h': '4H', '1d': '1D'},
         'rate_limit_delay': 0.2, 'kline_schema': ['ts', 'o', 'h', 'l', 'c', 'v']
     },
