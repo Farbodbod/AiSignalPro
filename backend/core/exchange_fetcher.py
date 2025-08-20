@@ -1,4 +1,4 @@
-# core/exchange_fetcher.py (v8.6 - The Universal Normalizer Edition)
+# core/exchange_fetcher.py (v9.0 - The Miracle Edition)
 
 import asyncio
 import time
@@ -40,23 +40,26 @@ def is_retryable_exception(exception: BaseException) -> bool:
 
 class ExchangeFetcher:
     """
-    ExchangeFetcher (v8.6 - The Universal Normalizer Edition)
+    ExchangeFetcher (v9.0 - The Miracle Edition)
     ----------------------------------------------------------------
-    This definitive version extends its data correction logic to handle inverted
-    High/Low anomalies from both OKX and KuCoin. By creating a universal
-    normalization layer, this module ensures the highest possible data integrity
-    from multiple, often inconsistent, sources.
+    This is the definitive, world-class data refinery for AiSignalPro. It
+    incorporates a multi-layered defense system for data integrity, including:
+    - Universal Normalizer: For exchange-specific data quirks (OKX, KuCoin).
+    - Incomplete Candle Rejection: Analyzes only closed, confirmed candles.
+    - Pagination Shield: Rejects incomplete historical data fetches.
+    - Staleness Shield: Rejects entire datasets that are too old.
+    - Quality Gate: Enforces minimum data depth for analysis.
     """
     def __init__(self, config: Dict[str, Any] = None, cache_ttl: int = 60, cache_max_size: int = 256):
         effective_config = config or {}
         self.config = effective_config
-        headers = {'User-Agent': 'AiSignalPro/8.6.0', 'Accept': 'application/json'}
+        headers = {'User-Agent': 'AiSignalPro/9.0.0', 'Accept': 'application/json'}
         timeout_cfg = self.config.get("http_timeout", 20.0)
         self.client = httpx.AsyncClient(headers=headers, timeout=httpx.Timeout(timeout_cfg), follow_redirects=True)
         self.cache, self.cache_ttl, self.cache_max_size, self.cache_lock = {}, cache_ttl, cache_max_size, asyncio.Lock()
         self.exchange_config = self.config.get("exchange_specific", EXCHANGE_CONFIG)
         self.symbol_map = self.config.get("symbol_map", SYMBOL_MAP)
-        logger.info("ExchangeFetcher (v8.6 - The Universal Normalizer Edition) initialized.")
+        logger.info("ExchangeFetcher (v9.0 - The Miracle Edition) initialized.")
 
     def _get_cache_key(self, prefix: str, exchange: str, symbol: str, timeframe: Optional[str] = None, limit: Optional[int] = None) -> str:
         key = f"{prefix}:{exchange}:{symbol}"
@@ -125,8 +128,6 @@ class ExchangeFetcher:
                 c = float(mapping.get('c', np.nan))
                 v = float(mapping.get('v', np.nan))
 
-                # ✅ UNIVERSAL NORMALIZER (v8.6):
-                # Mathematically correct inverted H/L candles from known quirky exchanges.
                 if source == 'okx' or source == 'kucoin':
                     actual_high = max(h, l)
                     actual_low = min(h, l)
@@ -166,10 +167,8 @@ class ExchangeFetcher:
                 df = df.tz_convert('UTC')
 
             now_utc = pd.Timestamp.utcnow()
-
             offset = pd.tseries.frequencies.to_offset(freq)
             candle_end_times = df.index + offset
-
             complete_mask = candle_end_times <= now_utc
 
             if not complete_mask.all():
@@ -181,30 +180,47 @@ class ExchangeFetcher:
             logger.error(f"Failed to drop incomplete candle for {timeframe}: {e}. Returning original data.")
             return df
 
+    def _validate_data_staleness(self, df: pd.DataFrame, timeframe: str, symbol: str) -> bool:
+        """New defensive shield to reject entire datasets that are too old."""
+        if df.empty:
+            return True # Not stale, just empty. Let it pass.
+
+        try:
+            last_candle_time = df.index[-1]
+            now_utc = pd.Timestamp.utcnow()
+            
+            # Allow a lag of up to 2.5x the timeframe interval
+            timeframe_delta = pd.to_timedelta(timeframe.upper().replace('M', 'T'))
+            allowed_lag = timeframe_delta * 2.5
+            actual_lag = now_utc - last_candle_time
+
+            if actual_lag > allowed_lag:
+                logger.warning(f"STALE DATA REJECTED for {symbol}@{timeframe}. Last candle is {actual_lag} old. Allowed lag is {allowed_lag}.")
+                return False
+            return True
+        except Exception as e:
+            logger.error(f"Error during staleness check for {symbol}@{timeframe}: {e}. Allowing data to pass as a precaution.")
+            return True
+
     def _resample_and_fill_gaps(self, df: pd.DataFrame, timeframe: str, symbol: str) -> pd.DataFrame:
         if df.empty: return df
         try:
             freq = timeframe.upper().replace('M', 'T')
-
             aligned = df.copy()
             if aligned.index.tz is None: aligned = aligned.tz_localize('UTC')
             aligned.index = aligned.index.floor(freq)
             aligned = aligned[~aligned.index.duplicated(keep='last')]
-
             ohlcv_agg = {'open':'first', 'high':'max', 'low':'min', 'close':'last', 'volume':'sum'}
             res = aligned.resample(freq).agg(ohlcv_agg)
-
             if res.index.tz is None: res = res.tz_localize('UTC')
             full_date_range = pd.date_range(start=res.index.min(), end=res.index.max(), freq=freq, tz=res.index.tz)
             res = res.reindex(full_date_range)
-
             missing = res['open'].isna().sum()
             if missing > 0:
                 logger.warning(f"Detected {missing} missing candle(s) for {symbol}@{timeframe}. Filling.")
                 res['close'] = res['close'].ffill()
                 prev_close = res['close'].shift(1)
                 res['open'] = res['open'].fillna(prev_close).fillna(res['close'])
-
                 pair = pd.concat([res['open'], res['close']], axis=1)
                 res['high'] = res['high'].fillna(pair.max(axis=1))
                 res['low'] = res['low'].fillna(pair.min(axis=1))
@@ -229,7 +245,6 @@ class ExchangeFetcher:
         while rem_limit > 0:
             fetch_limit = min(rem_limit, max_req);
             if fetch_limit <= 0: break
-
             logger.info(f"Fetching page #{pg} for {symbol}@{timeframe} from {exchange} (limit: {fetch_limit})...")
             url = config['base_url'] + config['kline_endpoint']
             params = {'limit': str(fetch_limit)}
@@ -241,18 +256,15 @@ class ExchangeFetcher:
                 if exchange == 'kucoin': params['endAt'] = int(end_ts / 1000)
                 elif exchange == 'okx': params['before'] = str(end_ts)
                 else: params['endTime'] = end_ts
-
             try:
                 raw_data = await self._safe_async_request('GET', url, params=params, exchange_name=exchange)
                 if raw_data is None:
-                    logger.warning(f"No data returned from {exchange} for {symbol}@{timeframe} on page {pg}. Stopping pagination for this exchange.")
+                    logger.warning(f"No data returned from {exchange} for {symbol}@{timeframe} on page {pg}. Stopping pagination.")
                     break
-
                 kline_list = raw_data.get('data') if isinstance(raw_data, dict) and 'data' in raw_data else raw_data
                 if isinstance(kline_list, list) and kline_list and isinstance(kline_list[0], (list, tuple)):
                     norm_data = self._normalize_kline_data(kline_list, exchange)
                     if not norm_data: break
-
                     all_data = norm_data + all_data
                     oldest_ts = min(c['timestamp'] for c in norm_data)
                     end_ts = oldest_ts - 1
@@ -266,6 +278,11 @@ class ExchangeFetcher:
                 break
 
         if all_data:
+            # ✅ PAGINATION SHIELD (v9.0):
+            if len(all_data) < limit * 0.9:
+                logger.warning(f"Pagination for {exchange} on {symbol} completed but returned significantly less data ({len(all_data)}) than requested ({limit}). Discarding as incomplete.")
+                return None
+
             all_data.sort(key=lambda x: x['timestamp'])
             final_data = all_data[-limit:]
             async with self.cache_lock:
@@ -276,12 +293,14 @@ class ExchangeFetcher:
 
     async def get_first_successful_klines(self, symbol: str, timeframe: str, limit: int = 200) -> Tuple[Optional[pd.DataFrame], Optional[str]]:
         general_cfg = self.config.get("general", {})
-        min_rows = general_cfg.get("min_rows_for_analysis", 290)
+        min_rows = general_cfg.get("min_rows_for_analysis", 300)
+        safety_buffer = 10 # Engineered buffer
+        effective_limit = limit + safety_buffer
 
         exchanges = list(self.exchange_config.keys())
 
         async def fetch_and_tag(exchange: str):
-            res = await self.get_klines_from_one_exchange(exchange, symbol, timeframe, limit=limit)
+            res = await self.get_klines_from_one_exchange(exchange, symbol, timeframe, limit=effective_limit)
             if res:
                 df = pd.DataFrame(res)
                 df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms', utc=True)
@@ -290,14 +309,20 @@ class ExchangeFetcher:
                 df.sort_index(inplace=True)
 
                 df = self._drop_incomplete_current_candle(df, timeframe)
+                
+                # ✅ STALENESS SHIELD (v9.0):
+                if not self._validate_data_staleness(df, timeframe, symbol):
+                    return None, None # Reject if data is too old
+
                 df = self._resample_and_fill_gaps(df, timeframe, symbol)
                 df = self._clean_and_validate_dataframe(df, symbol, timeframe)
-                df = df.tail(limit)
-
+                
+                # ✅ QUALITY GATE (MINIMUM ROWS):
                 if len(df) < min_rows:
-                    logger.warning(f"Data from '{exchange}' for {symbol}@{timeframe} passed cleaning but was rejected by Quality Gate: too few rows ({len(df)} < {min_rows}).")
+                    logger.warning(f"Data from '{exchange}' for {symbol}@{timeframe} was rejected by Quality Gate: too few rows ({len(df)} < {min_rows}).")
                     return None, None
 
+                df = df.tail(limit)
                 if df.empty: return None, None
                 return exchange, df
             return None, None
@@ -311,7 +336,7 @@ class ExchangeFetcher:
                     if exchange_res and df_res is not None and not df_res.empty:
                         for task in tasks:
                             if not task.done(): task.cancel()
-                        logger.info(f"Klines acquired, cleaned & passed Quality Gate from '{exchange_res}' for {symbol}@{timeframe} with {len(df_res)} rows.")
+                        logger.info(f"Klines acquired from '{exchange_res}' for {symbol}@{timeframe}, passed all shields with {len(df_res)} rows.")
                         return df_res, exchange_res
                 except Exception as exc:
                     logger.warning(f"A fetcher task for {symbol}@{timeframe} failed: {exc}", exc_info=False)
@@ -339,7 +364,6 @@ class ExchangeFetcher:
             if raw_data:
                 price, change = 0.0, 0.0
                 data = None
-
                 if exchange == 'mexc':
                     if isinstance(raw_data, list) and raw_data: data = raw_data[0]
                     elif isinstance(raw_data, dict): data = raw_data
@@ -351,7 +375,6 @@ class ExchangeFetcher:
                     if isinstance(data, dict):
                         price = float(data.get('last', 0))
                         change = float(data.get('changeRate', 0)) * 100
-
                 elif exchange == 'okx':
                     data_list = raw_data.get('data')
                     if isinstance(data_list, list) and data_list:
@@ -359,7 +382,6 @@ class ExchangeFetcher:
                         price = float(data.get('last', 0))
                         open_24h = float(data.get('open24h', 0))
                         change = ((price - open_24h) / open_24h) * 100 if open_24h > 0 else 0.0
-
                 if price > 0:
                     result = {'price': price, 'change_24h': change, 'source': exchange, 'symbol': symbol}
                     async with self.cache_lock:
@@ -369,14 +391,12 @@ class ExchangeFetcher:
                 else:
                     if data is not None:
                         logger.warning(f"Ticker data from {exchange} for {symbol} had zero price. Data: {data}")
-
         except Exception as e:
             logger.warning(f"Ticker data processing failed for {exchange} on {symbol}: {e}")
         return None
 
     async def get_first_successful_ticker(self, symbol: str) -> Optional[Dict]:
         tasks = [asyncio.create_task(self.get_ticker_from_one_exchange(ex, symbol)) for ex in self.exchange_config.keys()]
-
         try:
             for future in asyncio.as_completed(tasks):
                 try:
@@ -390,7 +410,6 @@ class ExchangeFetcher:
                     continue
         finally:
             await asyncio.gather(*tasks, return_exceptions=True)
-
         logger.error(f"Critical Failure: Could not fetch ticker for {symbol} from any exchange.")
         return None
 
