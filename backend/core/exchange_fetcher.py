@@ -1,4 +1,4 @@
-# core/exchange_fetcher.py (v10.1 - The Log Hygiene Edition)
+# core/exchange_fetcher.py (v10.2 - The Future-Proof Edition)
 
 import asyncio
 import time
@@ -11,9 +11,13 @@ from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_excep
 
 logger = logging.getLogger(__name__)
 
-# ... [EXCHANGE_CONFIG, SYMBOL_MAP, is_retryable_exception remain unchanged] ...
-EXCHANGE_CONFIG = { 'mexc': { 'base_url': 'https://api.mexc.com', 'kline_endpoint': '/api/v3/klines', 'ticker_endpoint': '/api/v3/ticker/24hr', 'max_limit_per_req': 500, 'symbol_template': '{base}{quote}', 'timeframe_map': {'5m': '5m', '15m': '15m', '1h': '1h', '4h': '4h', '1d': '1d'}, 'rate_limit_delay': 0.5, 'kline_schema': ['ts', 'o', 'h', 'l', 'c', 'v'] }, 'kucoin': { 'base_url': 'https://api.kucoin.com', 'kline_endpoint': '/api/v1/market/candles', 'ticker_endpoint': '/api/v1/market/stats', 'max_limit_per_req': 1500, 'symbol_template': '{base}-{quote}', 'timeframe_map': {'5m': '5min', '15m': '15min', '1h': '1hour', '4h': '4hour', '1d': '1day'}, 'rate_limit_delay': 0.5, 'kline_schema': ['ts', 'o', 'c', 'h', 'l', 'v'] }, 'okx': { 'base_url': 'https://www.okx.com', 'kline_endpoint': '/api/v5/market/candles', 'ticker_endpoint': '/api/v5/market/ticker', 'max_limit_per_req': 300, 'symbol_template': '{base}-{quote}', 'timeframe_map': {'5m': '5m', '15m': '15m', '1h': '1H', '4h': '4H', '1d': '1D'}, 'rate_limit_delay': 0.2, 'kline_schema': ['ts', 'o', 'h', 'l', 'c', 'v'] }, }
+EXCHANGE_CONFIG = {
+    'mexc': { 'base_url': 'https://api.mexc.com', 'kline_endpoint': '/api/v3/klines', 'ticker_endpoint': '/api/v3/ticker/24hr', 'max_limit_per_req': 500, 'symbol_template': '{base}{quote}', 'timeframe_map': {'5m': '5m', '15m': '15m', '1h': '1h', '4h': '4h', '1d': '1d'}, 'rate_limit_delay': 0.5, 'kline_schema': ['ts', 'o', 'h', 'l', 'c', 'v'] },
+    'kucoin': { 'base_url': 'https://api.kucoin.com', 'kline_endpoint': '/api/v1/market/candles', 'ticker_endpoint': '/api/v1/market/stats', 'max_limit_per_req': 1500, 'symbol_template': '{base}-{quote}', 'timeframe_map': {'5m': '5min', '15m': '15min', '1h': '1hour', '4h': '4hour', '1d': '1day'}, 'rate_limit_delay': 0.5, 'kline_schema': ['ts', 'o', 'c', 'h', 'l', 'v'] },
+    'okx': { 'base_url': 'https://www.okx.com', 'kline_endpoint': '/api/v5/market/candles', 'ticker_endpoint': '/api/v5/market/ticker', 'max_limit_per_req': 300, 'symbol_template': '{base}-{quote}', 'timeframe_map': {'5m': '5m', '15m': '15m', '1h': '1H', '4h': '4H', '1d': '1D'}, 'rate_limit_delay': 0.2, 'kline_schema': ['ts', 'o', 'h', 'l', 'c', 'v'] },
+}
 SYMBOL_MAP = {'BTC/USDT': {'base': 'BTC', 'quote': 'USDT'}, 'ETH/USDT': {'base': 'ETH', 'quote': 'USDT'}}
+
 def is_retryable_exception(exception: BaseException) -> bool:
     if isinstance(exception, (httpx.RequestError, httpx.TimeoutException)): return True
     if isinstance(exception, httpx.HTTPStatusError): return exception.response.status_code >= 500 or exception.response.status_code == 429
@@ -21,34 +25,36 @@ def is_retryable_exception(exception: BaseException) -> bool:
 
 class ExchangeFetcher:
     """
-    ExchangeFetcher (v10.1 - The Log Hygiene Edition)
+    ExchangeFetcher (v10.2 - The Future-Proof Edition)
     ----------------------------------------------------------------
-    This version introduces a centralized helper to convert internal timeframe
-    notations to future-proof pandas frequency strings, eliminating all
-    FutureWarning logs and ensuring long-term compatibility.
+    This is the definitive, world-class data refinery for AiSignalPro. It
+    is fully aligned with the latest pandas standards (using 'min' for minutes)
+    to ensure zero FutureWarnings and long-term compatibility. All defensive
+    shields remain active for maximum data integrity.
     """
     def __init__(self, config: Dict[str, Any] = None, cache_ttl: int = 60, cache_max_size: int = 256):
         effective_config = config or {}
         self.config = effective_config
-        headers = {'User-Agent': 'AiSignalPro/10.1.0', 'Accept': 'application/json'}
+        headers = {'User-Agent': 'AiSignalPro/10.2.0', 'Accept': 'application/json'}
         timeout_cfg = self.config.get("http_timeout", 20.0)
         self.client = httpx.AsyncClient(headers=headers, timeout=httpx.Timeout(timeout_cfg), follow_redirects=True)
         self.cache, self.cache_ttl, self.cache_max_size, self.cache_lock = {}, cache_ttl, cache_max_size, asyncio.Lock()
         self.exchange_config = self.config.get("exchange_specific", EXCHANGE_CONFIG)
         self.symbol_map = self.config.get("symbol_map", SYMBOL_MAP)
-        logger.info("ExchangeFetcher (v10.1 - The Log Hygiene Edition) initialized.")
+        logger.info("ExchangeFetcher (v10.2 - The Future-Proof Edition) initialized.")
 
     def _get_pandas_freq(self, timeframe: str) -> str:
         """
-        ✅ NEW HELPER (v10.1):
         Converts our internal timeframe string to a pandas-compatible,
-        future-proof frequency string (e.g., '5m' -> '5t', '1h' -> '1h').
+        future-proof frequency string (e.g., '5m' -> '5min', '1h' -> '1h').
         """
-        return timeframe.lower().replace('m', 't')
+        tf_lower = timeframe.lower()
+        if 'm' in tf_lower:
+            return tf_lower.replace('m', 'min')
+        return tf_lower
 
-    # ... [Other helper methods like _get_cache_key, etc., are unchanged] ...
     def _get_cache_key(self, prefix: str, exchange: str, symbol: str, timeframe: Optional[str] = None, limit: Optional[int] = None) -> str:
-        key = f"{prefix}:{exchange}:{symbol}";
+        key = f"{prefix}:{exchange}:{symbol}"
         if timeframe: key += f":{timeframe}"
         if limit: key += f":L{limit}"
         return key
@@ -59,7 +65,7 @@ class ExchangeFetcher:
         else:
             if '/' not in s: logger.warning(f"Unexpected symbol format for formatting: {s}"); return None
             base, quote = s.split('/', 1)
-        c = self.exchange_config.get(e);
+        c = self.exchange_config.get(e)
         if not c: return None
         return c['symbol_template'].format(base=base, quote=quote).upper()
 
@@ -82,7 +88,7 @@ class ExchangeFetcher:
 
     def _get_request_end_time(self, timeframe: str) -> int:
         now_utc = pd.Timestamp.utcnow()
-        freq = self._get_pandas_freq(timeframe) # ✅ Using the new helper
+        freq = self._get_pandas_freq(timeframe)
         start_of_current_candle = now_utc.floor(freq)
         return int(start_of_current_candle.timestamp() * 1000)
         
@@ -126,7 +132,7 @@ class ExchangeFetcher:
         try:
             last_candle_time = df.index[-1]
             now_utc = pd.Timestamp.utcnow()
-            freq = self._get_pandas_freq(timeframe) # ✅ Using the new helper
+            freq = self._get_pandas_freq(timeframe)
             timeframe_delta = pd.to_timedelta(freq)
             allowed_lag = timeframe_delta * 2.5
             actual_lag = now_utc - last_candle_time
@@ -138,10 +144,10 @@ class ExchangeFetcher:
             logger.error(f"Error during staleness check for {symbol}@{timeframe}: {e}. Allowing data to pass as a precaution.")
             return True
 
-    def _resample_and_fill_gaps(self, df: pd.DataFrame, timeframe: str, symbol: str) -> pd.DataFrame:
+    def _resample_and_fill_gaps(self, df: pd.DataFrame, symbol: str, timeframe: str) -> pd.DataFrame:
         if df.empty: return df
         try:
-            freq = self._get_pandas_freq(timeframe) # ✅ Using the new helper
+            freq = self._get_pandas_freq(timeframe)
             aligned = df.copy()
             if aligned.index.tz is None: aligned = aligned.tz_localize('UTC')
             aligned.index = aligned.index.floor(freq)
@@ -166,9 +172,7 @@ class ExchangeFetcher:
         except Exception as e:
             logger.error(f"Failed to resample/fill gaps for {symbol}@{timeframe}: {e}. Returning original data.", exc_info=True)
             return df
-    
-    # ... [The rest of the file (get_klines_from_one_exchange, get_first_successful_klines, etc.) is unchanged as it doesn't use the problematic conversion] ...
-    # ... Wait, I need to check if those methods use it. Yes, they do. `get_first_successful_klines` doesn't, but its helper `fetch_and_tag` did in older versions, and I should check. No, `fetch_and_tag` calls other helpers that use it. So my new helper must be used everywhere. I will ensure this in the final code.
+
     async def get_klines_from_one_exchange(self, exchange: str, symbol: str, timeframe: str, limit: int = 500) -> Optional[List[Dict]]:
         cache_key = self._get_cache_key("kline", exchange, symbol, timeframe, limit)
         async with self.cache_lock:
