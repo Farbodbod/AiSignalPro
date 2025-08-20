@@ -1,16 +1,17 @@
-# core/exchange_fetcher.py (v9.1 - The Pragmatic Edition)
+# core/exchange_fetcher.py (v9.2 - The Hotfix Edition)
 
 import asyncio
 import time
 import logging
-# ... [imports remain the same] ...
+from typing import Dict, List, Optional, Tuple, Any # ✅ CRITICAL HOTFIX: Re-added the missing import
+import httpx
 import pandas as pd
 import numpy as np
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception
 
 logger = logging.getLogger(__name__)
 
-# ... [EXCHANGE_CONFIG, SYMBOL_MAP, is_retryable_exception remain the same] ...
+# ... [The rest of the file is identical to v9.1] ...
 EXCHANGE_CONFIG = {
     'mexc': {
         'base_url': 'https://api.mexc.com', 'kline_endpoint': '/api/v3/klines', 'ticker_endpoint': '/api/v3/ticker/24hr',
@@ -40,25 +41,23 @@ def is_retryable_exception(exception: BaseException) -> bool:
 
 class ExchangeFetcher:
     """
-    ExchangeFetcher (v9.1 - The Pragmatic Edition)
+    ExchangeFetcher (v9.2 - The Hotfix Edition)
     ----------------------------------------------------------------
-    This definitive version introduces a 'Tolerance Threshold' to the Quality
-    Gate. While maintaining a high standard for data depth, it pragmatically
-    handles minor discrepancies in the number of returned candles from APIs,
-    preventing unnecessary rejections and ensuring maximum stability.
+    This version includes a critical hotfix to restore the missing 'typing'
+    import, which was causing a fatal NameError on startup. This resolves
+    the boot loop and restores full functionality.
     """
     def __init__(self, config: Dict[str, Any] = None, cache_ttl: int = 60, cache_max_size: int = 256):
         effective_config = config or {}
         self.config = effective_config
-        headers = {'User-Agent': 'AiSignalPro/9.1.0', 'Accept': 'application/json'}
+        headers = {'User-Agent': 'AiSignalPro/9.2.0', 'Accept': 'application/json'}
         timeout_cfg = self.config.get("http_timeout", 20.0)
         self.client = httpx.AsyncClient(headers=headers, timeout=httpx.Timeout(timeout_cfg), follow_redirects=True)
         self.cache, self.cache_ttl, self.cache_max_size, self.cache_lock = {}, cache_ttl, cache_max_size, asyncio.Lock()
         self.exchange_config = self.config.get("exchange_specific", EXCHANGE_CONFIG)
         self.symbol_map = self.config.get("symbol_map", SYMBOL_MAP)
-        logger.info("ExchangeFetcher (v9.1 - The Pragmatic Edition) initialized.")
+        logger.info("ExchangeFetcher (v9.2 - The Hotfix Edition) initialized.")
 
-    # ... [All helper methods from v9.0 remain the same and correct] ...
     def _get_cache_key(self, prefix: str, exchange: str, symbol: str, timeframe: Optional[str] = None, limit: Optional[int] = None) -> str:
         key = f"{prefix}:{exchange}:{symbol}"
         if timeframe: key += f":{timeframe}"
@@ -177,7 +176,7 @@ class ExchangeFetcher:
         except Exception as e:
             logger.error(f"Failed to drop incomplete candle for {timeframe}: {e}. Returning original data.")
             return df
-
+    
     def _validate_data_staleness(self, df: pd.DataFrame, timeframe: str, symbol: str) -> bool:
         if df.empty:
             return True 
@@ -289,8 +288,7 @@ class ExchangeFetcher:
     async def get_first_successful_klines(self, symbol: str, timeframe: str, limit: int = 200) -> Tuple[Optional[pd.DataFrame], Optional[str]]:
         general_cfg = self.config.get("general", {})
         min_rows = general_cfg.get("min_rows_for_analysis", 300)
-        # ✅ THE PRAGMATIC FIX (v9.1): Introduce a tolerance threshold.
-        tolerance = 10 # Allow data to be off by 10 candles
+        tolerance = 10 
         
         exchanges = list(self.exchange_config.keys())
 
@@ -310,7 +308,6 @@ class ExchangeFetcher:
                 df = self._resample_and_fill_gaps(df, timeframe, symbol)
                 df = self._clean_and_validate_dataframe(df, symbol, timeframe)
                 
-                # QUALITY GATE with TOLERANCE
                 if len(df) < (min_rows - tolerance):
                     logger.warning(f"Data from '{exchange}' for {symbol}@{timeframe} was rejected by Quality Gate: too few rows ({len(df)} < {min_rows - tolerance}).")
                     return None, None
@@ -340,7 +337,6 @@ class ExchangeFetcher:
         logger.error(f"Critical Failure: Could not fetch klines for {symbol}@{timeframe} from any exchange.")
         return None, None
 
-    # ... [get_ticker_from_one_exchange and get_first_successful_ticker are unchanged] ...
     async def get_ticker_from_one_exchange(self, exchange: str, symbol: str) -> Optional[Dict]:
         cache_key = self._get_cache_key("ticker", exchange, symbol)
         async with self.cache_lock:
