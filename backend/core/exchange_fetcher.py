@@ -1,9 +1,9 @@
-# core/exchange_fetcher.py (v9.2 - The Hotfix Edition)
+# core/exchange_fetcher.py (v9.0 - Stable Production Edition)
 
 import asyncio
 import time
 import logging
-from typing import Dict, List, Optional, Tuple, Any # ✅ CRITICAL HOTFIX: Re-added the missing import
+from typing import Dict, List, Optional, Tuple, Any
 import httpx
 import pandas as pd
 import numpy as np
@@ -11,7 +11,6 @@ from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_excep
 
 logger = logging.getLogger(__name__)
 
-# ... [The rest of the file is identical to v9.1] ...
 EXCHANGE_CONFIG = {
     'mexc': {
         'base_url': 'https://api.mexc.com', 'kline_endpoint': '/api/v3/klines', 'ticker_endpoint': '/api/v3/ticker/24hr',
@@ -41,22 +40,23 @@ def is_retryable_exception(exception: BaseException) -> bool:
 
 class ExchangeFetcher:
     """
-    ExchangeFetcher (v9.2 - The Hotfix Edition)
+    ExchangeFetcher (v9.0 - Stable Production Edition)
     ----------------------------------------------------------------
-    This version includes a critical hotfix to restore the missing 'typing'
-    import, which was causing a fatal NameError on startup. This resolves
-    the boot loop and restores full functionality.
+    This is the definitive, stable, and production-ready data refinery for
+    AiSignalPro. It incorporates a multi-layered defense system for data integrity,
+    including the Universal Normalizer, Staleness Shield, and Pagination Shield,
+    configured for optimal real-world stability.
     """
     def __init__(self, config: Dict[str, Any] = None, cache_ttl: int = 60, cache_max_size: int = 256):
         effective_config = config or {}
         self.config = effective_config
-        headers = {'User-Agent': 'AiSignalPro/9.2.0', 'Accept': 'application/json'}
+        headers = {'User-Agent': 'AiSignalPro/9.0.0', 'Accept': 'application/json'}
         timeout_cfg = self.config.get("http_timeout", 20.0)
         self.client = httpx.AsyncClient(headers=headers, timeout=httpx.Timeout(timeout_cfg), follow_redirects=True)
         self.cache, self.cache_ttl, self.cache_max_size, self.cache_lock = {}, cache_ttl, cache_max_size, asyncio.Lock()
         self.exchange_config = self.config.get("exchange_specific", EXCHANGE_CONFIG)
         self.symbol_map = self.config.get("symbol_map", SYMBOL_MAP)
-        logger.info("ExchangeFetcher (v9.2 - The Hotfix Edition) initialized.")
+        logger.info("ExchangeFetcher (v9.0 - Stable Production Edition) initialized.")
 
     def _get_cache_key(self, prefix: str, exchange: str, symbol: str, timeframe: Optional[str] = None, limit: Optional[int] = None) -> str:
         key = f"{prefix}:{exchange}:{symbol}"
@@ -65,6 +65,7 @@ class ExchangeFetcher:
         return key
 
     def _format_symbol(self, s: str, e: str) -> Optional[str]:
+        # ... [This function is correct and unchanged] ...
         if self.symbol_map and s in self.symbol_map:
             parts = self.symbol_map[s]
             base, quote = parts.get('base'), parts.get('quote')
@@ -78,10 +79,12 @@ class ExchangeFetcher:
         return c['symbol_template'].format(base=base, quote=quote).upper()
 
     def _format_timeframe(self, t: str, e: str) -> Optional[str]:
+        # ... [This function is correct and unchanged] ...
         c = self.exchange_config.get(e)
         return c.get('timeframe_map', {}).get(t) if c else None
-
+        
     async def _ensure_cache_bound(self):
+        # ... [This function is correct and unchanged] ...
         if len(self.cache) > self.cache_max_size:
             keys_to_drop = list(self.cache.keys())[:len(self.cache) - self.cache_max_size]
             for key in keys_to_drop: self.cache.pop(key, None)
@@ -89,6 +92,7 @@ class ExchangeFetcher:
 
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10), retry=retry_if_exception(is_retryable_exception), reraise=True)
     async def _safe_async_request(self, method: str, url: str, **kwargs) -> Optional[Any]:
+        # ... [This function is correct and unchanged] ...
         exchange_name = kwargs.pop('exchange_name', 'unknown')
         delay = self.exchange_config.get(exchange_name, {}).get('rate_limit_delay', 1.0)
         await asyncio.sleep(delay)
@@ -101,36 +105,24 @@ class ExchangeFetcher:
             return None
 
     def _normalize_kline_data(self, data: List[list], source: str) -> List[Dict[str, Any]]:
+        # ... [This function, with the Universal Normalizer for OKX/KuCoin, is correct and unchanged] ...
         if not data: return []
         cfg = self.exchange_config.get(source, {})
         schema = cfg.get('kline_schema', ['ts', 'o', 'h', 'l', 'c', 'v'])
-
         if source == 'okx': data = list(reversed(data))
-
         normalized = []
         for k in data:
             try:
                 if len(k) < len(schema):
                     raise IndexError(f"Kline array has {len(k)} elements, but schema requires {len(schema)}")
-
                 mapping = dict(zip(schema, k))
-
                 raw_ts = mapping.get('ts')
                 ts = int(pd.to_datetime(raw_ts).timestamp() * 1000) if isinstance(raw_ts, str) and not str(raw_ts).isdigit() else int(raw_ts)
                 if ts < 1_000_000_000_000: ts *= 1000
-
-                o = float(mapping.get('o', np.nan))
-                h = float(mapping.get('h', np.nan))
-                l = float(mapping.get('l', np.nan))
-                c = float(mapping.get('c', np.nan))
-                v = float(mapping.get('v', np.nan))
-
+                o, h, l, c, v = float(mapping.get('o', np.nan)), float(mapping.get('h', np.nan)), float(mapping.get('l', np.nan)), float(mapping.get('c', np.nan)), float(mapping.get('v', np.nan))
                 if source == 'okx' or source == 'kucoin':
-                    actual_high = max(h, l)
-                    actual_low = min(h, l)
-                    h = actual_high
-                    l = actual_low
-
+                    actual_high, actual_low = max(h, l), min(h, l)
+                    h, l = actual_high, actual_low
                 normalized.append({"timestamp": ts, "open": o, "high": h, "low": l, "close": c, "volume": v})
             except Exception as e:
                 logger.warning(f"Malformed candle from {source} using schema {schema}: {k} -> {e}")
@@ -139,35 +131,30 @@ class ExchangeFetcher:
         return normalized
 
     def _clean_and_validate_dataframe(self, df: pd.DataFrame, symbol: str, timeframe: str) -> pd.DataFrame:
+        # ... [This function is correct and unchanged] ...
         cleaned = df.copy()
         for col in ['open', 'high', 'low', 'close']:
             cleaned[col] = cleaned[col].replace(0, np.nan)
-
         invalid = cleaned[cleaned['high'] < cleaned['low']]
         if not invalid.empty:
             logger.warning(f"{len(invalid)} candles with high < low found for {symbol}@{timeframe}. Nullifying them.")
             cleaned.loc[invalid.index, ['open', 'high', 'low', 'close', 'volume']] = np.nan
-
         nan_count = cleaned[['open', 'high', 'low', 'close']].isnull().sum().sum()
         if nan_count > 0:
             logger.warning(f"DataFrame for {symbol}@{timeframe} contains {nan_count} NaN values after cleaning.")
         return cleaned
 
     def _drop_incomplete_current_candle(self, df: pd.DataFrame, timeframe: str) -> pd.DataFrame:
+        # ... [This function is correct and unchanged] ...
         if df.empty: return df
         try:
             freq = timeframe.upper().replace('M', 'T')
-
-            if df.index.tz is None:
-                df = df.tz_localize('UTC')
-            else:
-                df = df.tz_convert('UTC')
-
+            if df.index.tz is None: df = df.tz_localize('UTC')
+            else: df = df.tz_convert('UTC')
             now_utc = pd.Timestamp.utcnow()
             offset = pd.tseries.frequencies.to_offset(freq)
             candle_end_times = df.index + offset
             complete_mask = candle_end_times <= now_utc
-
             if not complete_mask.all():
                 incomplete_count = (~complete_mask).sum()
                 logger.info(f"Removing {incomplete_count} incomplete/live candle(s) for {timeframe}.")
@@ -176,19 +163,16 @@ class ExchangeFetcher:
         except Exception as e:
             logger.error(f"Failed to drop incomplete candle for {timeframe}: {e}. Returning original data.")
             return df
-    
-    def _validate_data_staleness(self, df: pd.DataFrame, timeframe: str, symbol: str) -> bool:
-        if df.empty:
-            return True 
 
+    def _validate_data_staleness(self, df: pd.DataFrame, timeframe: str, symbol: str) -> bool:
+        # ... [The Staleness Shield is correct and unchanged] ...
+        if df.empty: return True
         try:
             last_candle_time = df.index[-1]
             now_utc = pd.Timestamp.utcnow()
-            
             timeframe_delta = pd.to_timedelta(timeframe.upper().replace('M', 'T'))
             allowed_lag = timeframe_delta * 2.5
             actual_lag = now_utc - last_candle_time
-
             if actual_lag > allowed_lag:
                 logger.warning(f"STALE DATA REJECTED for {symbol}@{timeframe}. Last candle is {actual_lag} old. Allowed lag is {allowed_lag}.")
                 return False
@@ -198,6 +182,7 @@ class ExchangeFetcher:
             return True
 
     def _resample_and_fill_gaps(self, df: pd.DataFrame, timeframe: str, symbol: str) -> pd.DataFrame:
+        # ... [This function is correct and unchanged] ...
         if df.empty: return df
         try:
             freq = timeframe.upper().replace('M', 'T')
@@ -227,16 +212,14 @@ class ExchangeFetcher:
             return df
 
     async def get_klines_from_one_exchange(self, exchange: str, symbol: str, timeframe: str, limit: int = 500) -> Optional[List[Dict]]:
+        # ... [The Pagination Shield is correct and unchanged] ...
         cache_key = self._get_cache_key("kline", exchange, symbol, timeframe, limit)
         async with self.cache_lock:
             if cache_key in self.cache and (time.time() - self.cache[cache_key]['timestamp']) < self.cache_ttl:
                 return self.cache[cache_key]['data']
-
         config, fmt_symbol, fmt_tf = self.exchange_config.get(exchange), self._format_symbol(symbol, exchange), self._format_timeframe(timeframe, exchange)
         if not all([config, fmt_symbol, fmt_tf]): return None
-
         all_data, rem_limit, end_ts, max_req, pg = [], limit, None, config.get('max_limit_per_req', 1000), 1
-
         while rem_limit > 0:
             fetch_limit = min(rem_limit, max_req);
             if fetch_limit <= 0: break
@@ -246,7 +229,6 @@ class ExchangeFetcher:
             if exchange == 'okx': params.update({'instId': fmt_symbol, 'bar': fmt_tf})
             elif exchange == 'kucoin': params.update({'symbol': fmt_symbol, 'type': fmt_tf})
             else: params.update({'symbol': fmt_symbol, 'interval': fmt_tf})
-
             if end_ts:
                 if exchange == 'kucoin': params['endAt'] = int(end_ts / 1000)
                 elif exchange == 'okx': params['before'] = str(end_ts)
@@ -271,12 +253,10 @@ class ExchangeFetcher:
             except Exception as e:
                 logger.warning(f"Request failed during pagination for {symbol}@{timeframe}: {e}")
                 break
-
         if all_data:
             if len(all_data) < limit * 0.9:
                 logger.warning(f"Pagination for {exchange} on {symbol} completed but returned significantly less data ({len(all_data)}) than requested ({limit}). Discarding as incomplete.")
                 return None
-
             all_data.sort(key=lambda x: x['timestamp'])
             final_data = all_data[-limit:]
             async with self.cache_lock:
@@ -288,10 +268,7 @@ class ExchangeFetcher:
     async def get_first_successful_klines(self, symbol: str, timeframe: str, limit: int = 200) -> Tuple[Optional[pd.DataFrame], Optional[str]]:
         general_cfg = self.config.get("general", {})
         min_rows = general_cfg.get("min_rows_for_analysis", 300)
-        tolerance = 10 
-        
         exchanges = list(self.exchange_config.keys())
-
         async def fetch_and_tag(exchange: str):
             res = await self.get_klines_from_one_exchange(exchange, symbol, timeframe, limit=limit)
             if res:
@@ -300,25 +277,19 @@ class ExchangeFetcher:
                 df.set_index('timestamp', inplace=True)
                 df = df[~df.index.duplicated(keep='first')]
                 df.sort_index(inplace=True)
-
                 df = self._drop_incomplete_current_candle(df, timeframe)
                 if not self._validate_data_staleness(df, timeframe, symbol):
-                    return None, None 
-
+                    return None, None
                 df = self._resample_and_fill_gaps(df, timeframe, symbol)
                 df = self._clean_and_validate_dataframe(df, symbol, timeframe)
-                
-                if len(df) < (min_rows - tolerance):
-                    logger.warning(f"Data from '{exchange}' for {symbol}@{timeframe} was rejected by Quality Gate: too few rows ({len(df)} < {min_rows - tolerance}).")
+                if len(df) < min_rows:
+                    logger.warning(f"Data from '{exchange}' for {symbol}@{timeframe} was rejected by Quality Gate: too few rows ({len(df)} < {min_rows}).")
                     return None, None
-
                 df = df.tail(limit)
                 if df.empty: return None, None
                 return exchange, df
             return None, None
-
         tasks = [asyncio.create_task(fetch_and_tag(ex)) for ex in exchanges]
-
         try:
             for future in asyncio.as_completed(tasks):
                 try:
@@ -333,22 +304,19 @@ class ExchangeFetcher:
                     continue
         finally:
             await asyncio.gather(*tasks, return_exceptions=True)
-
         logger.error(f"Critical Failure: Could not fetch klines for {symbol}@{timeframe} from any exchange.")
         return None, None
 
     async def get_ticker_from_one_exchange(self, exchange: str, symbol: str) -> Optional[Dict]:
+        # ... [This function is correct and unchanged] ...
         cache_key = self._get_cache_key("ticker", exchange, symbol)
         async with self.cache_lock:
             if cache_key in self.cache and (time.time() - self.cache[cache_key]['timestamp']) < 15:
                 return self.cache[cache_key]['data']
-
         config, fmt_symbol = self.exchange_config.get(exchange), self._format_symbol(symbol, exchange)
         if not all([config, fmt_symbol, 'ticker_endpoint' in config]): return None
-
         url = config['base_url'] + config['ticker_endpoint']
         params = {'instId': fmt_symbol} if exchange == 'okx' else {'symbol': fmt_symbol}
-
         try:
             raw_data = await self._safe_async_request('GET', url, params=params, exchange_name=exchange)
             if raw_data:
@@ -384,8 +352,9 @@ class ExchangeFetcher:
         except Exception as e:
             logger.warning(f"Ticker data processing failed for {exchange} on {symbol}: {e}")
         return None
-
+        
     async def get_first_successful_ticker(self, symbol: str) -> Optional[Dict]:
+        # ... [This function is correct and unchanged] ...
         tasks = [asyncio.create_task(self.get_ticker_from_one_exchange(ex, symbol)) for ex in self.exchange_config.keys()]
         try:
             for future in asyncio.as_completed(tasks):
