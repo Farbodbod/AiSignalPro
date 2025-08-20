@@ -1,4 +1,4 @@
-# core/exchange_fetcher.py (v10.2 - The Future-Proof Edition)
+# core/exchange_fetcher.py (v10.3 - The Final Integrity Patch)
 
 import asyncio
 import time
@@ -11,11 +11,7 @@ from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_excep
 
 logger = logging.getLogger(__name__)
 
-EXCHANGE_CONFIG = {
-    'mexc': { 'base_url': 'https://api.mexc.com', 'kline_endpoint': '/api/v3/klines', 'ticker_endpoint': '/api/v3/ticker/24hr', 'max_limit_per_req': 500, 'symbol_template': '{base}{quote}', 'timeframe_map': {'5m': '5m', '15m': '15m', '1h': '1h', '4h': '4h', '1d': '1d'}, 'rate_limit_delay': 0.5, 'kline_schema': ['ts', 'o', 'h', 'l', 'c', 'v'] },
-    'kucoin': { 'base_url': 'https://api.kucoin.com', 'kline_endpoint': '/api/v1/market/candles', 'ticker_endpoint': '/api/v1/market/stats', 'max_limit_per_req': 1500, 'symbol_template': '{base}-{quote}', 'timeframe_map': {'5m': '5min', '15m': '15min', '1h': '1hour', '4h': '4hour', '1d': '1day'}, 'rate_limit_delay': 0.5, 'kline_schema': ['ts', 'o', 'c', 'h', 'l', 'v'] },
-    'okx': { 'base_url': 'https://www.okx.com', 'kline_endpoint': '/api/v5/market/candles', 'ticker_endpoint': '/api/v5/market/ticker', 'max_limit_per_req': 300, 'symbol_template': '{base}-{quote}', 'timeframe_map': {'5m': '5m', '15m': '15m', '1h': '1H', '4h': '4H', '1d': '1D'}, 'rate_limit_delay': 0.2, 'kline_schema': ['ts', 'o', 'h', 'l', 'c', 'v'] },
-}
+EXCHANGE_CONFIG = { 'mexc': { 'base_url': 'https://api.mexc.com', 'kline_endpoint': '/api/v3/klines', 'ticker_endpoint': '/api/v3/ticker/24hr', 'max_limit_per_req': 500, 'symbol_template': '{base}{quote}', 'timeframe_map': {'5m': '5m', '15m': '15m', '1h': '1h', '4h': '4h', '1d': '1d'}, 'rate_limit_delay': 0.5, 'kline_schema': ['ts', 'o', 'h', 'l', 'c', 'v'] }, 'kucoin': { 'base_url': 'https://api.kucoin.com', 'kline_endpoint': '/api/v1/market/candles', 'ticker_endpoint': '/api/v1/market/stats', 'max_limit_per_req': 1500, 'symbol_template': '{base}-{quote}', 'timeframe_map': {'5m': '5min', '15m': '15min', '1h': '1hour', '4h': '4hour', '1d': '1day'}, 'rate_limit_delay': 0.5, 'kline_schema': ['ts', 'o', 'c', 'h', 'l', 'v'] }, 'okx': { 'base_url': 'https://www.okx.com', 'kline_endpoint': '/api/v5/market/candles', 'ticker_endpoint': '/api/v5/market/ticker', 'max_limit_per_req': 300, 'symbol_template': '{base}-{quote}', 'timeframe_map': {'5m': '5m', '15m': '15m', '1h': '1H', '4h': '4H', '1d': '1D'}, 'rate_limit_delay': 0.2, 'kline_schema': ['ts', 'o', 'h', 'l', 'c', 'v'] }, }
 SYMBOL_MAP = {'BTC/USDT': {'base': 'BTC', 'quote': 'USDT'}, 'ETH/USDT': {'base': 'ETH', 'quote': 'USDT'}}
 
 def is_retryable_exception(exception: BaseException) -> bool:
@@ -25,36 +21,31 @@ def is_retryable_exception(exception: BaseException) -> bool:
 
 class ExchangeFetcher:
     """
-    ExchangeFetcher (v10.2 - The Future-Proof Edition)
+    ExchangeFetcher (v10.3 - The Final Integrity Patch)
     ----------------------------------------------------------------
-    This is the definitive, world-class data refinery for AiSignalPro. It
-    is fully aligned with the latest pandas standards (using 'min' for minutes)
-    to ensure zero FutureWarnings and long-term compatibility. All defensive
-    shields remain active for maximum data integrity.
+    This definitive version includes the final critical patch to correct a
+    swapped argument bug in the data processing pipeline, eliminating the
+    source of the 'invalid frequency' crash. This version represents the
+    peak of stability and data integrity for the AiSignalPro project.
     """
     def __init__(self, config: Dict[str, Any] = None, cache_ttl: int = 60, cache_max_size: int = 256):
         effective_config = config or {}
         self.config = effective_config
-        headers = {'User-Agent': 'AiSignalPro/10.2.0', 'Accept': 'application/json'}
-        timeout_cfg = self.config.get("http_timeout", 20.0)
+        headers = {'User-Agent': 'AiSignalPro/10.3.0', 'Accept': 'application/json'}
+        timeout_cfg = self.config.get("general", {}).get("http_timeout", 20.0)
         self.client = httpx.AsyncClient(headers=headers, timeout=httpx.Timeout(timeout_cfg), follow_redirects=True)
         self.cache, self.cache_ttl, self.cache_max_size, self.cache_lock = {}, cache_ttl, cache_max_size, asyncio.Lock()
         self.exchange_config = self.config.get("exchange_specific", EXCHANGE_CONFIG)
         self.symbol_map = self.config.get("symbol_map", SYMBOL_MAP)
-        logger.info("ExchangeFetcher (v10.2 - The Future-Proof Edition) initialized.")
+        logger.info("ExchangeFetcher (v10.3 - The Final Integrity Patch) initialized.")
 
     def _get_pandas_freq(self, timeframe: str) -> str:
-        """
-        Converts our internal timeframe string to a pandas-compatible,
-        future-proof frequency string (e.g., '5m' -> '5min', '1h' -> '1h').
-        """
         tf_lower = timeframe.lower()
-        if 'm' in tf_lower:
-            return tf_lower.replace('m', 'min')
+        if 'm' in tf_lower: return tf_lower.replace('m', 'min')
         return tf_lower
 
     def _get_cache_key(self, prefix: str, exchange: str, symbol: str, timeframe: Optional[str] = None, limit: Optional[int] = None) -> str:
-        key = f"{prefix}:{exchange}:{symbol}"
+        key = f"{prefix}:{exchange}:{symbol}";
         if timeframe: key += f":{timeframe}"
         if limit: key += f":L{limit}"
         return key
@@ -65,7 +56,7 @@ class ExchangeFetcher:
         else:
             if '/' not in s: logger.warning(f"Unexpected symbol format for formatting: {s}"); return None
             base, quote = s.split('/', 1)
-        c = self.exchange_config.get(e)
+        c = self.exchange_config.get(e);
         if not c: return None
         return c['symbol_template'].format(base=base, quote=quote).upper()
 
@@ -177,14 +168,10 @@ class ExchangeFetcher:
         cache_key = self._get_cache_key("kline", exchange, symbol, timeframe, limit)
         async with self.cache_lock:
             if cache_key in self.cache and (time.time() - self.cache[cache_key]['timestamp']) < self.cache_ttl: return self.cache[cache_key]['data']
-        
         config, fmt_symbol, fmt_tf = self.exchange_config.get(exchange), self._format_symbol(symbol, exchange), self._format_timeframe(timeframe, exchange)
         if not all([config, fmt_symbol, fmt_tf]): return None
-        
         all_data, rem_limit, max_req, pg = [], limit, config.get('max_limit_per_req', 1000), 1
-        
         end_ts = self._get_request_end_time(timeframe)
-        
         while rem_limit > 0:
             fetch_limit = min(rem_limit, max_req);
             if fetch_limit <= 0: break
@@ -194,11 +181,9 @@ class ExchangeFetcher:
             if exchange == 'okx': params.update({'instId': fmt_symbol, 'bar': fmt_tf})
             elif exchange == 'kucoin': params.update({'symbol': fmt_symbol, 'type': fmt_tf})
             else: params.update({'symbol': fmt_symbol, 'interval': fmt_tf})
-            
             current_end_ts = end_ts
             if pg > 1 and all_data:
                 current_end_ts = min(c['timestamp'] for c in all_data) - 1
-
             if current_end_ts:
                 if exchange == 'kucoin': params['endAt'] = int(current_end_ts / 1000)
                 elif exchange == 'okx': params['before'] = str(current_end_ts)
@@ -214,7 +199,6 @@ class ExchangeFetcher:
                     rem_limit -= len(norm_data); pg += 1
                 else: logger.info(f"Exchange returned no more data. Ending pagination."); break
             except Exception as e: logger.warning(f"Request failed during pagination: {e}"); break
-            
         if all_data:
             if len(all_data) < limit * 0.9:
                 logger.warning(f"Pagination for {exchange} returned less data ({len(all_data)}) than requested ({limit}). Discarding.")
@@ -227,9 +211,13 @@ class ExchangeFetcher:
 
     async def get_first_successful_klines(self, symbol: str, timeframe: str, limit: int = 200) -> Tuple[Optional[pd.DataFrame], Optional[str]]:
         general_cfg = self.config.get("general", {})
+        valid_timeframes = general_cfg.get("timeframes_to_analyze", ['5m', '15m', '1h', '4h', '1d'])
+        if timeframe not in valid_timeframes:
+            logger.critical(f"FATAL: Received an invalid timeframe '{timeframe}' for symbol '{symbol}'. This is likely a bug in the calling code. Aborting fetch.")
+            return None, None
+            
         min_rows = general_cfg.get("min_rows_for_analysis", 300)
         exchanges = list(self.exchange_config.keys())
-
         async def fetch_and_tag(exchange: str):
             res = await self.get_klines_from_one_exchange(exchange, symbol, timeframe, limit=limit)
             if res:
@@ -239,7 +227,8 @@ class ExchangeFetcher:
                 
                 if not self._validate_data_staleness(df, timeframe, symbol): return None, None
                 
-                df = self._resample_and_fill_gaps(df, timeframe, symbol)
+                # ✅ CRITICAL FIX (v10.3): Corrected argument order
+                df = self._resample_and_fill_gaps(df, symbol, timeframe)
                 df = self._clean_and_validate_dataframe(df, symbol, timeframe)
                 
                 if len(df) < min_rows:
@@ -287,11 +276,13 @@ class ExchangeFetcher:
                     if data: price, change = float(data.get('lastPrice', 0)), float(data.get('priceChangePercent', 0)) * 100
                 elif exchange == 'kucoin':
                     data = raw_data.get('data')
-                    if isinstance(data, dict): price, change = float(data.get('last', 0)), float(data.get('changeRate', 0)) * 100
+                    if isinstance(data, dict): price, change = float(data.get('last', '0')), float(data.get('changeRate', '0')) * 100
                 elif exchange == 'okx':
                     data_list = raw_data.get('data')
                     if isinstance(data_list, list) and data_list:
-                        data, price, open_24h = data_list[0], float(data.get('last', 0)), float(data.get('open24h', 0))
+                        data = data_list[0]
+                        price = float(data.get('last', '0'))
+                        open_24h = float(data.get('open24h', '0'))
                         change = ((price - open_24h) / open_24h) * 100 if open_24h > 0 else 0.0
                 if price > 0:
                     result = {'price': price, 'change_24h': change, 'source': exchange, 'symbol': symbol}
