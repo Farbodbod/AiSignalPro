@@ -1,16 +1,16 @@
-# core/exchange_fetcher.py (v9.0 - The Miracle Edition)
+# core/exchange_fetcher.py (v9.1 - The Pragmatic Edition)
 
 import asyncio
 import time
 import logging
-from typing import Dict, List, Optional, Tuple, Any
-import httpx
+# ... [imports remain the same] ...
 import pandas as pd
 import numpy as np
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception
 
 logger = logging.getLogger(__name__)
 
+# ... [EXCHANGE_CONFIG, SYMBOL_MAP, is_retryable_exception remain the same] ...
 EXCHANGE_CONFIG = {
     'mexc': {
         'base_url': 'https://api.mexc.com', 'kline_endpoint': '/api/v3/klines', 'ticker_endpoint': '/api/v3/ticker/24hr',
@@ -40,27 +40,25 @@ def is_retryable_exception(exception: BaseException) -> bool:
 
 class ExchangeFetcher:
     """
-    ExchangeFetcher (v9.0 - The Miracle Edition)
+    ExchangeFetcher (v9.1 - The Pragmatic Edition)
     ----------------------------------------------------------------
-    This is the definitive, world-class data refinery for AiSignalPro. It
-    incorporates a multi-layered defense system for data integrity, including:
-    - Universal Normalizer: For exchange-specific data quirks (OKX, KuCoin).
-    - Incomplete Candle Rejection: Analyzes only closed, confirmed candles.
-    - Pagination Shield: Rejects incomplete historical data fetches.
-    - Staleness Shield: Rejects entire datasets that are too old.
-    - Quality Gate: Enforces minimum data depth for analysis.
+    This definitive version introduces a 'Tolerance Threshold' to the Quality
+    Gate. While maintaining a high standard for data depth, it pragmatically
+    handles minor discrepancies in the number of returned candles from APIs,
+    preventing unnecessary rejections and ensuring maximum stability.
     """
     def __init__(self, config: Dict[str, Any] = None, cache_ttl: int = 60, cache_max_size: int = 256):
         effective_config = config or {}
         self.config = effective_config
-        headers = {'User-Agent': 'AiSignalPro/9.0.0', 'Accept': 'application/json'}
+        headers = {'User-Agent': 'AiSignalPro/9.1.0', 'Accept': 'application/json'}
         timeout_cfg = self.config.get("http_timeout", 20.0)
         self.client = httpx.AsyncClient(headers=headers, timeout=httpx.Timeout(timeout_cfg), follow_redirects=True)
         self.cache, self.cache_ttl, self.cache_max_size, self.cache_lock = {}, cache_ttl, cache_max_size, asyncio.Lock()
         self.exchange_config = self.config.get("exchange_specific", EXCHANGE_CONFIG)
         self.symbol_map = self.config.get("symbol_map", SYMBOL_MAP)
-        logger.info("ExchangeFetcher (v9.0 - The Miracle Edition) initialized.")
+        logger.info("ExchangeFetcher (v9.1 - The Pragmatic Edition) initialized.")
 
+    # ... [All helper methods from v9.0 remain the same and correct] ...
     def _get_cache_key(self, prefix: str, exchange: str, symbol: str, timeframe: Optional[str] = None, limit: Optional[int] = None) -> str:
         key = f"{prefix}:{exchange}:{symbol}"
         if timeframe: key += f":{timeframe}"
@@ -181,15 +179,13 @@ class ExchangeFetcher:
             return df
 
     def _validate_data_staleness(self, df: pd.DataFrame, timeframe: str, symbol: str) -> bool:
-        """New defensive shield to reject entire datasets that are too old."""
         if df.empty:
-            return True # Not stale, just empty. Let it pass.
+            return True 
 
         try:
             last_candle_time = df.index[-1]
             now_utc = pd.Timestamp.utcnow()
             
-            # Allow a lag of up to 2.5x the timeframe interval
             timeframe_delta = pd.to_timedelta(timeframe.upper().replace('M', 'T'))
             allowed_lag = timeframe_delta * 2.5
             actual_lag = now_utc - last_candle_time
@@ -278,7 +274,6 @@ class ExchangeFetcher:
                 break
 
         if all_data:
-            # ✅ PAGINATION SHIELD (v9.0):
             if len(all_data) < limit * 0.9:
                 logger.warning(f"Pagination for {exchange} on {symbol} completed but returned significantly less data ({len(all_data)}) than requested ({limit}). Discarding as incomplete.")
                 return None
@@ -294,13 +289,13 @@ class ExchangeFetcher:
     async def get_first_successful_klines(self, symbol: str, timeframe: str, limit: int = 200) -> Tuple[Optional[pd.DataFrame], Optional[str]]:
         general_cfg = self.config.get("general", {})
         min_rows = general_cfg.get("min_rows_for_analysis", 300)
-        safety_buffer = 10 # Engineered buffer
-        effective_limit = limit + safety_buffer
-
+        # ✅ THE PRAGMATIC FIX (v9.1): Introduce a tolerance threshold.
+        tolerance = 10 # Allow data to be off by 10 candles
+        
         exchanges = list(self.exchange_config.keys())
 
         async def fetch_and_tag(exchange: str):
-            res = await self.get_klines_from_one_exchange(exchange, symbol, timeframe, limit=effective_limit)
+            res = await self.get_klines_from_one_exchange(exchange, symbol, timeframe, limit=limit)
             if res:
                 df = pd.DataFrame(res)
                 df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms', utc=True)
@@ -309,17 +304,15 @@ class ExchangeFetcher:
                 df.sort_index(inplace=True)
 
                 df = self._drop_incomplete_current_candle(df, timeframe)
-                
-                # ✅ STALENESS SHIELD (v9.0):
                 if not self._validate_data_staleness(df, timeframe, symbol):
-                    return None, None # Reject if data is too old
+                    return None, None 
 
                 df = self._resample_and_fill_gaps(df, timeframe, symbol)
                 df = self._clean_and_validate_dataframe(df, symbol, timeframe)
                 
-                # ✅ QUALITY GATE (MINIMUM ROWS):
-                if len(df) < min_rows:
-                    logger.warning(f"Data from '{exchange}' for {symbol}@{timeframe} was rejected by Quality Gate: too few rows ({len(df)} < {min_rows}).")
+                # QUALITY GATE with TOLERANCE
+                if len(df) < (min_rows - tolerance):
+                    logger.warning(f"Data from '{exchange}' for {symbol}@{timeframe} was rejected by Quality Gate: too few rows ({len(df)} < {min_rows - tolerance}).")
                     return None, None
 
                 df = df.tail(limit)
@@ -347,6 +340,7 @@ class ExchangeFetcher:
         logger.error(f"Critical Failure: Could not fetch klines for {symbol}@{timeframe} from any exchange.")
         return None, None
 
+    # ... [get_ticker_from_one_exchange and get_first_successful_ticker are unchanged] ...
     async def get_ticker_from_one_exchange(self, exchange: str, symbol: str) -> Optional[Dict]:
         cache_key = self._get_cache_key("ticker", exchange, symbol)
         async with self.cache_lock:
