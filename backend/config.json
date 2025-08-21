@@ -24,7 +24,7 @@
     "account_equity": 10000,
     "assumed_fees_pct": 0.001,
     "assumed_slippage_pct": 0.0005,
-    "fetcher_limit": 600,
+    "fetcher_limit": 500,
     "min_rows_for_analysis": 300,
     "min_rows_for_htf": 300
   },
@@ -87,10 +87,10 @@
     "default_ttl_hours": 8,
     "ttl_map_hours": {
       "5m": 0.5,
-      "15m": 1.5,
-      "1h": 4,
-      "4h": 24,
-      "1d": 72
+      "15m": 0.5,
+      "1h": 1,
+      "4h": 4,
+      "1d": 8
     }
   },
 
