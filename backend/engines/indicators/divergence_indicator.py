@@ -1,4 +1,4 @@
-# backend/engines/indicators/divergence_indicator.py (v6.1 - The Hotfix Edition)
+# backend/engines/indicators/divergence_indicator.py (v6.2 - The Dependency Shield Edition)
 import pandas as pd
 import logging
 from typing import Dict, Any, Optional
@@ -10,12 +10,12 @@ logger = logging.getLogger(__name__)
 
 class DivergenceIndicator(BaseIndicator):
     """
-    Divergence Engine - (v6.1 - The Hotfix Edition)
+    Divergence Engine - (v6.2 - The Dependency Shield Edition)
     -----------------------------------------------------------------------------------
-    This version contains a critical hotfix for the fatal AttributeError caused by
-    referencing a non-existent 'self.name' attribute. It now generates a robust
-    unique key for aliased column naming. The output structure has also been
-    hardened to be fully Sentinel-compliant.
+    This definitive version fully standardizes the dependency lookup mechanism,
+    applying the "Dependency Shield" protocol learned from SuperTrend. It now
+    directly and robustly resolves the column names of its dependencies (RSI, ZigZag)
+    via their public attributes, ensuring a flawless and anti-fragile connection.
     """
     dependencies: list = ['rsi', 'zigzag']
 
@@ -25,9 +25,8 @@ class DivergenceIndicator(BaseIndicator):
         self.lookback_pivots = int(self.params.get('lookback_pivots', 5))
         self.min_bar_distance = int(self.params.get('min_bar_distance', 5))
         
-        # ✅ CRITICAL HOTFIX: Generate a stable unique key from params, as 'self.name' does not exist on indicators.
         self.unique_key = get_indicator_config_key(self.__class__.__name__.lower(), self.params)
-
+        
         self.rsi_col: Optional[str] = None
         self.pivots_col: Optional[str] = None
         self.prices_col: Optional[str] = None
@@ -51,8 +50,8 @@ class DivergenceIndicator(BaseIndicator):
             logger.warning(f"[{self.unique_key}] on {self.timeframe}: missing critical dependencies.")
             return self
 
-        # Dynamically find the correct column names from dependencies
-        self.rsi_col = next((col for col in rsi_instance.df.columns if col.startswith('RSI_')), None)
+        # ✅ DEPENDENCY SHIELD (v6.2): Use the robust, direct attribute lookup for ALL dependencies.
+        self.rsi_col = getattr(rsi_instance, 'rsi_col', None)
         self.pivots_col = getattr(zigzag_instance, 'pivots_col', None)
         self.prices_col = getattr(zigzag_instance, 'prices_col', None)
 
@@ -69,7 +68,6 @@ class DivergenceIndicator(BaseIndicator):
         self.df[pivots_col_aliased] = zigzag_instance.df[self.pivots_col]
         self.df[prices_col_aliased] = zigzag_instance.df[self.prices_col]
         
-        # Update internal column names to the aliased versions
         self.rsi_col, self.pivots_col, self.prices_col = rsi_col_aliased, pivots_col_aliased, prices_col_aliased
 
         return self
@@ -84,7 +82,6 @@ class DivergenceIndicator(BaseIndicator):
         pivots_df = valid_df[valid_df[self.pivots_col] != 0]
 
         if len(pivots_df) < 2:
-            # ✅ SENTINEL COMPLIANCE FIX: Ensure a full, valid object is always returned.
             return {"status": "OK", "timeframe": self.timeframe or 'Base', "values": empty_analysis, "analysis": empty_analysis}
             
         signals = []
@@ -101,10 +98,10 @@ class DivergenceIndicator(BaseIndicator):
                 price2, rsi2 = pivot2[self.prices_col], pivot2[self.rsi_col]
                 
                 divergence = None
-                if pivot1[self.pivots_col] == 1 and pivot2[self.pivots_col] == 1: # Two peaks
+                if pivot1[self.pivots_col] == 1 and pivot2[self.pivots_col] == 1:
                     if price2 > price1 and rsi2 < rsi1: divergence = {"type": "Regular Bearish"}
                     if price2 < price1 and rsi2 > rsi1: divergence = {"type": "Hidden Bearish"}
-                elif pivot1[self.pivots_col] == -1 and pivot2[self.pivots_col] == -1: # Two troughs
+                elif pivot1[self.pivots_col] == -1 and pivot2[self.pivots_col] == -1:
                     if price2 < price1 and rsi2 > rsi1: divergence = {"type": "Regular Bullish"}
                     if price2 > price1 and rsi2 < rsi1: divergence = {"type": "Hidden Bullish"}
 
