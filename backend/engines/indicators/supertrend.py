@@ -1,4 +1,4 @@
-# backend/engines/indicators/supertrend.py (v7.4 - The Final Polish)
+# backend/engines/indicators/supertrend.py (v7.4 - The Data Integrity Patch)
 import pandas as pd
 import numpy as np
 import logging
@@ -11,12 +11,12 @@ logger = logging.getLogger(__name__)
 
 class SuperTrendIndicator(BaseIndicator):
     """
-    SuperTrend - (v7.4 - The Final Polish)
+    SuperTrend - (v7.4 - The Data Integrity Patch)
     ------------------------------------------------------------------------
-    This is the definitive, production-ready version. It incorporates all
-    critical hotfixes for logic, logging, and dependency handling. The core
-    calculation algorithm has also been slightly refactored for maximum
-    clarity and efficiency. It is now fully robust and architecturally sound.
+    This definitive version includes a critical data integrity patch. It ensures
+    that the ATR data used in the 'calculate' method is correctly joined and
+    persisted to the instance's main dataframe, making it available for the
+    'analyze' method and eliminating all "ATR column not found" warnings.
     """
     dependencies: list = ['atr']
 
@@ -49,7 +49,6 @@ class SuperTrendIndicator(BaseIndicator):
             if np.isnan(prev_st):
                 prev_st = final_lower_band[i-1] if direction[i-1] == 1 else final_upper_band[i-1]
 
-            # ✅ FINAL POLISH (v7.4): Refactored for clarity, no redundant assignments.
             if final_upper_band[i] > prev_st and prev_close < prev_st:
                 final_upper_band[i] = prev_st
             if final_lower_band[i] < prev_st and prev_close > prev_st:
@@ -81,15 +80,22 @@ class SuperTrendIndicator(BaseIndicator):
              logger.warning(f"[{self.__class__.__name__}] on {self.timeframe}: could not find ATR column '{self.atr_col_name}'.")
              return self
         
-        df_for_calc = self.df.join(self.atr_instance.df[[self.atr_col_name]], how='left').dropna(subset=[self.atr_col_name])
+        # ✅ DATA INTEGRITY PATCH (v7.4): Join ATR to the main instance dataframe.
+        self.df = self.df.join(self.atr_instance.df[[self.atr_col_name]], how='left')
+        
+        df_for_calc = self.df.dropna(subset=[self.atr_col_name])
         if len(df_for_calc) < self.period + 1:
             logger.warning(f"Not enough data for SuperTrend on {self.timeframe or 'base'}."); return self
 
         st_series, dir_series = self._calculate_supertrend(df_for_calc, self.multiplier, self.atr_col_name)
         
+        # Assign results back to the main dataframe, respecting the index
+        self.df[self.supertrend_col] = st_series
+        self.df[self.direction_col] = dir_series
+        
         fill_limit = 3
-        self.df[self.supertrend_col] = st_series.ffill(limit=fill_limit)
-        self.df[self.direction_col] = dir_series.ffill(limit=fill_limit)
+        self.df[self.supertrend_col] = self.df[self.supertrend_col].ffill(limit=fill_limit)
+        self.df[self.direction_col] = self.df[self.direction_col].ffill(limit=fill_limit)
         return self
 
     def analyze(self) -> Dict[str, Any]:
@@ -103,8 +109,6 @@ class SuperTrendIndicator(BaseIndicator):
             return {"status": "Insufficient Data", **empty_analysis}
         
         last = valid_df.iloc[-1]; prev = valid_df.iloc[-2]
-        
-        # Correctly references the previous candle's direction
         last_dir, prev_dir = last[self.direction_col], prev[self.direction_col]
         
         trend = "Uptrend" if last_dir == 1 else "Downtrend"
