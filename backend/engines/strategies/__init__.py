@@ -17,7 +17,8 @@ from .pivot_reversal import PivotConfluenceSniper
 from .trend_rider import TrendRiderPro
 from .volume_catalyst import VolumeCatalystPro
 from .volume_reversal import WhaleReversal
-from .vwap_reversion import VwapMeanReversion # ✨ ADDED: The final missing strategy
+from .vwap_reversion import VwapMeanReversion
+from .pullback_sniper import PullbackSniperPro # ✅ ADDED: The new sniper is now imported.
 
 # This is the definitive list of our world-class strategies.
 __all__ = [
@@ -30,8 +31,9 @@ __all__ = [
     'IchimokuHybridPro',
     'KeltnerMomentumBreakout',
     'PivotConfluenceSniper',
+    'PullbackSniperPro', # ✅ ADDED: The new sniper is now registered.
     'TrendRiderPro',
     'VolumeCatalystPro',
     'WhaleReversal',
-    'VwapMeanReversion', # ✨ ADDED: The final missing strategy
+    'VwapMeanReversion',
 ]
