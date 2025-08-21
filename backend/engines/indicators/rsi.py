@@ -1,4 +1,4 @@
-# backend/engines/indicators/rsi.py
+# backend/engines/indicators/rsi.py (v8.0 - The Smart Signal Edition)
 import pandas as pd
 import numpy as np
 import logging
@@ -10,19 +10,20 @@ logger = logging.getLogger(__name__)
 
 class RsiIndicator(BaseIndicator):
     """
-    RSI Indicator - (v7.1 - Pure Calculation Engine)
+    RSI Indicator - (v8.0 - The Smart Signal Edition)
     -------------------------------------------------------------------------------------
-    This is a pure, world-class implementation of the RSI indicator based on the
-    correct Wilder's Smoothing formula. It has no external dependencies and serves as a
-    foundational data provider for other modules. Divergence detection is correctly
-    delegated to specialist indicators like DivergenceIndicator.
+    This definitive, world-class version evolves the indicator from a simple
+    calculator to a smart signaler. It now includes crossover detection logic
+    and provides historical context (rsi_prev). Its output structure is hardened
+    to be fully "Sentinel Compliant", ensuring flawless integration with all
+    advanced strategies in the AiSignalPro ecosystem.
     """
-    def __init__(self, df: pd.DataFrame, params: Dict[str, Any], dependencies: Dict[str, BaseIndicator], **kwargs):
-        super().__init__(df, params=params, dependencies=dependencies, **kwargs)
+    dependencies: list = []
+
+    def __init__(self, df: pd.DataFrame, params: Dict[str, Any], **kwargs):
+        super().__init__(df, params=params, **kwargs)
         self.period = int(self.params.get('period', 14))
         self.timeframe = self.params.get('timeframe')
-        
-        # Simplified, robust, and locally-scoped column names
         self.rsi_col = f'RSI_{self.period}'
         self.signal_col = f'RSI_signal_{self.period}'
 
@@ -39,11 +40,10 @@ class RsiIndicator(BaseIndicator):
         gain = delta.where(delta > 0, 0).fillna(0)
         loss = -delta.where(delta < 0, 0).fillna(0)
 
-        # Correct Wilder's Smoothing implementation
         avg_gain = gain.ewm(com=self.period - 1, min_periods=self.period).mean()
         avg_loss = loss.ewm(com=self.period - 1, min_periods=self.period).mean()
 
-        rs = avg_gain / avg_loss.replace(0, np.nan)
+        rs = avg_gain / avg_loss.replace(0, 1e-9) # Avoid division by zero
         rsi = 100 - (100 / (1 + rs))
         
         self.df[self.rsi_col] = rsi
@@ -52,31 +52,53 @@ class RsiIndicator(BaseIndicator):
         return self
 
     def analyze(self) -> Dict[str, Any]:
-        """ Provides analysis on RSI levels and crossover signals. """
+        """ Provides analysis on RSI levels and intelligent crossover signals. """
         required_cols = [self.rsi_col, self.signal_col]
-        valid_df = self.df.dropna(subset=required_cols)
-        if len(valid_df) < 2: return {"status": "Insufficient Data"}
+        # Always return the full object structure for Sentinel compatibility
+        empty_analysis = {"values": {}, "analysis": {}}
 
-        # Static levels are used here, but can be made dynamic if needed
-        oversold, overbought = 30, 70
-        last_rsi, last_signal = valid_df.iloc[-1][self.rsi_col], valid_df.iloc[-1][self.signal_col]
+        if any(col not in self.df.columns for col in required_cols):
+            return {"status": "Calculation Incomplete - Columns missing", **empty_analysis}
+
+        valid_df = self.df.dropna(subset=required_cols)
+        if len(valid_df) < 2:
+            return {"status": "Insufficient Data", **empty_analysis}
+
+        # Use the last closed candle (iloc[-1]) as per the Fresh Data Protocol
+        last = valid_df.iloc[-1]
+        prev = valid_df.iloc[-2]
         
+        last_rsi, last_signal = last[self.rsi_col], last[self.signal_col]
+        prev_rsi, prev_signal = prev[self.rsi_col], prev[self.signal_col]
+        
+        oversold, overbought = 30, 70
         position = "Neutral"
         if last_rsi > overbought: position = "Overbought"
         elif last_rsi < oversold: position = "Oversold"
             
+        # ✅ NEW: Crossover Intelligence
+        crossover_signal = "Hold"
+        if prev_rsi < prev_signal and last_rsi >= last_signal:
+            crossover_signal = "Bullish Crossover"
+        elif prev_rsi > prev_signal and last_rsi <= last_signal:
+            crossover_signal = "Bearish Crossover"
+
+        analysis_content = {
+            "position": position,
+            # Divergence is intentionally NOT calculated here.
+            "divergences": [], 
+            "crossover_signal": crossover_signal
+        }
+
+        values_content = {
+            "rsi": round(last_rsi, 2),
+            "rsi_prev": round(prev_rsi, 2), # ✅ NEW: Provide previous value for strategies
+            "signal_line": round(last_signal, 2)
+        }
+            
         return {
             "status": "OK",
             "timeframe": self.timeframe or 'Base',
-            "values": {
-                "rsi": round(last_rsi, 2),
-                "signal_line": round(last_signal, 2)
-            },
-            "analysis": {
-                "position": position,
-                # Divergence is intentionally NOT calculated here.
-                # It's the job of specialist indicators.
-                "divergences": [], 
-                "crossover_signals": [] 
-            }
+            "values": values_content,
+            "analysis": analysis_content
         }
