@@ -28,7 +28,7 @@ class MasterOrchestrator:
     def __init__(self, config: Dict[str, Any]):
         self.config = config
         self._strategy_classes: List[Type[BaseStrategy]] = [
-            TrendRiderPro, VwapMeanReversion, DivergenceSniperPro, WhaleReversal,
+            TrendRiderPro, VwapMeanReversion, DivergenceSniperPro, PullbackSniperPro, WhaleReversal,
             VolumeCatalystPro, BreakoutHunter, IchimokuHybridPro, ChandelierTrendRider,
             KeltnerMomentumBreakout, PivotConfluenceSniper, ConfluenceSniper,
             EmaCrossoverStrategy,
