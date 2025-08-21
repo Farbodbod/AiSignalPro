@@ -1,7 +1,6 @@
-# backend/engines/indicators/chandelier_exit.py
+# backend/engines/indicators/chandelier_exit.py (v6.0 - The Dynamic Engine)
 import logging
 import pandas as pd
-import json
 from typing import Dict, Any, Optional
 
 from .base import BaseIndicator
@@ -11,86 +10,97 @@ logger = logging.getLogger(__name__)
 
 class ChandelierExitIndicator(BaseIndicator):
     """
-    Chandelier Exit - (v5.6 - Critical AttributeError Hotfix)
+    Chandelier Exit - (v6.0 - The Dynamic Engine)
     -----------------------------------------------------------------------------
-    This version contains a critical hotfix to resolve a fatal AttributeError
-    caused by incorrectly trying to access 'self.config' instead of 'self.params'.
-    Unnecessary strategy-only attributes have also been removed for cleanliness.
+    This world-class version introduces a dynamic architecture with parameter-based
+    column naming, allowing for multiple, conflict-free instances. It is also
+    hardened with a limited forward-fill to prevent NaN propagation and features
+    a fully standardized, Sentinel-compliant output structure.
     """
-    def __init__(self, df: pd.DataFrame, params: Dict[str, Any], dependencies: Dict[str, BaseIndicator], **kwargs):
-        super().__init__(df, params=params, dependencies=dependencies, **kwargs)
+    dependencies: list = ['atr']
+
+    def __init__(self, df: pd.DataFrame, params: Dict[str, Any], **kwargs):
+        super().__init__(df, params=params, **kwargs)
         self.timeframe = self.params.get('timeframe')
+        # ✅ DYNAMIC ARCHITECTURE: Column names are now based on parameters
+        self.atr_period = int(self.params.get('dependencies', {}).get('atr', {}).get('period', 22))
+        self.atr_multiplier = float(self.params.get('atr_multiplier', 3.0))
+        
+        suffix = f'_{self.atr_period}_{self.atr_multiplier}'
+        if self.timeframe: suffix += f'_{self.timeframe}'
+        self.long_stop_col = f'CHEX_L{suffix}'
+        self.short_stop_col = f'CHEX_S{suffix}'
 
     def calculate(self) -> 'ChandelierExitIndicator':
-        """ 
-        Calculates the Chandelier Exit lines by correctly looking up its ATR dependency.
-        """
         my_deps_config = self.params.get("dependencies", {})
         atr_order_params = my_deps_config.get('atr')
         if not atr_order_params:
-            logger.error(f"[{self.__class__.__name__}] on {self.timeframe} cannot run because 'atr' dependency is not defined in its config.")
+            logger.error(f"[{self.name}] on {self.timeframe}: 'atr' dependency is not defined.")
             return self
             
         atr_unique_key = get_indicator_config_key('atr', atr_order_params)
         atr_instance = self.dependencies.get(atr_unique_key)
-        
         if not isinstance(atr_instance, BaseIndicator):
-            logger.warning(f"[{self.__class__.__name__}] on {self.timeframe} missing critical ATR dependency instance ('{atr_unique_key}'). Skipping calculation.")
+            logger.warning(f"[{self.name}] on {self.timeframe}: missing ATR dependency '{atr_unique_key}'.")
             return self
 
-        atr_df = atr_instance.df
-        atr_col_options = [col for col in atr_df.columns if 'ATR' in col.upper()]
+        atr_col_options = [col for col in atr_instance.df.columns if col.startswith('atr_')]
         if not atr_col_options:
-            logger.warning(f"[{self.__class__.__name__}] on {self.timeframe} could not find ATR column in dependency dataframe.")
+            logger.warning(f"[{self.name}] on {self.timeframe}: could not find ATR column in dependency.")
             return self
         atr_col_name = atr_col_options[0]
         
-        self.df = self.df.join(atr_df[[atr_col_name]], how='left')
+        df_for_calc = self.df.join(atr_instance.df[[atr_col_name]], how='left')
         
-        atr_period = int(atr_instance.params.get('period', 22))
-        # ✅ CRITICAL FIX: Parameters for indicators must be read from self.params, not self.config.
-        atr_multiplier = float(self.params.get('atr_multiplier', 3.0))
-
-        if len(self.df) < atr_period:
+        if len(df_for_calc) < self.atr_period:
+            logger.warning(f"Not enough data for Chandelier Exit on {self.timeframe or 'base'}.")
             return self
         
-        # Ensure we don't calculate on rows where ATR is NaN (especially at the start)
-        valid_df = self.df.dropna(subset=[atr_col_name])
-        atr_values = valid_df[atr_col_name] * atr_multiplier
+        valid_df = df_for_calc.dropna(subset=[atr_col_name, 'high', 'low'])
+        atr_values = valid_df[atr_col_name] * self.atr_multiplier
         
-        highest_high = valid_df['high'].rolling(window=atr_period).max()
-        lowest_low = valid_df['low'].rolling(window=atr_period).min()
+        highest_high = valid_df['high'].rolling(window=self.atr_period).max()
+        lowest_low = valid_df['low'].rolling(window=self.atr_period).min()
         
-        self.df['CHEX_L'] = highest_high - atr_values
-        self.df['CHEX_S'] = lowest_low + atr_values
+        long_stop = highest_high - atr_values
+        short_stop = lowest_low + atr_values
+        
+        # ✅ HARDENED FILL (v6.0): Use a limited forward-fill to prevent NaN propagation.
+        fill_limit = 3
+        self.df[self.long_stop_col] = long_stop.ffill(limit=fill_limit)
+        self.df[self.short_stop_col] = short_stop.ffill(limit=fill_limit)
 
         return self
 
     def analyze(self) -> Dict[str, Any]:
-        """ 
-        The analysis logic is now protected by a guard clause.
-        """
-        required_cols = ['CHEX_L', 'CHEX_S']
+        required_cols = [self.long_stop_col, self.short_stop_col]
+        empty_analysis = {"values": {}, "analysis": {}}
+
         if not all(col in self.df.columns for col in required_cols):
-            return {"status": "Calculation Incomplete - Required columns missing"}
+            return {"status": "Calculation Incomplete", **empty_analysis}
 
         valid_df = self.df.dropna(subset=required_cols + ['close'])
         if len(valid_df) < 2: 
-            return {"status": "Insufficient Data"}
+            return {"status": "Insufficient Data", **empty_analysis}
         
-        last, prev = valid_df.iloc[-1], valid_df.iloc[-2]
-        close_price, long_stop, short_stop = last['close'], last['CHEX_L'], last['CHEX_S']
+        last = valid_df.iloc[-1]
+        prev = valid_df.iloc[-2]
+        
+        close_price, long_stop, short_stop = last['close'], last[self.long_stop_col], last[self.short_stop_col]
         
         signal, message = "Hold", "Price is between the Chandelier Exit stops."
         
-        if prev['close'] >= prev['CHEX_L'] and close_price < long_stop:
+        if prev['close'] >= prev[self.long_stop_col] and close_price < long_stop:
             signal, message = "Exit Long", f"Price closed below the Long Stop at {round(long_stop, 5)}."
-        elif prev['close'] <= prev['CHEX_S'] and close_price > short_stop:
+        elif prev['close'] <= prev[self.short_stop_col] and close_price > short_stop:
             signal, message = "Exit Short", f"Price closed above the Short Stop at {round(short_stop, 5)}."
-            
+        
+        values_content = {"close": round(close_price, 5), "long_stop": round(long_stop, 5), "short_stop": round(short_stop, 5)}
+        analysis_content = {"signal": signal, "message": message}
+
         return {
             "status": "OK",
             "timeframe": self.timeframe or 'Base',
-            "values": {"close": round(close_price, 5), "long_stop": round(long_stop, 5), "short_stop": round(short_stop, 5)},
-            "analysis": {"signal": signal, "message": message}
+            "values": values_content,
+            "analysis": analysis_content
         }
