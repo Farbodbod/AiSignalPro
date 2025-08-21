@@ -10,7 +10,7 @@
     "logging_focus_symbol": "BTC/USDT",
     "log_level": "INFO",
     "min_confluence_for_super_signal": 3,
-    "min_risk_reward_ratio": 2.0,
+    "min_risk_reward_ratio": 1.1,
     "account_equity": 10000,
     "assumed_fees_pct": 0.001,
     "assumed_slippage_pct": 0.0005,
