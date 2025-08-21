@@ -1,4 +1,4 @@
-# strategies/base_strategy.py (v10.0 - Stable & Enhanced)
+# strategies/base_strategy.py (v11.0 - The Exhaustion Shield Edition)
 
 from __future__ import annotations
 from abc import ABC, abstractmethod
@@ -31,12 +31,12 @@ def deep_merge(dict1: Dict[str, Any], dict2: Dict[str, Any]) -> Dict[str, Any]:
 
 class BaseStrategy(ABC):
     """
-    World-Class Base Strategy Framework - (v10.0 - Stable & Enhanced)
+    World-Class Base Strategy Framework - (v11.0 - The Exhaustion Shield Edition)
     ---------------------------------------------------------------------------------------------
-    This version enhances the stable v9.0 foundation with two powerful new optional
-    helper methods: _is_outlier_candle and _get_market_regime. All previously
-    existing functionalities are 100% preserved to ensure full backward compatibility
-    and system-wide stability.
+    This definitive version enhances the framework with a third powerful new helper
+    method: _is_trend_exhausted. This sentinel uses RSI to prevent entries on
+    overextended moves, adding a crucial layer of market context awareness.
+    All previous functionalities remain 100% intact.
     """
     strategy_name: str = "BaseStrategy"
     default_config: ClassVar[Dict[str, Any]] = {}
@@ -48,7 +48,7 @@ class BaseStrategy(ABC):
         self.indicator_configs, self.log_details, self.name = self.config.get('indicator_configs', {}), {"criteria_results": [], "indicator_trace": [], "risk_trace": []}, self.config.get('name', self.strategy_name)
 
     def _log_criteria(self, criterion_name: str, status: Any, reason: str = ""):
-        # ... [This function with the bool() fix is correct and unchanged] ...
+        # ... [This function is correct and unchanged] ...
         is_ok = bool(status)
         focus_symbol = self.main_config.get("general", {}).get("logging_focus_symbol");
         if focus_symbol and self.symbol != focus_symbol: return
@@ -70,7 +70,7 @@ class BaseStrategy(ABC):
     def check_signal(self) -> Optional[Dict[str, Any]]: pass
 
     def get_indicator(self, name_or_alias: str, analysis_source: Optional[Dict] = None) -> Optional[Dict[str, Any]]:
-        # ... [This function is correct and unchanged from v9.0] ...
+        # ... [This function is correct and unchanged] ...
         source = analysis_source if analysis_source is not None else self.analysis
         if not source: return None
         indicator_map = source.get('_indicator_map', {})
@@ -93,18 +93,17 @@ class BaseStrategy(ABC):
             return None
         self._log_indicator_trace(name_or_alias, "OK"); return indicator_data
 
-    # ---------- NEW SENTINEL HELPERS (v10.0) ----------
+    # ---------- NEW SENTINEL HELPERS (v11.0) ----------
 
     def _is_outlier_candle(self, atr_multiplier: float = 5.0) -> bool:
         """
         An important fail-safe to detect anomalous candles (e.g., API bugs, flash crashes).
-        Returns True if the last candle's range is excessively large compared to ATR.
         """
-        if not self.price_data: return True
+        if not self.price_data: return True 
         atr_data = self.get_indicator('atr')
         if not atr_data or 'values' not in atr_data or not isinstance((atr_data.get('values') or {}).get('atr'), (int, float)):
             logger.warning(f"Outlier check skipped for {self.symbol}@{self.primary_timeframe}: ATR not available or invalid.")
-            return False
+            return False 
         atr_value = (atr_data['values']['atr'])
         candle_range = self.price_data['high'] - self.price_data['low']
         if candle_range > (atr_value * atr_multiplier):
@@ -115,7 +114,6 @@ class BaseStrategy(ABC):
     def _get_market_regime(self, adx_threshold: float = 25.0) -> Tuple[str, float]:
         """
         Determines the current market regime (TRENDING or RANGING) based on ADX.
-        Returns the regime as a string and the ADX value.
         """
         adx_data = self.get_indicator('adx')
         if not adx_data or 'values' not in adx_data or not isinstance((adx_data.get('values') or {}).get('adx'), (int, float)):
@@ -126,10 +124,37 @@ class BaseStrategy(ABC):
             return "TRENDING", adx_val
         else:
             return "RANGING", adx_val
+    
+    def _is_trend_exhausted(self, direction: str, buy_exhaustion_threshold: float = 80.0, sell_exhaustion_threshold: float = 20.0) -> bool:
+        """
+        A sentinel to detect trend exhaustion using RSI, preventing entries at market extremes.
+        """
+        rsi_data = self.get_indicator('rsi')
+        if not rsi_data or 'values' not in rsi_data or not isinstance((rsi_data.get('values') or {}).get('rsi'), (int, float)):
+            logger.warning(f"Exhaustion check skipped for {self.symbol}@{self.primary_timeframe}: RSI not available or invalid.")
+            return False
 
-    # ---------- All other helper methods are 100% PRESERVED AND UNCHANGED from v9.0 ----------
+        rsi_value = (rsi_data['values']['rsi'])
+        
+        is_exhausted = False
+        reason = ""
+        if direction == "BUY" and rsi_value >= buy_exhaustion_threshold:
+            is_exhausted = True
+            reason = f"Trend Exhaustion Detected! RSI ({rsi_value:.2f}) is in extreme overbought zone (> {buy_exhaustion_threshold})."
+        elif direction == "SELL" and rsi_value <= sell_exhaustion_threshold:
+            is_exhausted = True
+            reason = f"Trend Exhaustion Detected! RSI ({rsi_value:.2f}) is in extreme oversold zone (< {sell_exhaustion_threshold})."
+
+        if is_exhausted:
+            self._log_criteria("Trend Exhaustion Shield", False, reason)
+            return True
+        
+        return False
+
+    # ---------- All other helper methods are 100% PRESERVED AND UNCHANGED ----------
     
     def _get_candlestick_confirmation(self, direction: str, min_reliability: str = 'Medium') -> Optional[Dict[str, Any]]:
+        # ... [This function is correct and unchanged] ...
         pattern_analysis = self.get_indicator('patterns');
         if not pattern_analysis or 'analysis' not in pattern_analysis: return None
         reliability_map = {'Low': 0, 'Medium': 1, 'Strong': 2}; min_reliability_score = reliability_map.get(min_reliability, 1)
@@ -140,6 +165,7 @@ class BaseStrategy(ABC):
         return None
 
     def _get_volume_confirmation(self) -> bool:
+        # ... [This function is correct and unchanged] ...
         whale_analysis = self.get_indicator('whales');
         if not whale_analysis: return False
         min_spike_score, analysis = self.config.get('min_whale_spike_score', 1.5), whale_analysis.get('analysis') or {}
@@ -147,6 +173,7 @@ class BaseStrategy(ABC):
         return is_whale_activity and spike_score >= min_spike_score
 
     def _get_trend_confirmation(self, direction: str) -> bool:
+        # ... [This function is correct and unchanged] ...
         htf_map = self.config.get('htf_map', {}); target_htf = htf_map.get(self.primary_timeframe)
         if not target_htf: return True
         if not self.htf_analysis or self.htf_analysis.get('price_data') is None: return False
@@ -170,6 +197,7 @@ class BaseStrategy(ABC):
         return current_score >= min_required_score
 
     def _calculate_smart_risk_management(self, entry_price: float, direction: str, stop_loss: float) -> Dict[str, Any]:
+        # ... [This function is correct and unchanged] ...
         if not isinstance(entry_price, (int, float)) or not isinstance(stop_loss, (int, float)):
             logger.debug(f"Risk calc skipped due to invalid inputs. Entry: {entry_price}, SL: {stop_loss}"); return {}
         if entry_price == stop_loss: return {}
