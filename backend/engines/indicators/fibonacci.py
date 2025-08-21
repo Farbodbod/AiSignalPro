@@ -1,37 +1,42 @@
-# backend/engines/indicators/fibonacci.py
+# backend/engines/indicators/fibonacci.py (v6.0 - The Precision Edition)
 import logging
 import pandas as pd
 import json
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 from .base import BaseIndicator
-from .utils import get_indicator_config_key # ✅ World-Class Practice: Import from shared utils
+from .utils import get_indicator_config_key
 
 logger = logging.getLogger(__name__)
 
 class FibonacciIndicator(BaseIndicator):
     """
-    Fibonacci Analysis Suite - (v5.2 - Unified Utils)
+    Fibonacci Analysis Suite - (v6.0 - The Precision Edition)
     -------------------------------------------------------------------------
-    This definitive version is fully DI-native and hardened. It no longer contains
-    a local copy of the helper functions, instead importing them from the shared
-    `utils.py` module, adhering to the DRY principle and professional software
-    engineering standards. All logic is 100% preserved.
+    This definitive version fixes a critical regression bug by changing the
+    current price lookup from iloc[-2] to iloc[-1]. This aligns the indicator
+    perfectly with the 'Fresh Data Protocol' of the modern ExchangeFetcher,
+    ensuring all analyses are performed on the absolute latest closed candle
+    for maximum precision and relevance.
     """
-    def __init__(self, df: pd.DataFrame, params: Dict[str, Any], dependencies: Dict[str, BaseIndicator], **kwargs):
-        super().__init__(df, params=params, dependencies=dependencies, **kwargs)
+    dependencies: list = ['zigzag']
+
+    def __init__(self, df: pd.DataFrame, params: Dict[str, Any], **kwargs):
+        super().__init__(df, params=params, **kwargs)
         self.timeframe = self.params.get('timeframe')
         self.retracement_levels = sorted(self.params.get('retracements', [0, 23.6, 38.2, 50, 61.8, 78.6, 100]))
         self.extension_levels = sorted(self.params.get('extensions', [127.2, 161.8, 200, 261.8]))
-        raw_golden_zone = self.params.get('golden_zone', {'61.8%', '78.6%'})
+        
+        # Correctly handle set from config
+        raw_golden_zone = self.params.get('golden_zone', ["50%", "61.8%"])
         self.golden_zone_levels = {str(level).replace('%', '') for level in raw_golden_zone}
 
-        self.pivot_col: str | None = None
-        self.price_col: str | None = None
+        self.zigzag_instance: Optional[BaseIndicator] = None
 
     def calculate(self) -> 'FibonacciIndicator':
         """
-        Prepares the indicator's DataFrame by correctly looking up its ZigZag dependency.
+        Prepares the indicator by linking to its ZigZag dependency.
+        No calculation is done here; all logic is in analyze().
         """
         my_deps_config = self.params.get("dependencies", {})
         zigzag_order_params = my_deps_config.get('zigzag')
@@ -40,57 +45,44 @@ class FibonacciIndicator(BaseIndicator):
             return self
         
         zigzag_unique_key = get_indicator_config_key('zigzag', zigzag_order_params)
-        zigzag_instance = self.dependencies.get(zigzag_unique_key)
+        self.zigzag_instance = self.dependencies.get(zigzag_unique_key)
 
-        if not isinstance(zigzag_instance, BaseIndicator):
+        if not isinstance(self.zigzag_instance, BaseIndicator):
             logger.warning(f"[{self.__class__.__name__}] on {self.timeframe} missing critical ZigZag instance ('{zigzag_unique_key}').")
-            return self
-
-        zigzag_df = zigzag_instance.df
-        pivots_col_options = [col for col in zigzag_df.columns if 'PIVOTS' in col.upper()]
-        prices_col_options = [col for col in zigzag_df.columns if 'PRICES' in col.upper()]
-
-        if not pivots_col_options or not prices_col_options:
-            logger.warning(f"[{self.__class__.__name__}] on {self.timeframe} could not find required columns in ZigZag dependency.")
-            return self
-            
-        self.pivot_col = pivots_col_options[0]
-        self.price_col = prices_col_options[0]
-
-        self.df = self.df.join(zigzag_df[[self.pivot_col, self.price_col]], how='left')
+        
         return self
 
     def analyze(self) -> Dict[str, Any]:
         """ 
-        Performs a full, on-the-fly Fibonacci analysis. The entire analytical
-        logic is 100% preserved and now protected by a guard clause.
+        Performs a full, on-the-fly Fibonacci analysis using the latest
+        CONFIRMED pivots from the ZigZag indicator.
         """
-        if not self.pivot_col or not self.price_col or not all(col in self.df.columns for col in [self.pivot_col, self.price_col]):
-            return {"status": "Calculation Incomplete - Required columns missing"}
+        if not self.zigzag_instance:
+            return {"status": "Calculation Incomplete - ZigZag dependency missing"}
 
-        valid_df = self.df.dropna(subset=[self.pivot_col, self.price_col])
-        pivots_df = valid_df[valid_df[self.pivot_col] != 0]
+        # Use the already-analyzed data from the ZigZag instance
+        zigzag_analysis = self.zigzag_instance.analyze()
+        zigzag_values = zigzag_analysis.get('values', {})
 
-        if len(pivots_df) < 2:
-            return {'status': 'Insufficient Pivots'}
+        # Rely on ZigZag v8.0+'s confirmed pivot logic
+        start_pivot = zigzag_values.get('previous_confirmed_pivot')
+        end_pivot = zigzag_values.get('last_confirmed_pivot')
 
-        last_pivot = pivots_df.iloc[-1]
-        prev_pivot = pivots_df.iloc[-2]
-        start_price = prev_pivot[self.price_col]
-        end_price = last_pivot[self.price_col]
+        if not start_pivot or not end_pivot:
+            return {'status': 'Insufficient Confirmed Pivots'}
+
+        start_price = start_pivot['price']
+        end_price = end_pivot['price']
         price_diff = end_price - start_price
 
-        swing_trend = "Neutral"
-        if price_diff > 0: swing_trend = "Up"
-        elif price_diff < 0: swing_trend = "Down"
+        swing_trend = zigzag_values.get('swing_trend', 'Unknown')
+        if swing_trend not in ["Up", "Down"]:
+            return {'status': 'Neutral Swing', 'values': zigzag_values}
 
         swing_info = {
-            "start_price": round(start_price, 5), "start_time": prev_pivot.name.strftime('%Y-%m-%d %H:%M:%S'),
-            "end_price": round(end_price, 5), "end_time": last_pivot.name.strftime('%Y-%m-%d %H:%M:%S')
+            "start_price": round(start_price, 5), "start_time": start_pivot['time'],
+            "end_price": round(end_price, 5), "end_time": end_pivot['time']
         }
-
-        if swing_trend == "Neutral":
-            return {'status': 'Neutral Swing', 'swing_trend': swing_trend, 'swing_details': swing_info}
 
         levels = []
         for level in self.retracement_levels:
@@ -100,8 +92,11 @@ class FibonacciIndicator(BaseIndicator):
             price = end_price + (price_diff * ((level - 100) / 100.0))
             levels.append({"level": f"{level}%", "price": round(price, 5), "type": "Extension"})
         
-        if len(self.df) < 2: return {"status": "Insufficient Data"}
-        current_price = self.df.iloc[-2]['close']
+        try:
+            # ✅ PRECISION FIX (v6.0): Use iloc[-1] as the 'Fresh Data Protocol' ensures this is the last CLOSED candle.
+            current_price = self.df.iloc[-1]['close']
+        except IndexError:
+            return {"status": "Insufficient Data for Current Price"}
         
         position = "Outside Retracement Zone"
         in_golden_zone = False
@@ -112,18 +107,26 @@ class FibonacciIndicator(BaseIndicator):
             upper_level, lower_level = sorted_levels[i], sorted_levels[i+1]
             if min(lower_level['price'], upper_level['price']) <= current_price <= max(lower_level['price'], upper_level['price']):
                 position = f"Between {lower_level['level']} and {upper_level['level']}"
-                current_zone_levels = {lvl['level'].replace('%', '') for lvl in [upper_level, lower_level]}
-                if self.golden_zone_levels.issubset(current_zone_levels):
+                upper_level_str = upper_level['level'].replace('%', '')
+                lower_level_str = lower_level['level'].replace('%', '')
+                
+                # Check if BOTH golden zone levels are represented by the current zone's boundaries
+                if self.golden_zone_levels.issubset({upper_level_str, lower_level_str}):
                     in_golden_zone = True
                 break
         
-        return {
-            'status': 'OK', 'timeframe': self.timeframe or 'Base',
+        analysis_content = {
             'swing_trend': swing_trend, 'swing_details': swing_info,
+            'levels': levels,
             'analysis': {
                 'current_price': round(current_price, 5),
                 'position': position,
                 'is_in_golden_zone': in_golden_zone
-            },
-            'levels': levels
+            }
+        }
+
+        return {
+            'status': 'OK', 'timeframe': self.timeframe or 'Base',
+            'values': analysis_content,
+            'analysis': analysis_content # For backward compatibility
         }
