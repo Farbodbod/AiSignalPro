@@ -24,7 +24,7 @@ class KeltnerMomentumBreakout(BaseStrategy):
         "required_regime": "TRENDING",
         "regime_adx_threshold": 25.0,
         "outlier_candle_shield_enabled": True,
-        "outlier_atr_multiplier": 5.0,
+        "outlier_atr_multiplier": 3.0,
         "exhaustion_shield_enabled": True,
         "buy_exhaustion_rsi": 80.0,
         "sell_exhaustion_rsi": 20.0,
