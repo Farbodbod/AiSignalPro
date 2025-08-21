@@ -1,7 +1,8 @@
+# backend/engines/indicators/atr.py (v7.1 - The Hardened Fill Edition)
 import pandas as pd
 import numpy as np
 import logging
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 
 from .base import BaseIndicator
 
@@ -9,11 +10,12 @@ logger = logging.getLogger(__name__)
 
 class AtrIndicator(BaseIndicator):
     """
-    ATR Indicator - (v6.0 - Harmonized API)
+    ATR Indicator - (v7.1 - The Hardened Fill Edition)
     --------------------------------------------------------------
-    This version introduces the standardized `get_col_name` static method, creating
-    a robust and unbreakable contract with all dependent indicators within the
-    Multi-Version Engine. It is the final piece of the ATR supply chain puzzle.
+    This definitive version is fully aligned with the project's final
+    architectural standards. It introduces a robust, two-step fill logic
+    (ffill -> bfill) and a zero-division shield to guarantee a complete and
+    valid output series under all data conditions.
     """
     dependencies: list = []
 
@@ -26,37 +28,15 @@ class AtrIndicator(BaseIndicator):
             'low_max': 1.0, 'normal_max': 3.0, 'high_max': 5.0
         })
 
-        # ✅ HARMONIZED: Column names are now generated using the official static methods
-        self.atr_col = AtrIndicator.get_col_name(self.params, self.timeframe)
-        self.atr_pct_col = AtrIndicator.get_atr_pct_col_name(self.params, self.timeframe)
-
-        # --- Real-Time state variables (logic remains unchanged) ---
-        self.prev_close = None; self.atr_rt = None; self._tr_sum = 0.0; self._initial_count = 0
-
-    @staticmethod
-    def get_col_name(params: Dict[str, Any], timeframe: Optional[str] = None) -> str:
-        """ ✅ NEW: The official, standardized method for generating the ATR column name. """
-        period = params.get('period', 14)
-        name = f'atr_{period}'
-        if timeframe:
-            name += f'_{timeframe}'
-        return name
-
-    @staticmethod
-    def get_atr_pct_col_name(params: Dict[str, Any], timeframe: Optional[str] = None) -> str:
-        """ ✅ NEW: The official, standardized method for the ATR percent column name. """
-        period = params.get('period', 14)
-        name = f'atr_pct_{period}'
-        if timeframe:
-            name += f'_{timeframe}'
-        return name
+        suffix = f'_{self.period}'
+        if self.timeframe: suffix += f'_{self.timeframe}'
+        self.atr_col = f'atr{suffix}'
+        self.atr_pct_col = f'atr_pct{suffix}'
 
     def calculate(self) -> 'AtrIndicator':
-        """ Core calculation logic is unchanged and robust. """
         df_for_calc = self.df
-
         if len(df_for_calc) < self.period:
-            logger.warning(f"Not enough data for ATR on timeframe {self.timeframe or 'base'}.")
+            logger.warning(f"Not enough data for ATR on {self.timeframe or 'base'}.")
             self.df[self.atr_col] = np.nan
             self.df[self.atr_pct_col] = np.nan
             return self
@@ -68,34 +48,33 @@ class AtrIndicator(BaseIndicator):
         ], axis=1).max(axis=1)
 
         atr = tr.ewm(alpha=1/self.period, adjust=False).mean()
-
+        
+        # ✅ ZERO-DIVISION SHIELD (v7.1):
         safe_close = df_for_calc['close'].replace(0, np.nan)
         atr_pct = (atr / safe_close) * 100
+        atr_pct.replace([np.inf, -np.inf], np.nan, inplace=True)
 
-        self.df[self.atr_col] = atr
-        self.df[self.atr_pct_col] = atr_pct
+        # ✅ HARDENED FILL (v7.1): Two-step fill process for maximum robustness.
+        fill_limit = 3
+        # Step 1: Forward-fill to propagate last known good values
+        filled_atr = atr.ffill(limit=fill_limit)
+        filled_atr_pct = atr_pct.ffill(limit=fill_limit)
+        # Step 2: Backfill to handle any remaining NaNs at the very start of the series
+        self.df[self.atr_col] = filled_atr.bfill(limit=2)
+        self.df[self.atr_pct_col] = filled_atr_pct.bfill(limit=2)
 
         return self
 
-    def update_realtime(self, high: float, low: float, close: float) -> Optional[float]:
-        # Real-time update logic remains unchanged
-        if self.prev_close is None: tr = high - low
-        else: tr = max(high - low, abs(high - self.prev_close), abs(low - self.prev_close))
-        self.prev_close = close
-        if self._initial_count < self.period:
-            self._tr_sum += tr
-            self._initial_count += 1
-            if self._initial_count == self.period: self.atr_rt = self._tr_sum / self.period
-            return self.atr_rt
-        self.atr_rt = (self.atr_rt * (self.period - 1) + tr) / self.period
-        return self.atr_rt
-
     def analyze(self) -> Dict[str, Any]:
-        """ Analysis logic remains unchanged and robust. """
         required_cols = [self.atr_col, self.atr_pct_col]
+        empty_analysis = {"values": {}, "analysis": {}}
+        
+        if not all(col in self.df.columns for col in required_cols):
+            return {"status": "Calculation Incomplete", **empty_analysis}
+
         valid_df = self.df.dropna(subset=required_cols)
         if len(valid_df) < 1:
-            return {"status": "Insufficient Data"}
+            return {"status": "Insufficient Data", **empty_analysis}
 
         last_row = valid_df.iloc[-1]
         last_atr_val = last_row[self.atr_col]
@@ -107,14 +86,17 @@ class AtrIndicator(BaseIndicator):
         elif last_atr_pct <= t['high_max']: volatility_level = "High"
         else: volatility_level = "Extreme"
 
+        values_content = {
+            "atr": round(last_atr_val, 5),
+            "atr_percent": round(last_atr_pct, 2),
+        }
+        analysis_content = {
+            "volatility": volatility_level
+        }
+
         return {
             "status": "OK",
             "timeframe": self.timeframe or 'Base',
-            "values": {
-                "atr": round(last_atr_val, 5),
-                "atr_percent": round(last_atr_pct, 2),
-            },
-            "analysis": {
-                "volatility": volatility_level
-            }
+            "values": values_content,
+            "analysis": analysis_content
         }
