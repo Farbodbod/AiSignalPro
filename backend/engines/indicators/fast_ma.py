@@ -1,3 +1,5 @@
+# backend/engines/indicators/fast_ma.py (v6.1 - The Grandmaster Flow Edition)
+
 import pandas as pd
 import numpy as np
 import logging
@@ -9,11 +11,12 @@ logger = logging.getLogger(__name__)
 
 class FastMAIndicator(BaseIndicator):
     """
-    Fast MA (DEMA/TEMA) - (v5.0 - Harmonized API)
+    Fast MA (DEMA/TEMA) - (v6.1 - The Grandmaster Flow Edition)
     ----------------------------------------------------------------------------------
-    This version is now a first-class citizen of the universal engine. It includes
-    the standardized `get_col_name` static method, making it fully compatible
-    with strategy-specific configurations and future-proofing its architecture.
+    This world-class version perfects the "Smoothed Flow" analysis by applying
+    smoothing to acceleration as well as slope. It also introduces a configurable
+    smoothing period and enriches the final analysis output, achieving the pinnacle
+    of robustness, flexibility, and analytical depth for this indicator.
     """
     dependencies: list = []
 
@@ -24,72 +27,64 @@ class FastMAIndicator(BaseIndicator):
         self.ma_type = str(self.params.get('ma_type', 'DEMA')).upper()
         self.timeframe = self.params.get('timeframe', None)
         self.slope_threshold = float(self.params.get('slope_threshold', 0.0005))
+        # ✅ FULLY CONFIGURABLE: Smoothing period is now a tunable parameter.
+        self.slope_smoothing_period = int(self.params.get('slope_smoothing_period', 3))
 
         if self.period < 1: raise ValueError("Period must be a positive integer.")
         if self.ma_type not in ['DEMA', 'TEMA']: raise ValueError("ma_type must be 'DEMA' or 'TEMA'.")
         
-        # ✅ HARMONIZED: Column name is now generated using the official static method
-        self.ma_col = FastMAIndicator.get_col_name(self.params, self.timeframe)
+        suffix = f'_{self.period}'
+        if self.timeframe: suffix += f'_{self.timeframe}'
+        else: suffix += '_base'
+        self.ma_col = f'{self.ma_type.lower()}{suffix}'
+        self.slope_col = f'{self.ma_col}_slope'
+        self.accel_col = f'{self.ma_col}_accel'
 
-    @staticmethod
-    def get_col_name(params: Dict[str, Any], timeframe: Optional[str] = None) -> str:
-        """ ✅ NEW: The official, standardized method for generating the column name. """
-        period = params.get('period', 200)
-        ma_type = params.get('ma_type', 'DEMA').upper()
-        name = f'{ma_type.lower()}_{period}'
-        if timeframe: name += f'_{timeframe}'
-        return name
+    def calculate(self) -> 'FastMAIndicator':
+        if len(self.df) < self.period * 2:
+            logger.warning(f"Not enough data for {self.ma_type} on {self.timeframe or 'base'}.")
+            for col in [self.ma_col, self.slope_col, self.accel_col]: self.df[col] = np.nan
+            return self
 
-    def _calculate_fast_ma(self, df: pd.DataFrame) -> pd.DataFrame:
-        """The core, technically correct DEMA/TEMA calculation logic."""
-        res = pd.DataFrame(index=df.index)
-        close_series = pd.to_numeric(df['close'], errors='coerce')
+        close_series = pd.to_numeric(self.df['close'], errors='coerce')
         
         ema1 = close_series.ewm(span=self.period, adjust=False).mean()
         ema2 = ema1.ewm(span=self.period, adjust=False).mean()
         
         if self.ma_type == 'DEMA':
-            res[self.ma_col] = 2 * ema1 - ema2
-        elif self.ma_type == 'TEMA':
+            ma_series = 2 * ema1 - ema2
+        else: # TEMA
             ema3 = ema2.ewm(span=self.period, adjust=False).mean()
-            res[self.ma_col] = 3 * ema1 - 3 * ema2 + ema3
-            
-        return res
-
-    def calculate(self) -> 'FastMAIndicator':
-        """ Calculates the specified fast moving average (DEMA or TEMA). """
-        df_for_calc = self.df
+            ma_series = 3 * ema1 - 3 * ema2 + ema3
         
-        # The data length check is correct
-        if len(df_for_calc) < self.period:
-            logger.warning(f"Not enough data for {self.ma_type} on timeframe {self.timeframe or 'base'}. Have {len(df_for_calc)}, need {self.period}.")
-            self.df[self.ma_col] = np.nan
-            return self
+        self.df[self.ma_col] = ma_series
 
-        ma_results = self._calculate_fast_ma(df_for_calc)
-        self.df[self.ma_col] = ma_results[self.ma_col]
+        # ✅ GRANDMASTER FLOW: Apply smoothing to both slope and acceleration for maximum noise reduction.
+        slope_series = ma_series.diff().ewm(span=self.slope_smoothing_period, adjust=False).mean()
+        self.df[self.slope_col] = slope_series
+        self.df[self.accel_col] = slope_series.diff().ewm(span=self.slope_smoothing_period, adjust=False).mean()
+        
         return self
 
     def analyze(self) -> Dict[str, Any]:
-        """ Provides a deep, bias-free analysis of the trend's momentum and acceleration. """
-        valid_df = self.df.dropna(subset=[self.ma_col, 'close'])
-        if len(valid_df) < 3:
-            return {"status": "Insufficient Data"}
+        required_cols = [self.ma_col, self.slope_col, self.accel_col, 'close']
+        empty_analysis = {"values": {}, "analysis": {}}
+
+        if not all(col in self.df.columns for col in required_cols):
+            return {"status": "Calculation Incomplete", **empty_analysis}
+            
+        valid_df = self.df.dropna(subset=required_cols)
+        if len(valid_df) < 1:
+            return {"status": "Insufficient Data", **empty_analysis}
 
         last = valid_df.iloc[-1]
-        prev = valid_df.iloc[-2]
-        prev_prev = valid_df.iloc[-3]
-
-        close_price = last['close']
-        ma_val = last[self.ma_col]
+        close_price, ma_val, slope, acceleration = last['close'], last[self.ma_col], last[self.slope_col], last[self.accel_col]
         
-        slope = ma_val - prev[self.ma_col]
-        prev_slope = prev[self.ma_col] - prev_prev[self.ma_col]
-        acceleration = slope - prev_slope
+        signal, message, strength = "Neutral", "No clear momentum signal.", "Neutral"
         
-        signal = "Neutral"; message = "No clear momentum signal."
+        min_threshold = 1e-9
+        normalized_slope_threshold = max(abs(ma_val) * self.slope_threshold, min_threshold)
         
-        normalized_slope_threshold = abs(ma_val) * self.slope_threshold
         is_bullish = close_price > ma_val and slope > normalized_slope_threshold
         is_bearish = close_price < ma_val and slope < -normalized_slope_threshold
 
@@ -101,11 +96,15 @@ class FastMAIndicator(BaseIndicator):
             signal = "Sell"
             strength = "Accelerating" if acceleration < 0 else "Decelerating"
             message = f"Bearish trend ({strength}). Price is below {self.ma_type} and slope is negative."
+            
+        values_content = { "ma_value": round(ma_val, 5), "price": round(close_price, 5) }
+        # ✅ RICHER OUTPUT: The 'strength' field is now correctly included in the analysis.
+        analysis_content = { "signal": signal, "strength": strength, "slope": round(slope, 5), "acceleration": round(acceleration, 5), "message": message }
 
         return {
             "status": "OK",
             "timeframe": self.timeframe or 'Base',
             "indicator_type": self.ma_type,
-            "values": { "ma_value": round(ma_val, 5), "price": round(close_price, 5) },
-            "analysis": { "signal": signal, "slope": round(slope, 5), "acceleration": round(acceleration, 5), "message": message }
+            "values": values_content,
+            "analysis": analysis_content
         }
