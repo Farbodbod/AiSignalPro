@@ -1,3 +1,4 @@
+# backend/engines/indicators/obv.py (v5.0 - The Quantum Flow Edition)
 import pandas as pd
 import numpy as np
 import logging
@@ -9,11 +10,12 @@ logger = logging.getLogger(__name__)
 
 class ObvIndicator(BaseIndicator):
     """
-    On-Balance Volume (OBV) - Definitive, World-Class Version (v4.0 - Final Architecture)
+    On-Balance Volume (OBV) - (v5.0 - The Quantum Flow Edition)
     ------------------------------------------------------------------------------------
-    This version elevates OBV into a sophisticated trend strength analysis engine.
-    It adheres to the final AiSignalPro architecture by calculating on the
-    pre-resampled dataframe.
+    This world-class version evolves OBV into a quantum flow engine. It introduces
+    a 0-100 signal strength score, Rate of Change (ROC) for momentum analysis, and
+    expressive summaries. The architecture is fully hardened with dynamic column
+    naming, data filling, and a Sentinel-compliant output.
     """
     dependencies: list = []
 
@@ -24,101 +26,104 @@ class ObvIndicator(BaseIndicator):
         self.rvol_period = int(self.params.get('rvol_period', 20))
         self.price_ma_period = int(self.params.get('price_ma_period', 20))
         self.rvol_threshold = float(self.params.get('rvol_threshold', 1.5))
+        self.roc_period = int(self.params.get('roc_period', 5))
         self.timeframe = self.params.get('timeframe', None)
 
-        suffix = f'_{self.timeframe}' if self.timeframe else ''
+        # ✅ FINAL STANDARD: Dynamic and conflict-proof column naming.
+        suffix = f'_{self.signal_period}_{self.rvol_period}_{self.price_ma_period}'
+        if self.timeframe: suffix += f'_{self.timeframe}'
+        else: suffix += '_base'
+        
         self.obv_col = f'obv{suffix}'
-        self.obv_signal_col = f'obv_signal_{self.signal_period}{suffix}'
-        self.rvol_col = f'rvol_{self.rvol_period}{suffix}'
-        self.price_ma_col = f'price_ma_{self.price_ma_period}{suffix}'
-
-    def _calculate_obv_metrics(self, df: pd.DataFrame) -> pd.DataFrame:
-        """The core logic for calculating OBV and its related confirmation metrics."""
-        res = pd.DataFrame(index=df.index)
-        
-        obv_raw = np.where(df['close'] > df['close'].shift(1), df['volume'],
-                  np.where(df['close'] < df['close'].shift(1), -df['volume'], 0)).cumsum()
-        
-        # ✨ BUGFIX: Convert NumPy array to pandas Series before calling .ewm()
-        obv_series = pd.Series(obv_raw, index=df.index)
-        res[self.obv_col] = obv_series
-        res[self.obv_signal_col] = obv_series.ewm(span=self.signal_period, adjust=False).mean()
-        
-        vol_ma = df['volume'].rolling(window=self.rvol_period).mean().replace(0, np.nan)
-        res[self.rvol_col] = df['volume'] / vol_ma
-        
-        res[self.price_ma_col] = df['close'].ewm(span=self.price_ma_period, adjust=False).mean()
-        
-        return res
+        self.obv_signal_col = f'obv_signal{suffix}'
+        self.rvol_col = f'rvol{suffix}'
+        self.price_ma_col = f'price_ma{suffix}'
+        self.obv_roc_col = f'obv_roc{suffix}'
 
     def calculate(self) -> 'ObvIndicator':
-        """
-        ✨ FINAL ARCHITECTURE: No resampling. Just pure calculation.
-        The dataframe received is already at the correct timeframe.
-        """
-        df_for_calc = self.df
-
-        if len(df_for_calc) < max(self.signal_period, self.rvol_period, self.price_ma_period):
-            logger.warning(f"Not enough data for OBV on timeframe {self.timeframe or 'base'}.")
+        if len(self.df) < max(self.signal_period, self.rvol_period, self.price_ma_period):
+            logger.warning(f"Not enough data for OBV on {self.timeframe or 'base'}.")
+            for col in [self.obv_col, self.obv_signal_col, self.rvol_col, self.price_ma_col, self.obv_roc_col]:
+                self.df[col] = np.nan
             return self
 
-        obv_results = self._calculate_obv_metrics(df_for_calc)
+        obv_raw = np.where(self.df['close'] > self.df['close'].shift(1), self.df['volume'],
+                  np.where(self.df['close'] < self.df['close'].shift(1), -self.df['volume'], 0)).cumsum()
         
-        for col in obv_results.columns:
-            self.df[col] = obv_results[col]
+        obv_series = pd.Series(obv_raw, index=self.df.index)
+        obv_signal_series = obv_series.ewm(span=self.signal_period, adjust=False).mean()
+        
+        vol_ma = self.df['volume'].rolling(window=self.rvol_period).mean().replace(0, np.nan)
+        rvol_series = self.df['volume'] / vol_ma
+        rvol_series.replace([np.inf, -np.inf], np.nan, inplace=True)
+        
+        price_ma_series = self.df['close'].ewm(span=self.price_ma_period, adjust=False).mean()
+        
+        obv_roc_series = obv_series.pct_change(periods=self.roc_period) * 100
+        
+        # ✅ HARDENED FILL: Add a limited ffill/bfill for robustness.
+        fill_limit = 3
+        self.df[self.obv_col] = obv_series.ffill(limit=fill_limit).bfill(limit=2)
+        self.df[self.obv_signal_col] = obv_signal_series.ffill(limit=fill_limit).bfill(limit=2)
+        self.df[self.rvol_col] = rvol_series.ffill(limit=fill_limit).bfill(limit=2)
+        self.df[self.price_ma_col] = price_ma_series.ffill(limit=fill_limit).bfill(limit=2)
+        self.df[self.obv_roc_col] = obv_roc_series.ffill(limit=fill_limit).bfill(limit=2)
 
         return self
 
     def analyze(self) -> Dict[str, Any]:
-        """
-        Provides a deep, confirmation-based analysis of volume-price dynamics.
-        This powerful analysis logic remains unchanged.
-        """
         required_cols = [self.obv_col, self.obv_signal_col, self.rvol_col, self.price_ma_col, 'close']
+        empty_analysis = {"values": {}, "analysis": {}}
+        if not all(col in self.df.columns for col in required_cols):
+            return {"status": "Calculation Incomplete", **empty_analysis}
+
         valid_df = self.df.dropna(subset=required_cols)
         if len(valid_df) < 2:
-            return {"status": "Insufficient Data", "analysis": {}}
+            return {"status": "Insufficient Data", **empty_analysis}
 
-        last = valid_df.iloc[-1]
-        prev = valid_df.iloc[-2]
+        last, prev = valid_df.iloc[-1], valid_df.iloc[-2]
 
-        primary_signal = "Neutral"
+        primary_event = "Neutral"
         if prev[self.obv_col] <= prev[self.obv_signal_col] and last[self.obv_col] > last[self.obv_signal_col]:
-            primary_signal = "Bullish Crossover"
+            primary_event = "Bullish Crossover"
         elif prev[self.obv_col] >= prev[self.obv_signal_col] and last[self.obv_col] < last[self.obv_signal_col]:
-            primary_signal = "Bearish Crossover"
+            primary_event = "Bearish Crossover"
             
         volume_confirmed = last[self.rvol_col] > self.rvol_threshold
         price_confirmed = False
-        if "Bullish" in primary_signal:
-            price_confirmed = last['close'] > last[self.price_ma_col]
-        elif "Bearish" in primary_signal:
-            price_confirmed = last['close'] < last[self.price_ma_col]
+        if "Bullish" in primary_event: price_confirmed = last['close'] > last[self.price_ma_col]
+        elif "Bearish" in primary_event: price_confirmed = last['close'] < last[self.price_ma_col]
             
-        final_signal = "Hold"
-        if primary_signal != "Neutral":
-            if volume_confirmed and price_confirmed:
-                final_signal = f"Strong {primary_signal.split(' ')[0]}"
-            elif volume_confirmed or price_confirmed:
-                final_signal = f"Weak {primary_signal.split(' ')[0]}"
-            else:
-                final_signal = "Unconfirmed Crossover"
+        # ✅ QUANTUM SCORE & EXPRESSIVE SUMMARY
+        strength_score = 0; final_signal = "Hold"; summary = "Neutral volume flow."
+        if primary_event != "Neutral":
+            strength_score += 40 # Base score for crossover
+            if volume_confirmed: strength_score += 30
+            if price_confirmed: strength_score += 30
+            
+            direction = primary_event.split(' ')[0]
+            if strength_score >= 70: final_signal = f"Strong {direction}"
+            elif strength_score >= 40: final_signal = f"Weak {direction}"
+
+            summary = f"{final_signal} signal detected ({primary_event}) "
+            summary += "confirmed by High Volume and Price Action." if volume_confirmed and price_confirmed else \
+                       "confirmed by High Volume." if volume_confirmed else \
+                       "confirmed by Price Action." if price_confirmed else \
+                       "with no extra confirmation."
+        
+        values_content = {
+            "obv": int(last[self.obv_col]), "obv_signal_line": int(last[self.obv_signal_col]),
+            "rvol": round(last[self.rvol_col], 2), "price_ma": round(last[self.price_ma_col], 5),
+            "obv_roc_percent": round(last.get(self.obv_roc_col, 0), 2)
+        }
+        analysis_content = {
+            "signal": final_signal, "strength_score": strength_score,
+            "primary_event": primary_event,
+            "confirmation": {"volume_confirmed": volume_confirmed, "price_confirmed": price_confirmed},
+            "summary": summary
+        }
         
         return {
-            "status": "OK",
-            "timeframe": self.timeframe or 'Base',
-            "values": {
-                "obv": int(last[self.obv_col]),
-                "obv_signal_line": int(last[self.obv_signal_col]),
-                "rvol": round(last[self.rvol_col], 2),
-                "price_ma": round(last[self.price_ma_col], 5)
-            },
-            "analysis": {
-                "signal": final_signal,
-                "primary_event": primary_signal,
-                "confirmation": {
-                    "volume_confirmed": volume_confirmed,
-                    "price_confirmed": price_confirmed
-                }
-            }
+            "status": "OK", "timeframe": self.timeframe or 'Base',
+            "values": values_content, "analysis": analysis_content
         }
