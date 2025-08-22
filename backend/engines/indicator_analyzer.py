@@ -1,4 +1,4 @@
-# engines/indicator_analyzer.py (v17.2 - The Precision Hotfix)
+# engines/indicator_analyzer.py (v17.2 - The True Precision Hotfix)
 
 import pandas as pd
 import logging
@@ -12,36 +12,39 @@ from .indicators import *
 logger = logging.getLogger(__name__)
 
 def get_indicator_config_key(name: str, params: Dict[str, Any]) -> str:
+    # This is the original, stable version of the function from v17.1
     try:
         filtered_params = {k: v for k, v in params.items() if k not in ["enabled", "dependencies", "name"]}
         if not filtered_params: return name
         param_str = json.dumps(filtered_params, sort_keys=True, separators=(",", ":"))
-        return f"{name.lower()}_{param_str}"
+        return f"{name}_{param_str}"
     except TypeError as e:
         logger.error(f"Could not serialize params for {name}: {e}")
         param_str = "_".join(f"{k}_{v}" for k, v in sorted(params.items()) if k not in ["enabled", "dependencies", "name"])
-        return f"{name.lower()}_{param_str}" if param_str else name.lower()
+        return f"{name}_{param_str}" if param_str else name
 
 class IndicatorAnalyzer:
     """
-    The Self-Aware Analysis Engine for AiSignalPro (v17.2 - The Precision Hotfix)
+    The Self-Aware Analysis Engine for AiSignalPro (v17.2 - The True Precision Hotfix)
     ------------------------------------------------------------------------------------------
     This version contains one critical, targeted fix. The `get_analysis_summary`
     method has been patched to use iloc[-1] instead of iloc[-2] for `price_data`,
     aligning it with the Fresh Data Protocol and eliminating the 1-candle lag bug.
-    All other functionalities from the stable v17.1 are preserved.
+    All other functionalities from the stable v17.1 are 100% preserved.
     """
     def __init__(self, df: pd.DataFrame, config: Dict[str, Any], strategies_config: Dict[str, Any], timeframe: str, symbol: str, previous_df: Optional[pd.DataFrame] = None):
         if not isinstance(df, pd.DataFrame): raise ValueError("Input must be a pandas DataFrame.")
         self.base_df, self.previous_df, self.indicators_config, self.strategies_config = df, previous_df, config, strategies_config
         self.timeframe, self.symbol, self.recalc_buffer = timeframe, symbol, 250
-        self._indicator_classes: Dict[str, Type[BaseIndicator]] = { 'rsi': RsiIndicator, 'macd': MacdIndicator, 'bollinger': BollingerIndicator, 'ichimoku': IchimokuIndicator, 'adx': AdxIndicator, 'supertrend': SuperTrendIndicator, 'obv': ObvIndicator, 'stochastic': StochasticIndicator, 'cci': CciIndicator, 'mfi': MfiIndicator, 'atr': AtrIndicator, 'patterns': PatternIndicator, 'divergence': DivergenceIndicator, 'pivots': PivotPointIndicator, 'structure': StructureIndicator, 'whales': WhaleIndicator, 'ema_cross': EMACrossIndicator, 'vwap_bands': VwapBandsIndicator, 'chandelier_exit': ChandelierExitIndicator, 'donchian_channel': DonchianChannelIndicator, 'fast_ma': FastMAIndicator, 'williams_r': WilliamsRIndicator, 'keltner_channel': KeltnerMomentumBreakout, 'zigzag': ZigzagIndicator, 'fibonacci': FibonacciIndicator, }
+        # ✅ This is the original, correct and stable dictionary from v17.1
+        self._indicator_classes: Dict[str, Type[BaseIndicator]] = { 'rsi': RsiIndicator, 'macd': MacdIndicator, 'bollinger': BollingerIndicator, 'ichimoku': IchimokuIndicator, 'adx': AdxIndicator, 'supertrend': SuperTrendIndicator, 'obv': ObvIndicator, 'stochastic': StochasticIndicator, 'cci': CciIndicator, 'mfi': MfiIndicator, 'atr': AtrIndicator, 'patterns': PatternIndicator, 'divergence': DivergenceIndicator, 'pivots': PivotPointIndicator, 'structure': StructureIndicator, 'whales': WhaleIndicator, 'ema_cross': EMACrossIndicator, 'vwap_bands': VwapBandsIndicator, 'chandelier_exit': ChandelierExitIndicator, 'donchian_channel': DonchianChannelIndicator, 'fast_ma': FastMAIndicator, 'williams_r': WilliamsRIndicator, 'keltner_channel': KeltnerChannelIndicator, 'zigzag': ZigzagIndicator, 'fibonacci': FibonacciIndicator, }
         self._indicator_configs: Dict[str, Dict[str, Any]] = {}
         self._indicator_instances: Dict[str, BaseIndicator] = {}
         self._calculation_order: List[str] = self._resolve_dependencies()
         self.final_df: Optional[pd.DataFrame] = None
 
     def _resolve_dependencies(self) -> List[str]:
+        # This function is unchanged from v17.1
         adj, in_degree = {}, {}
         def discover_nodes(ind_name: str, params: Dict[str, Any]):
             key = get_indicator_config_key(ind_name, params);
@@ -66,6 +69,7 @@ class IndicatorAnalyzer:
         return sorted_order
 
     async def _calculate_and_store(self, key: str, base_df: pd.DataFrame) -> None:
+        # This function is unchanged from v17.1
         config = self._indicator_configs[key]; name, params = config["name"], config["params"]; cls = self._indicator_classes.get(name)
         if not cls: logger.warning(f"Indicator class not found for key '{key}'"); return
         try:
@@ -77,6 +81,7 @@ class IndicatorAnalyzer:
             self._indicator_instances[key] = e 
 
     async def calculate_all(self) -> "IndicatorAnalyzer":
+        # This function is unchanged from v17.1
         df_for_calc = self.base_df.copy()
         if self.previous_df is not None and not self.previous_df.empty:
             if df_for_calc.index.tz is None and self.previous_df.index.tz is not None: df_for_calc.index = df_for_calc.index.tz_localize(self.previous_df.index.tz)
@@ -97,12 +102,13 @@ class IndicatorAnalyzer:
         if len(self.final_df) < 2: return {"status": "Insufficient Data"}
         summary: Dict[str, Any] = {"status": "OK", "final_df": self.final_df.tail(self.recalc_buffer + 50)}
         try:
-            # ✅ PRECISION HOTFIX (v17.2): Use iloc[-1] to get the last *closed* candle's data, not the one before.
+            # ✅ THE TRUE PRECISION HOTFIX (v17.2): Use iloc[-1] to get the last *closed* candle's data.
             last_closed = self.final_df.iloc[-1]
             summary["price_data"] = {"open": last_closed["open"], "high": last_closed["high"], "low": last_closed["low"], "close": last_closed["close"], "volume": last_closed["volume"], "timestamp": str(last_closed.name),}
         except IndexError:
             return {"status": "Insufficient Data after calculations"}
         
+        # This function is unchanged from v17.1
         indicator_map = {}
         for unique_key, config in self._indicator_configs.items():
             simple_name = config['name']
@@ -110,6 +116,7 @@ class IndicatorAnalyzer:
                 indicator_map[simple_name] = unique_key
         summary["_indicator_map"] = indicator_map
 
+        # This function is unchanged from v17.1
         successful_analysis_count, total_calculated_instances = 0, sum(1 for v in self._indicator_instances.values() if isinstance(v, BaseIndicator))
         logger.info(f"--- Starting Analysis Aggregation for {self.symbol}@{self.timeframe} ({total_calculated_instances} successful instances) ---")
 
