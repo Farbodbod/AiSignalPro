@@ -1,8 +1,8 @@
-# backend/engines/indicators/williams_r.py
+# backend/engines/indicators/williams_r.py (v6.0 - The Dynamic Engine)
 import pandas as pd
 import numpy as np
 import logging
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 from .base import BaseIndicator
 
@@ -10,57 +10,55 @@ logger = logging.getLogger(__name__)
 
 class WilliamsRIndicator(BaseIndicator):
     """
-    Williams %R - (v5.1 - Pure Calculation Engine)
+    Williams %R - (v6.0 - The Dynamic Engine)
     -------------------------------------------------------------------------
-    This world-class version is a pure implementation of the Williams %R indicator.
-    It has no external dependencies and serves as a foundational data provider.
-    Divergence detection is correctly delegated to specialist indicators.
+    This world-class version is fully standardized and hardened. It features
+    a dynamic, multi-instance-safe architecture, a robust ffill/bfill data
+    integrity shield, and a fully Sentinel-compliant output structure, making
+    it a flawless component for the AiSignalPro ecosystem.
     """
-    def __init__(self, df: pd.DataFrame, params: Dict[str, Any], dependencies: Dict[str, BaseIndicator], **kwargs):
-        super().__init__(df, params=params, dependencies=dependencies, **kwargs)
+    dependencies: list = []
+
+    def __init__(self, df: pd.DataFrame, **kwargs):
+        super().__init__(df, **kwargs)
+        self.params = kwargs.get('params', {})
         self.period = int(self.params.get('period', 14))
         self.overbought = float(self.params.get('overbought', -20.0))
         self.oversold = float(self.params.get('oversold', -80.0))
         self.timeframe = self.params.get('timeframe')
         
-        self.wr_col = 'WR'
-
-    def _calculate_wr(self, df: pd.DataFrame) -> pd.DataFrame:
-        """
-        The core, technically correct Williams %R calculation logic.
-        This function's internal algorithm is 100% preserved.
-        """
-        res = pd.DataFrame(index=df.index)
-        highest_high = df['high'].rolling(window=self.period).max()
-        lowest_low = df['low'].rolling(window=self.period).min()
-        
-        denominator = (highest_high - lowest_low).replace(0, np.nan)
-        numerator = highest_high - df['close']
-        
-        res[self.wr_col] = ((numerator / denominator) * -100).fillna(-50)
-        return res
+        # ✅ DYNAMIC ARCHITECTURE: Column name is now based on parameters.
+        suffix = f'_{self.period}'
+        if self.timeframe: suffix += f'_{self.timeframe}'
+        else: suffix += '_base'
+        self.wr_col = f'wr{suffix}'
 
     def calculate(self) -> 'WilliamsRIndicator':
-        """
-        Calculates only the W%R value.
-        """
         if len(self.df) < self.period:
             logger.warning(f"Not enough data for Williams %R on {self.timeframe or 'base'}.")
             self.df[self.wr_col] = np.nan
             return self
 
-        wr_results = self._calculate_wr(self.df)
-        self.df[self.wr_col] = wr_results[self.wr_col]
+        highest_high = self.df['high'].rolling(window=self.period).max()
+        lowest_low = self.df['low'].rolling(window=self.period).min()
+        
+        denominator = (highest_high - lowest_low).replace(0, np.nan)
+        numerator = highest_high - self.df['close']
+        
+        wr_series = (numerator / denominator) * -100
+        
+        # ✅ HARDENED FILL (v6.0): Use the standard ffill/bfill logic for robustness.
+        self.df[self.wr_col] = wr_series.ffill(limit=3).bfill(limit=2)
         return self
 
     def analyze(self) -> Dict[str, Any]:
-        """
-        Provides a multi-faceted analysis of momentum and potential reversals.
-        The core analysis logic is 100% preserved.
-        """
+        empty_analysis = {"values": {}, "analysis": {}}
+        if self.wr_col not in self.df.columns or self.df[self.wr_col].isnull().all():
+            return {"status": "Calculation Incomplete", **empty_analysis}
+
         valid_df = self.df.dropna(subset=[self.wr_col])
         if len(valid_df) < 2: 
-            return {"status": "Insufficient Data"}
+            return {"status": "Insufficient Data", **empty_analysis}
 
         last = valid_df.iloc[-1]
         prev = valid_df.iloc[-2]
@@ -78,14 +76,17 @@ class WilliamsRIndicator(BaseIndicator):
         slope = last_wr - prev_wr
         momentum = "Rising" if slope > 0 else "Falling" if slope < 0 else "Flat"
         
+        values_content = {"wr": round(last_wr, 2)}
+        analysis_content = {
+            "position": position,
+            "crossover_signal": signal,
+            "momentum": {"direction": momentum, "slope": round(slope, 2)},
+            "divergences": []
+        }
+        
         return {
             "status": "OK",
             "timeframe": self.timeframe or 'Base',
-            "values": {"wr": round(last_wr, 2)},
-            "analysis": {
-                "position": position,
-                "crossover_signal": signal,
-                "momentum": {"direction": momentum, "slope": round(slope, 2)},
-                "divergences": [] # Returns an empty list as per the pure architecture
-            }
+            "values": values_content,
+            "analysis": analysis_content
         }
