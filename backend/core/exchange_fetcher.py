@@ -175,7 +175,7 @@ class ExchangeFetcher:
         while rem_limit > 0:
             fetch_limit = min(rem_limit, max_req);
             if fetch_limit <= 0: break
-            logger.info(f"Fetching page #{pg} for {symbol}@{timeframe} from {exchange} (limit: {fetch_limit})...")
+            logger.debug(f"Fetching page #{pg} for {symbol}@{timeframe} from {exchange} (limit: {fetch_limit})...")
             url = config['base_url'] + config['kline_endpoint']
             params = {'limit': str(fetch_limit)}
             if exchange == 'okx': params.update({'instId': fmt_symbol, 'bar': fmt_tf})
@@ -197,7 +197,7 @@ class ExchangeFetcher:
                     if not norm_data: break
                     all_data = norm_data + all_data
                     rem_limit -= len(norm_data); pg += 1
-                else: logger.info(f"Exchange returned no more data. Ending pagination."); break
+                else: logger.debug(f"Exchange returned no more data. Ending pagination."); break
             except Exception as e: logger.warning(f"Request failed during pagination: {e}"); break
         if all_data:
             if len(all_data) < limit * 0.9:
