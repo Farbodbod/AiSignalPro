@@ -1,4 +1,4 @@
-# engines/master_orchestrator.py (v31.2 - The Final Mandate)
+# engines/master_orchestrator.py (v31.4 - The Definitive Logging Patch)
 
 import pandas as pd
 import logging
@@ -17,12 +17,12 @@ logger = logging.getLogger(__name__)
 
 class MasterOrchestrator:
     """
-    The strategic mastermind of AiSignalPro (v31.2 - The Final Mandate).
+    The strategic mastermind of AiSignalPro (v31.4 - The Definitive Logging Patch).
     -------------------------------------------------------------------------
-    This is the definitive, production-ready version. It restores the full,
-    unabridged AI prompt (the "Final Mandate") to the _get_ai_confirmation
-    method, ensuring the AI analyst operates with its complete and intended
-    set of rules. All hardening patches from v31.1 are preserved.
+    This definitive version completes the "glass box" logging initiative. It now
+    provides transparent logs for both approved and rejected signals at the R/R
+    and Signal Selection stages, offering full observability of the pipeline
+    without altering any core logic.
     """
 
     def __init__(self, config: Dict[str, Any]):
@@ -35,12 +35,13 @@ class MasterOrchestrator:
         ]
         self.gemini_handler = GeminiHandler()
         self.last_gemini_call_times: Dict[Tuple[str, str], float] = {}
-        self.ENGINE_VERSION = "31.2.0"
-        logger.info(f"MasterOrchestrator v{self.ENGINE_VERSION} (The Final Mandate) initialized.")
+        self.ENGINE_VERSION = "31.4.0"
+        logger.info(f"MasterOrchestrator v{self.ENGINE_VERSION} (The Definitive Logging Patch) initialized.")
 
     async def run_analysis_pipeline(
         self, df: pd.DataFrame, symbol: str, timeframe: str, previous_df: Optional[pd.DataFrame] = None,
     ) -> Tuple[Optional[Dict[str, Any]], Optional[pd.DataFrame]]:
+        # ... [This method is unchanged] ...
         try:
             required_cols = ['open', 'high', 'low', 'close', 'volume']
             missing_cols = [c for c in required_cols if c not in df.columns]
@@ -67,6 +68,7 @@ class MasterOrchestrator:
     async def run_strategy_pipeline(
         self, primary_analysis: Dict[str, Any], htf_context: Dict[str, Any], symbol: str, timeframe: str,
     ) -> Optional[Dict[str, Any]]:
+        # ... [This method's first half is unchanged] ...
         if not isinstance(primary_analysis, dict):
             logger.error(f"Primary analysis for {symbol}@{timeframe} is invalid (not a dict). Skipping strategies.")
             return {"status": "NEUTRAL", "message": "Invalid primary analysis package."}
@@ -79,6 +81,7 @@ class MasterOrchestrator:
             if not strategy_config.get("enabled", True): continue
             
             try:
+                # ... [Internal strategy execution loop is unchanged] ...
                 htf_analysis = {}
                 merged_strat_config = {**getattr(sc, "default_config", {}), **strategy_config}
                 if merged_strat_config.get("htf_confirmation_enabled"):
@@ -111,19 +114,42 @@ class MasterOrchestrator:
                 logger.error(f"Error running strategy '{strategy_name}' on {timeframe}: {e}", exc_info=True)
         
         if not valid_signals: return {"status": "NEUTRAL", "message": "No strategy conditions met.", "full_analysis": primary_analysis, "engine_version": self.ENGINE_VERSION}
-        min_rr = self.config.get("general", {}).get("min_risk_reward_ratio", 2.0); qualified_signals = [s for s in valid_signals if s.get("risk_reward_ratio", 0) >= min_rr]
+        
+        # --- R/R FILTER ---
+        min_rr = self.config.get("general", {}).get("min_risk_reward_ratio", 2.0)
+        qualified_signals = [s for s in valid_signals if s.get("risk_reward_ratio", 0) >= min_rr]
+        
+        # ✅ DEFINITIVE LOGGING (Filter 2: R/R - Rejection & Approval)
+        if len(valid_signals) > len(qualified_signals):
+            rejected_signals_info = [f"{s['strategy_name']}(R/R={s.get('risk_reward_ratio', 0):.2f})" for s in valid_signals if s not in qualified_signals]
+            logger.warning(f"   - R/R FILTER on {symbol}@{timeframe}: Dropped {len(rejected_signals_info)} signal(s) failing min R/R of {min_rr}. Rejected: [{', '.join(rejected_signals_info)}]")
+        elif valid_signals: # This condition means all valid signals passed the R/R check.
+            logger.info(f"   - R/R FILTER on {symbol}@{timeframe}: All {len(valid_signals)} signal(s) passed min R/R of {min_rr}.")
+        
         if not qualified_signals: return {"status": "NEUTRAL", "message": "Signals found but failed R/R quality check.", "full_analysis": primary_analysis, "engine_version": self.ENGINE_VERSION}
         
+        # --- BEST SIGNAL SELECTION FILTER ---
         best_signal = self._find_super_signal(qualified_signals)
         if not best_signal:
-            priority_list = self.config.get("strategy_priority", []); qualified_signals.sort(key=lambda s: priority_list.index(s.get("strategy_name")) if s.get("strategy_name") in priority_list else 99); best_signal = qualified_signals[0]
+            priority_list = self.config.get("strategy_priority", [])
+            qualified_signals.sort(key=lambda s: priority_list.index(s.get("strategy_name")) if s.get("strategy_name") in priority_list else 99)
+            best_signal = qualified_signals[0]
+            
+            # ✅ DEFINITIVE LOGGING (Filter 3: Best Signal Selection - Approval)
+            if len(qualified_signals) > 1:
+                contenders_by_priority = [s['strategy_name'] for s in qualified_signals]
+                logger.info(f"   - SIGNAL SELECTION on {symbol}@{timeframe}: No SuperSignal. Chose '{best_signal['strategy_name']}' based on priority. Priority Order: [{', '.join(contenders_by_priority)}]")
+            else: # Only one signal was left after the R/R filter.
+                 logger.info(f"   - SIGNAL SELECTION on {symbol}@{timeframe}: Only one qualified signal found. Proceeding with '{best_signal['strategy_name']}'.")
 
+        # --- AI CONFIRMATION FILTER ---
         ai_confirmation = await self._get_ai_confirmation(best_signal, symbol, timeframe)
         if ai_confirmation is None: return {"status": "NEUTRAL", "message": "Signal was vetoed by AI or AI response was invalid.", "full_analysis": primary_analysis, "engine_version": self.ENGINE_VERSION}
 
         return {"status": "SUCCESS", "symbol": symbol, "timeframe": timeframe, "base_signal": best_signal, "ai_confirmation": ai_confirmation, "full_analysis": primary_analysis, "engine_version": self.ENGINE_VERSION}
 
     def _find_super_signal(self, signals: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+        # ... [This method's logic is unchanged, but the log message is slightly improved for clarity] ...
         min_confluence = self.config.get("general", {}).get("min_confluence_for_super_signal", 3); buy_signals = [s for s in signals if s.get("direction") == "BUY"]; sell_signals = [s for s in signals if s.get("direction") == "SELL"]; super_direction, contributing_strategies = (None, [])
         if len(buy_signals) >= min_confluence: super_direction, contributing_strategies = ("BUY", buy_signals)
         elif len(sell_signals) >= min_confluence: super_direction, contributing_strategies = ("SELL", sell_signals)
@@ -136,10 +162,12 @@ class MasterOrchestrator:
             "targets": primary_signal.get("targets"), "risk_reward_ratio": primary_signal.get("risk_reward_ratio"),
             "confirmations": {"confluence_count": len(contributing_strategies), "contributing_strategies": [s.get("strategy_name") for s in contributing_strategies]}
         }
-        logger.info(f"🔥🔥 SUPER SIGNAL FOUND! {super_direction} with {len(contributing_strategies)} confirmations. 🔥🔥")
+        # The log message is now slightly more informative.
+        logger.info(f"🔥🔥 SUPER SIGNAL FOUND on {self.symbol}@{self.timeframe}! {super_direction} with {len(contributing_strategies)} confirmations. Primary strategy: '{primary_signal.get('strategy_name')}'. 🔥🔥")
         return super_signal
 
     async def _get_ai_confirmation(self, signal: Dict[str, Any], symbol: str, timeframe: str) -> Optional[Dict[str, Any]]:
+        # ... [This method is unchanged] ...
         cooldown_key = (symbol, timeframe); cooldown = self.config.get("general", {}).get("gemini_cooldown_seconds", 300); last_call_time = self.last_gemini_call_times.get(cooldown_key, 0)
         if (time.time() - last_call_time) < cooldown:
             logger.info(f"Gemini call for {symbol}@{timeframe} skipped due to cooldown."); return {"signal": "N/A", "confidence_percent": 0, "explanation_fa": "AI analysis skipped due to per-symbol cooldown."}
@@ -147,7 +175,6 @@ class MasterOrchestrator:
         prompt_context = {"signal_details": {k: v for k, v in signal.items() if k not in ["confirmations", "strategy_name"]}, "system_strategy": signal.get("strategy_name"), "system_reasons": signal.get("confirmations")}
         json_data = json.dumps(prompt_context, indent=2, ensure_ascii=False, default=str)
         
-        # ✅ THE FINAL MANDATE: Restored the full, unabridged AI prompt.
         prompt_template = f"""
 Act as a professional algorithmic trading signal validator with expertise in multi-timeframe confluence and strict JSON output. Your sole purpose is to provide a final, unbiased risk assessment.
 TASK: Analyze the provided structured JSON data for a trade signal on {symbol} ({timeframe}). Validate if a high-probability trade exists.
@@ -194,3 +221,4 @@ Here is the signal data to analyze:
             return None
         
         return ai_response
+
