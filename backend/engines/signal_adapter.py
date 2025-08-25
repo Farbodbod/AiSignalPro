@@ -176,7 +176,7 @@ class SignalAdapter:
         
         return (
             f"🔥 **AiSignalPro - Signal v{self.engine_version}** 🔥\n\n"
-            f"🪙 **{self.symbol}** | `{self.timeframe}`\n"
+            f"🌕 **{self.symbol}** | `{self.timeframe}`\n"
             f"📊 Signal: *{emoji} {direction_text}*\n"
             f"♟️ Strategy: _{self.strategy_name}_\n\n"
             f"🎯 **System Confidence: {system_confidence:.1f}%**\n"
