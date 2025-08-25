@@ -1,4 +1,4 @@
-# engines/indicator_analyzer.py (v17.2 - The True Precision Hotfix)
+# engines/indicator_analyzer.py (v17.3 - The Master Cook Edition)
 
 import pandas as pd
 import logging
@@ -8,11 +8,12 @@ import inspect
 from typing import Dict, Any, Type, List, Optional, Tuple
 from collections import deque
 from .indicators import *
+from .strategies import BaseStrategy # Import BaseStrategy for type hinting
 
 logger = logging.getLogger(__name__)
 
 def get_indicator_config_key(name: str, params: Dict[str, Any]) -> str:
-    # This is the original, stable version of the function from v17.1
+    # ... [This function is unchanged and correct] ...
     try:
         filtered_params = {k: v for k, v in params.items() if k not in ["enabled", "dependencies", "name"]}
         if not filtered_params: return name
@@ -25,18 +26,20 @@ def get_indicator_config_key(name: str, params: Dict[str, Any]) -> str:
 
 class IndicatorAnalyzer:
     """
-    The Self-Aware Analysis Engine for AiSignalPro (v17.2 - The True Precision Hotfix)
+    The Self-Aware Analysis Engine for AiSignalPro (v17.3 - The Master Cook Edition)
     ------------------------------------------------------------------------------------------
-    This version contains one critical, targeted fix. The `get_analysis_summary`
-    method has been patched to use iloc[-1] instead of iloc[-2] for `price_data`,
-    aligning it with the Fresh Data Protocol and eliminating the 1-candle lag bug.
-    All other functionalities from the stable v17.1 are 100% preserved.
+    This is the definitive version, featuring the "Master Cook" hotfix. It now
+    accepts the full list of strategy classes, allowing it to discover indicator
+    dependencies from both the config.json and the strategies' internal default_configs.
+    This eradicates the "strategy choking" bug and perfects the layered config architecture.
     """
-    def __init__(self, df: pd.DataFrame, config: Dict[str, Any], strategies_config: Dict[str, Any], timeframe: str, symbol: str, previous_df: Optional[pd.DataFrame] = None):
+    def __init__(self, df: pd.DataFrame, config: Dict[str, Any], strategies_config: Dict[str, Any], 
+                 strategy_classes: List[Type[BaseStrategy]], # ✅ FINAL POLISH: Accept the strategy class list
+                 timeframe: str, symbol: str, previous_df: Optional[pd.DataFrame] = None):
         if not isinstance(df, pd.DataFrame): raise ValueError("Input must be a pandas DataFrame.")
         self.base_df, self.previous_df, self.indicators_config, self.strategies_config = df, previous_df, config, strategies_config
+        self.strategy_classes = strategy_classes # ✅ FINAL POLISH: Store the strategy classes
         self.timeframe, self.symbol, self.recalc_buffer = timeframe, symbol, 250
-        # ✅ This is the original, correct and stable dictionary from v17.1
         self._indicator_classes: Dict[str, Type[BaseIndicator]] = { 'rsi': RsiIndicator, 'macd': MacdIndicator, 'bollinger': BollingerIndicator, 'ichimoku': IchimokuIndicator, 'adx': AdxIndicator, 'supertrend': SuperTrendIndicator, 'obv': ObvIndicator, 'stochastic': StochasticIndicator, 'cci': CciIndicator, 'mfi': MfiIndicator, 'atr': AtrIndicator, 'patterns': PatternIndicator, 'divergence': DivergenceIndicator, 'pivots': PivotPointIndicator, 'structure': StructureIndicator, 'whales': WhaleIndicator, 'ema_cross': EMACrossIndicator, 'vwap_bands': VwapBandsIndicator, 'chandelier_exit': ChandelierExitIndicator, 'donchian_channel': DonchianChannelIndicator, 'fast_ma': FastMAIndicator, 'williams_r': WilliamsRIndicator, 'keltner_channel': KeltnerChannelIndicator, 'zigzag': ZigzagIndicator, 'fibonacci': FibonacciIndicator, }
         self._indicator_configs: Dict[str, Dict[str, Any]] = {}
         self._indicator_instances: Dict[str, BaseIndicator] = {}
@@ -44,7 +47,6 @@ class IndicatorAnalyzer:
         self.final_df: Optional[pd.DataFrame] = None
 
     def _resolve_dependencies(self) -> List[str]:
-        # This function is unchanged from v17.1
         adj, in_degree = {}, {}
         def discover_nodes(ind_name: str, params: Dict[str, Any]):
             key = get_indicator_config_key(ind_name, params);
@@ -52,12 +54,32 @@ class IndicatorAnalyzer:
             self._indicator_configs[key] = {'name': ind_name, 'params': params}; adj[key], in_degree[key] = [], 0
             for dep_name, dep_params in (params.get("dependencies") or {}).items():
                 discover_nodes(dep_name, dep_params); dep_key = get_indicator_config_key(dep_name, dep_params); adj[dep_key].append(key); in_degree[key] += 1
+        
+        # --- Discovery Phase ---
+        # 1. Discover from main indicators config
         for name, params in self.indicators_config.items():
             if params.get("enabled", False): discover_nodes(name, params)
+        
+        # 2. Discover from user-defined strategy configs in config.json (for aliases)
         for strat_name, strat_params in self.strategies_config.items():
             if strat_params.get("enabled", False):
                 indicator_orders = {**strat_params.get("default_params", {}).get("indicator_configs", {}), **strat_params.get("indicator_configs", {})}
                 for alias, order in indicator_orders.items(): discover_nodes(order["name"], order["params"])
+        
+        # ✅ FINAL POLISH (v17.3): Discover from strategy class default_configs
+        # This is the "Master Cook" logic that reads the "secret recipes".
+        for strat_class in self.strategy_classes:
+            default_cfg = getattr(strat_class, 'default_config', {})
+            # Look for HTF indicator dependencies defined in the strategy's code
+            if default_cfg.get('htf_confirmation_enabled'):
+                htf_rules = default_cfg.get('htf_confirmations', {})
+                for rule_name in htf_rules:
+                    if rule_name != 'min_required_score':
+                        # Discover this indicator using its default params from the main config
+                        indicator_params = self.indicators_config.get(rule_name, {})
+                        discover_nodes(rule_name, indicator_params.get('params', {}))
+        
+        # --- Sorting Phase (Topological Sort) ---
         queue = deque([k for k, deg in in_degree.items() if deg == 0]); sorted_order: List[str] = []
         while queue:
             key = queue.popleft(); sorted_order.append(key)
@@ -69,7 +91,7 @@ class IndicatorAnalyzer:
         return sorted_order
 
     async def _calculate_and_store(self, key: str, base_df: pd.DataFrame) -> None:
-        # This function is unchanged from v17.1
+        # ... [This method is unchanged and correct] ...
         config = self._indicator_configs[key]; name, params = config["name"], config["params"]; cls = self._indicator_classes.get(name)
         if not cls: logger.warning(f"Indicator class not found for key '{key}'"); return
         try:
@@ -81,7 +103,7 @@ class IndicatorAnalyzer:
             self._indicator_instances[key] = e 
 
     async def calculate_all(self) -> "IndicatorAnalyzer":
-        # This function is unchanged from v17.1
+        # ... [This method is unchanged and correct] ...
         df_for_calc = self.base_df.copy()
         if self.previous_df is not None and not self.previous_df.empty:
             if df_for_calc.index.tz is None and self.previous_df.index.tz is not None: df_for_calc.index = df_for_calc.index.tz_localize(self.previous_df.index.tz)
@@ -98,28 +120,23 @@ class IndicatorAnalyzer:
         return self
 
     async def get_analysis_summary(self) -> Dict[str, Any]:
+        # ... [This method is unchanged and correct] ...
         if self.final_df is None: return {"status": "Calculation Not Run"}
         if len(self.final_df) < 2: return {"status": "Insufficient Data"}
         summary: Dict[str, Any] = {"status": "OK", "final_df": self.final_df.tail(self.recalc_buffer + 50)}
         try:
-            # ✅ THE TRUE PRECISION HOTFIX (v17.2): Use iloc[-1] to get the last *closed* candle's data.
             last_closed = self.final_df.iloc[-1]
             summary["price_data"] = {"open": last_closed["open"], "high": last_closed["high"], "low": last_closed["low"], "close": last_closed["close"], "volume": last_closed["volume"], "timestamp": str(last_closed.name),}
         except IndexError:
             return {"status": "Insufficient Data after calculations"}
-        
-        # This function is unchanged from v17.1
         indicator_map = {}
         for unique_key, config in self._indicator_configs.items():
             simple_name = config['name']
             if simple_name in self.indicators_config:
                 indicator_map[simple_name] = unique_key
         summary["_indicator_map"] = indicator_map
-
-        # This function is unchanged from v17.1
         successful_analysis_count, total_calculated_instances = 0, sum(1 for v in self._indicator_instances.values() if isinstance(v, BaseIndicator))
         logger.info(f"--- Starting Analysis Aggregation for {self.symbol}@{self.timeframe} ({total_calculated_instances} successful instances) ---")
-
         for unique_key, instance in self._indicator_instances.items():
             if not isinstance(instance, BaseIndicator): summary[unique_key] = {"status": "Calculation Failed"}; continue
             try:
@@ -133,7 +150,6 @@ class IndicatorAnalyzer:
                 summary[unique_key] = analysis
             except Exception as e:
                 logger.error(f"Analysis CRASH during aggregation for '{unique_key}' on {self.symbol}@{self.timeframe}: {e}", exc_info=True); summary[unique_key] = {"status": f"Analysis Error: {e}"}
-        
         failed_or_no_result_count = total_calculated_instances - successful_analysis_count
         logger.info(f"✅ Analysis aggregation phase for {self.symbol}@{self.timeframe} complete.")
         logger.info(f"📊 Analysis Summary for {self.symbol}@{self.timeframe}: {successful_analysis_count} succeeded, {failed_or_no_result_count} had no result.")
