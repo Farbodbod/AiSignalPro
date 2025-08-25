@@ -182,23 +182,28 @@
       "htf_confirmations": { "min_required_score": 2, "adx": {"weight": 1, "min_strength": 25}, "supertrend": {"weight": 1} }
     },
     "KeltnerMomentumBreakout": {
-      "enabled": true,
-      "market_regime_filter_enabled": true,
-      "required_regime": "TRENDING",
-      "regime_adx_threshold": 25.0,
-      "outlier_candle_shield_enabled": true,
-      "outlier_atr_multiplier": 3.5,
-      "exhaustion_shield_enabled": true,
-      "buy_exhaustion_rsi": 70.0,
-      "sell_exhaustion_rsi": 30.0,
-      "min_momentum_score": 5,
-      "weights": { "adx_strength": 2, "cci_thrust": 3, "htf_alignment": 2, "candlestick": 1 },
-      "adx_threshold": 25.0,
-      "cci_threshold": 100.0,
-      "candlestick_confirmation_enabled": true,
-      "htf_confirmation_enabled": true,
-      "htf_map": { "5m": "15m", "15m": "1h", "1h": "4h", "4h": "1d" },
-      "htf_confirmations": { "min_required_score": 2, "adx": {"weight": 1, "min_strength": 25}, "supertrend": {"weight": 1} }
+        "enabled": true,
+        "market_regime_filter_enabled": true,
+        "required_regime": "TRENDING",
+        "regime_adx_threshold": 22.0,
+        "outlier_candle_shield_enabled": true,
+        "outlier_atr_multiplier": 3.5,
+        "exhaustion_shield_enabled": true,
+        "rsi_exhaustion_lookback": 200,
+        "rsi_buy_percentile": 90,
+        "rsi_sell_percentile": 10,
+        "min_momentum_score": {
+            "low_tf": 5,
+            "high_tf": 7
+        },
+        "cooldown_bars": 5,
+        "weights": {
+            "volume_catalyst": 4,
+            "momentum_thrust": 3,
+            "volatility_release": 3
+        },
+        "cci_threshold": 100.0,
+        "min_rr_ratio": 2.0
     },
     "TrendRiderPro": {
       "enabled": true,
