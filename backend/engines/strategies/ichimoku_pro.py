@@ -18,7 +18,7 @@ class IchimokuHybridPro(BaseStrategy):
     """
     strategy_name: str = "IchimokuHybridPro"
     default_config: ClassVar[Dict[str, Any]] = {
-        "min_total_score": 75.0,
+        "min_total_score": 65.0,
         "market_regime_adx": 23,
         "sl_mode": "kumo",
         "min_rr_ratio": 2.0,
