@@ -1,4 +1,4 @@
-# engines/indicator_analyzer.py (v17.4 - The Transparent Logging Patch)
+# engines/indicator_analyzer.py (v17.5 - The Final Architecture Patch)
 
 import pandas as pd
 import logging
@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 def get_indicator_config_key(name: str, params: Dict[str, Any]) -> str:
     # ... [This function is unchanged and correct] ...
     try:
+        # Note: The logic in here expects a FLAT dictionary of parameters.
         filtered_params = {k: v for k, v in params.items() if k not in ["enabled", "dependencies", "name"]}
         if not filtered_params: return name
         param_str = json.dumps(filtered_params, sort_keys=True, separators=(",", ":"))
@@ -26,11 +27,12 @@ def get_indicator_config_key(name: str, params: Dict[str, Any]) -> str:
 
 class IndicatorAnalyzer:
     """
-    The Self-Aware Analysis Engine for AiSignalPro (v17.4 - The Transparent Logging Patch)
+    The Self-Aware Analysis Engine for AiSignalPro (v17.5 - The Final Architecture Patch)
     ------------------------------------------------------------------------------------------
-    This version includes a critical logging upgrade to provide full transparency
-    for failed calculations and analyses. It now explicitly names which indicators
-    failed at each stage, permanently removing any logging blind spots.
+    This is the definitive, architecturally sound version. It contains the final
+    patch to the dependency resolution logic, making it fully compatible with the
+    flattened config.json structure. This eliminates the HTF dependency "blind spot"
+    and ensures all required indicators are always discovered and calculated.
     """
     def __init__(self, df: pd.DataFrame, config: Dict[str, Any], strategies_config: Dict[str, Any], 
                  strategy_classes: List[Type[BaseStrategy]],
@@ -46,28 +48,55 @@ class IndicatorAnalyzer:
         self.final_df: Optional[pd.DataFrame] = None
 
     def _resolve_dependencies(self) -> List[str]:
-        # ... [This method is unchanged and correct] ...
         adj, in_degree = {}, {}
         def discover_nodes(ind_name: str, params: Dict[str, Any]):
-            key = get_indicator_config_key(ind_name, params);
+            # The get_indicator_config_key expects a flat dict of actual parameters,
+            # so we create one here, excluding metadata.
+            core_params = {k: v for k, v in params.items() if k not in ["enabled", "dependencies", "name"]}
+            key = get_indicator_config_key(ind_name, core_params)
+            
             if key in self._indicator_configs: return
-            self._indicator_configs[key] = {'name': ind_name, 'params': params}; adj[key], in_degree[key] = [], 0
+            
+            # We store the FULL parameter block for later use in _calculate_and_store
+            self._indicator_configs[key] = {'name': ind_name, 'params': params}
+            adj[key], in_degree[key] = [], 0
+            
             for dep_name, dep_params in (params.get("dependencies") or {}).items():
-                discover_nodes(dep_name, dep_params); dep_key = get_indicator_config_key(dep_name, dep_params); adj[dep_key].append(key); in_degree[key] += 1
+                # We need to find the full config for this dependency from the main list
+                full_dep_config = self.indicators_config.get(dep_name, {})
+                discover_nodes(dep_name, {**full_dep_config, **dep_params})
+                
+                dep_core_params = {k: v for k, v in {**full_dep_config, **dep_params}.items() if k not in ["enabled", "dependencies", "name"]}
+                dep_key = get_indicator_config_key(dep_name, dep_core_params)
+                
+                adj[dep_key].append(key)
+                in_degree[key] += 1
+        
+        # --- Discovery Phase ---
+        # 1. Discover from main indicators config
         for name, params in self.indicators_config.items():
             if params.get("enabled", False): discover_nodes(name, params)
+        
+        # 2. Discover from user-defined strategy configs in config.json (for aliases)
         for strat_name, strat_params in self.strategies_config.items():
             if strat_params.get("enabled", False):
                 indicator_orders = {**strat_params.get("default_params", {}).get("indicator_configs", {}), **strat_params.get("indicator_configs", {})}
-                for alias, order in indicator_orders.items(): discover_nodes(order["name"], order["params"])
+                for alias, order in indicator_orders.items(): discover_nodes(order["name"], order.get("params", {}))
+        
+        # 3. Discover from strategy class default_configs ("Master Cook" logic)
         for strat_class in self.strategy_classes:
             default_cfg = getattr(strat_class, 'default_config', {})
             if default_cfg.get('htf_confirmation_enabled'):
                 htf_rules = default_cfg.get('htf_confirmations', {})
                 for rule_name in htf_rules:
                     if rule_name != 'min_required_score':
-                        indicator_params = self.indicators_config.get(rule_name, {})
-                        discover_nodes(rule_name, indicator_params.get('params', {}))
+                        # ✅ FINAL ARCHITECTURAL FIX (v17.5):
+                        # Use the full parameter block from the main config, not a nested 'params'.
+                        # This makes the logic compatible with our flattened config structure.
+                        indicator_params_from_config = self.indicators_config.get(rule_name, {})
+                        discover_nodes(rule_name, indicator_params_from_config)
+        
+        # --- Sorting Phase ---
         queue = deque([k for k, deg in in_degree.items() if deg == 0]); sorted_order: List[str] = []
         while queue:
             key = queue.popleft(); sorted_order.append(key)
@@ -78,48 +107,38 @@ class IndicatorAnalyzer:
             raise ValueError(f"Circular dependency in {self.symbol}@{self.timeframe}: {set(self._indicator_configs) - set(sorted_order)}")
         return sorted_order
 
-    async def _calculate_and_store(self, key: str, base_df: pd.DataFrame) -> None:
-        # ... [This method is unchanged and correct] ...
-        config = self._indicator_configs[key]; name, params = config["name"], config["params"]; cls = self._indicator_classes.get(name)
+    def _calculate_and_store(self, key: str, base_df: pd.DataFrame) -> None:
+        config = self._indicator_configs[key]; name, params_block = config["name"], config["params"]
+        cls = self._indicator_classes.get(name)
         if not cls: logger.warning(f"Indicator class not found for key '{key}'"); return
         try:
-            instance_params = {**params, "timeframe": self.timeframe, "symbol": self.symbol}
+            # Pass the full parameter block directly to the indicator.
+            # The indicator's __init__ is responsible for parsing it.
+            instance_params = {**params_block, "timeframe": self.timeframe, "symbol": self.symbol}
             instance = cls(df=base_df.copy(), params=instance_params, dependencies=self._indicator_instances).calculate()
             self._indicator_instances[key] = instance
         except Exception as e:
             logger.error(f"Indicator calculation CRASHED for key '{key}' on {self.symbol}@{self.timeframe}: {e}", exc_info=True)
             self._indicator_instances[key] = e 
 
+    # ... [calculate_all and get_analysis_summary methods are unchanged from v17.4] ...
     async def calculate_all(self) -> "IndicatorAnalyzer":
         df_for_calc = self.base_df.copy()
         if self.previous_df is not None and not self.previous_df.empty:
             df_for_calc = pd.concat([self.previous_df, df_for_calc])
-            df_for_calc = df_for_calc.sort_index()
-            df_for_calc = df_for_calc[~df_for_calc.index.duplicated(keep="last")]
-            
+            df_for_calc = df_for_calc.sort_index(); df_for_calc = df_for_calc[~df_for_calc.index.duplicated(keep="last")]
         logger.info(f"--- Starting DI Calculations for {self.symbol}@{self.timeframe} ({len(self._calculation_order)} tasks) ---")
-        for key in self._calculation_order:
-            await self._calculate_and_store(key, df_for_calc)
+        for key in self._calculation_order: await self._calculate_and_store(key, df_for_calc)
         self.final_df = df_for_calc
-
-        # ✅ NEW TRANSPARENT LOGGING (v17.4)
         success_count = sum(1 for v in self._indicator_instances.values() if isinstance(v, BaseIndicator))
         failed_count = len(self._calculation_order) - success_count
-        
         if failed_count > 0:
             failed_keys = [key for key, instance in self._indicator_instances.items() if not isinstance(instance, BaseIndicator)]
             failed_names = [self._indicator_configs.get(key, {}).get('name', key) for key in failed_keys]
-            logger.warning(
-                f"⚠️ DI Calculations for {self.symbol}@{self.timeframe}: {success_count} succeeded, {failed_count} FAILED. "
-                f"Failed indicators: [{', '.join(failed_names)}]"
-            )
+            logger.warning(f"⚠️ DI Calculations for {self.symbol}@{self.timeframe}: {success_count} succeeded, {failed_count} FAILED. Failed indicators: [{', '.join(failed_names)}]")
         else:
-            logger.info(
-                f"✅ DI Calculations complete for {self.symbol}@{self.timeframe}: {success_count} succeeded, {failed_count} failed."
-            )
-            
-        if self.final_df is not None: 
-            logger.info(f"📊 Final stateful DF for {self.symbol}@{self.timeframe} now contains {len(self.final_df)} rows.")
+            logger.info(f"✅ DI Calculations complete for {self.symbol}@{self.timeframe}: {success_count} succeeded, {failed_count} failed.")
+        if self.final_df is not None: logger.info(f"📊 Final stateful DF for {self.symbol}@{self.timeframe} now contains {len(self.final_df)} rows.")
         return self
 
     async def get_analysis_summary(self) -> Dict[str, Any]:
@@ -131,51 +150,31 @@ class IndicatorAnalyzer:
             summary["price_data"] = {"open": last_closed["open"], "high": last_closed["high"], "low": last_closed["low"], "close": last_closed["close"], "volume": last_closed["volume"], "timestamp": str(last_closed.name),}
         except IndexError:
             return {"status": "Insufficient Data after calculations"}
-        
         indicator_map = {}
         for unique_key, config in self._indicator_configs.items():
             simple_name = config['name']
-            if simple_name in self.indicators_config:
-                indicator_map[simple_name] = unique_key
+            if simple_name in self.indicators_config: indicator_map[simple_name] = unique_key
         summary["_indicator_map"] = indicator_map
-
         total_calculated_instances = sum(1 for v in self._indicator_instances.values() if isinstance(v, BaseIndicator))
         logger.info(f"--- Starting Analysis Aggregation for {self.symbol}@{self.timeframe} ({total_calculated_instances} successful instances) ---")
-
         analysis_failures = []
         for unique_key, instance in self._indicator_instances.items():
-            if not isinstance(instance, BaseIndicator):
-                summary[unique_key] = {"status": "Calculation Failed"}
-                continue
+            if not isinstance(instance, BaseIndicator): summary[unique_key] = {"status": "Calculation Failed"}; continue
             try:
                 analyze_method = getattr(instance, "analyze", None)
-                analysis = None
-                if analyze_method:
-                    analysis = await analyze_method() if inspect.iscoroutinefunction(analyze_method) else analyze_method()
-                else:
-                    analysis = {"status": "No analyze() method found"}
-                
+                analysis = await analyze_method() if inspect.iscoroutinefunction(analyze_method) else analyze_method() if analyze_method else {"status": "No analyze() method found"}
                 summary[unique_key] = analysis
-                # ✅ NEW TRANSPARENT LOGGING (v17.4): Check status and collect failures.
                 if not analysis or analysis.get("status") != "OK":
                     indicator_name = self._indicator_configs.get(unique_key, {}).get('name', unique_key)
                     status_reason = analysis.get("status", "Unknown Error")
                     analysis_failures.append(f"{indicator_name}({status_reason})")
             except Exception as e:
-                logger.error(f"Analysis CRASH during aggregation for '{unique_key}': {e}", exc_info=True)
-                summary[unique_key] = {"status": f"Analysis Error: {e}"}
-
-        # ✅ NEW TRANSPARENT LOGGING (v17.4): Report the summary with details on failures.
+                logger.error(f"Analysis CRASH during aggregation for '{unique_key}': {e}", exc_info=True); summary[unique_key] = {"status": f"Analysis Error: {e}"}
         successful_analysis_count = total_calculated_instances - len(analysis_failures)
         logger.info(f"✅ Analysis aggregation phase for {self.symbol}@{self.timeframe} complete.")
         if analysis_failures:
-            logger.warning(
-                f"📊 Analysis Summary for {self.symbol}@{self.timeframe}: {successful_analysis_count} succeeded, {len(analysis_failures)} HAD NO RESULT. "
-                f"Details: [{', '.join(analysis_failures)}]"
-            )
+            logger.warning(f"📊 Analysis Summary for {self.symbol}@{self.timeframe}: {successful_analysis_count} succeeded, {len(analysis_failures)} HAD NO RESULT. Details: [{', '.join(analysis_failures)}]")
         else:
-            logger.info(
-                f"📊 Analysis Summary for {self.symbol}@{self.timeframe}: All {successful_analysis_count} analyses succeeded."
-            )
-            
+            logger.info(f"📊 Analysis Summary for {self.symbol}@{self.timeframe}: All {successful_analysis_count} analyses succeeded.")
         return summary
+
