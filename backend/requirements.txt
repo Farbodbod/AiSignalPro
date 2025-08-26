@@ -23,4 +23,4 @@ pandas==2.2.2
 pandas-ta==0.3.14b0
 TA-Lib-Precompiled==0.4.25
 httpx
-#final deploy trigger v32.0
+#final deploy trigger v33.0
