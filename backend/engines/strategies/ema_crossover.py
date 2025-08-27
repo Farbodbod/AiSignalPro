@@ -1,42 +1,59 @@
-# backend/engines/strategies/ema_crossover.py (v4.2 - HTF Logic Fix)
+# backend/engines/strategies/ema_crossover.py (v5.0 - Scoring Engine Upgrade)
 
 import logging
-from typing import Dict, Any, Optional, ClassVar
+from typing import Dict, Any, Optional, ClassVar, List
 from .base_strategy import BaseStrategy
 
 logger = logging.getLogger(__name__)
 
 class EmaCrossoverStrategy(BaseStrategy):
     """
-    EmaCrossoverStrategy - (v4.2 - HTF Logic Fix)
+    EmaCrossoverStrategy - (v5.0 - Scoring Engine Upgrade)
     -------------------------------------------------------------------
-    This version fixes a critical bug where the weighted HTF confirmation logic
-    from the config was not being used. The strategy now correctly applies the
-    multi-factor HTF score as originally designed.
+    This version represents a major architectural evolution. The previous
+    "all-or-nothing" sequential filter funnel has been replaced with a
+    sophisticated weighted "Scoring Engine". Instead of failing on a single
+    unmet condition, the strategy now calculates a confirmation score based on
+    configurable weights for each pillar (Master Trend, MACD, HTF, etc.).
+    This provides immense flexibility and intelligence, transforming the strategy
+    from a rigid checklist-follower into an adaptive, high-performance engine.
     """
     strategy_name: str = "EmaCrossoverStrategy"
 
     default_config: ClassVar[Dict[str, Any]] = {
-        "default_params": { "min_adx_strength": 23.0, "candlestick_confirmation_enabled": True, },
-        "master_trend_filter": { "enabled": True, "ma_indicator": "fast_ma", "ma_period": 200 },
-        "strength_engine": { "macd_confirmation_enabled": True, "volume_confirmation_enabled": True },
+        # ✅ ARCHITECTURAL UPGRADE (v5.0): New Scoring Engine
+        "min_confirmation_score": 6,
+        "weights": {
+            "master_trend": 3,
+            "macd": 2,
+            "htf_alignment": 2,
+            "adx_strength": 1,
+            "volume": 1,
+            "candlestick": 1
+        },
+
+        # --- Component Settings (used by the scoring engine) ---
+        "master_trend_filter_enabled": True,
+        "macd_confirmation_enabled": True,
+        "volume_confirmation_enabled": True,
+        "adx_confirmation_enabled": True,
+        "min_adx_strength": 20.0,
+        "candlestick_confirmation_enabled": True,
+        
+        # --- Unchanged Settings ---
+        "master_trend_ma_indicator": "fast_ma",
         "volatility_regimes": { "low_atr_pct_threshold": 1.5, "low_vol_sl_multiplier": 2.0, "high_vol_sl_multiplier": 3.0 },
         "htf_confirmation_enabled": True,
         "htf_map": { "5m": "15m", "15m": "1h", "1h": "4h", "4h": "1d" },
         "htf_confirmations": {
-            "min_required_score": 2,
-            "adx": {"weight": 1, "min_strength": 25},
+            "min_required_score": 1,
+            "adx": {"weight": 1, "min_strength": 22},
             "supertrend": {"weight": 1}
         }
     }
     
     def _get_signal_config(self) -> Dict[str, Any]:
-        final_cfg = self.config.copy()
-        base_params = self.config.get("default_params", {})
-        tf_overrides = self.config.get("timeframe_overrides", {}).get(self.primary_timeframe, {})
-        final_params = {**base_params, **tf_overrides}
-        final_cfg.update(final_params)
-        return final_cfg
+        return self.config.copy()
 
     def check_signal(self) -> Optional[Dict[str, Any]]:
         cfg = self._get_signal_config()
@@ -45,114 +62,82 @@ class EmaCrossoverStrategy(BaseStrategy):
             return None
 
         # --- 1. Dynamic Data Availability Check ---
-        required_names = ['ema_cross', 'adx', 'atr']
-        trend_cfg = cfg.get('master_trend_filter', {})
-        strength_cfg = cfg.get('strength_engine', {})
-        if trend_cfg.get('enabled') and trend_cfg.get('ma_indicator'):
-            required_names.append(trend_cfg.get('ma_indicator'))
-        if strength_cfg.get('macd_confirmation_enabled'):
-            required_names.append('macd')
-        if strength_cfg.get('volume_confirmation_enabled'):
-            required_names.append('whales')
-        if cfg.get('candlestick_confirmation_enabled'):
-            required_names.append('patterns')
-        if cfg.get('htf_confirmation_enabled'): # Also add HTF dependencies
+        required_names = ['ema_cross', 'atr']
+        if cfg.get('master_trend_filter_enabled'): required_names.append(cfg.get('master_trend_ma_indicator', 'fast_ma'))
+        if cfg.get('macd_confirmation_enabled'): required_names.append('macd')
+        if cfg.get('volume_confirmation_enabled'): required_names.append('whales')
+        if cfg.get('adx_confirmation_enabled'): required_names.append('adx')
+        if cfg.get('candlestick_confirmation_enabled'): required_names.append('patterns')
+        if cfg.get('htf_confirmation_enabled'):
             htf_rules = cfg.get('htf_confirmations', {})
+            # ✅ FINAL POLISH (v5.0): Corrected typo hf_rules -> htf_rules
             if "supertrend" in htf_rules: required_names.append('supertrend')
-            if "adx" in htf_rules: required_names.append('adx')
-
+        
         indicators = {name: self.get_indicator(name) for name in list(set(required_names))}
         missing_indicators = [name for name, data in indicators.items() if data is None]
-        data_is_ok = not missing_indicators
-        self._log_criteria("Data Availability", data_is_ok, f"Invalid/Missing: {', '.join(missing_indicators)}" if not data_is_ok else "All required data is valid.")
-        if not data_is_ok:
-            self._log_final_decision("HOLD", "Indicators missing.")
-            return None
+        if missing_indicators:
+            self._log_criteria("Data Availability", False, f"Invalid/Missing: {', '.join(missing_indicators)}"); self._log_final_decision("HOLD", "Indicators missing."); return None
+        self._log_criteria("Data Availability", True, "All required data is valid.")
 
         # --- 2. Primary Trigger (EMA Crossover) ---
         primary_signal = (indicators['ema_cross'].get('analysis') or {}).get('signal')
-        trigger_is_ok = primary_signal in ["Buy", "Sell"]
-        self._log_criteria("Primary Trigger (EMA Cross)", trigger_is_ok, f"Signal: {primary_signal}")
-        if not trigger_is_ok:
-            self._log_final_decision("HOLD", "No primary trigger.")
-            return None
+        if primary_signal not in ["Buy", "Sell"]:
+            self._log_criteria("Primary Trigger (EMA Cross)", False, f"Signal: {primary_signal}"); self._log_final_decision("HOLD", "No primary trigger."); return None
+        self._log_criteria("Primary Trigger (EMA Cross)", True, f"Signal: {primary_signal}")
         signal_direction = primary_signal.upper()
-        confirmations = {"entry_trigger": "EMA Cross"}
+        
+        # --- 3. Confirmation Scoring Engine ---
+        score = 0; confirmations_passed: List[str] = []; weights = cfg.get('weights', {})
 
-        # --- 3. Confirmation Funnel ---
-        master_trend_ok = True
-        if trend_cfg.get('enabled'):
-            ma_indicator_name = trend_cfg.get('ma_indicator')
-            master_ma_data = indicators.get(ma_indicator_name)
-            if master_ma_data:
-                ma_value = (master_ma_data.get('values') or {}).get('ma_value')
-                if ma_value is not None:
-                    master_trend_ok = not ((signal_direction == "BUY" and self.price_data.get('close', 0) < ma_value) or \
-                                           (signal_direction == "SELL" and self.price_data.get('close', 0) > ma_value))
-                else: master_trend_ok = False
-            else: master_trend_ok = False
-        self._log_criteria("Pillar 1: Master Trend", master_trend_ok, "Signal against Master MA." if not master_trend_ok else "Signal aligned with Master MA.")
-        if not master_trend_ok: self._log_final_decision("HOLD", "Master Trend filter failed."); return None
-        confirmations['master_trend_filter'] = "Passed"
+        if cfg.get('master_trend_filter_enabled'):
+            master_ma_data = indicators.get(cfg.get('master_trend_ma_indicator'))
+            is_ok = False
+            if master_ma_data and (ma_value := (master_ma_data.get('values') or {}).get('ma_value')) is not None:
+                is_ok = not ((signal_direction == "BUY" and self.price_data['close'] < ma_value) or (signal_direction == "SELL" and self.price_data['close'] > ma_value))
+            if is_ok: score += weights.get('master_trend', 0); confirmations_passed.append("Master Trend")
+        
+        if cfg.get('macd_confirmation_enabled'):
+            histo = (indicators.get('macd', {}).get('values') or {}).get('histogram', 0)
+            is_ok = not ((signal_direction == "BUY" and histo < 0) or (signal_direction == "SELL" and histo > 0))
+            if is_ok: score += weights.get('macd', 0); confirmations_passed.append("MACD")
 
-        macd_ok = True
-        if strength_cfg.get('macd_confirmation_enabled'):
-            histo = (indicators['macd'].get('values') or {}).get('histogram', 0)
-            macd_ok = not ((signal_direction == "BUY" and histo < 0) or (signal_direction == "SELL" and histo > 0))
-        self._log_criteria("Pillar 2: MACD", macd_ok, "Momentum not confirmed." if not macd_ok else "Momentum confirmed.")
-        if not macd_ok: self._log_final_decision("HOLD", "MACD filter failed."); return None
-        confirmations['macd_filter'] = "Passed"
+        if cfg.get('volume_confirmation_enabled'):
+            if self._get_volume_confirmation(): score += weights.get('volume', 0); confirmations_passed.append("Volume")
+        
+        if cfg.get('adx_confirmation_enabled'):
+            adx_strength = (indicators.get('adx', {}).get('values') or {}).get('adx', 0)
+            if adx_strength >= cfg.get('min_adx_strength', 20.0): score += weights.get('adx_strength', 0); confirmations_passed.append("ADX")
 
-        volume_ok = True
-        if strength_cfg.get('volume_confirmation_enabled'):
-            volume_ok = self._get_volume_confirmation()
-        self._log_criteria("Pillar 2: Volume", volume_ok, "No volume confirmation." if not volume_ok else "Volume confirmed.")
-        if not volume_ok: self._log_final_decision("HOLD", "Volume filter failed."); return None
-        confirmations['volume_filter'] = "Passed"
-
-        adx_strength = (indicators['adx'].get('values') or {}).get('adx', 0)
-        adx_ok = adx_strength >= cfg['min_adx_strength']
-        self._log_criteria("ADX Filter", adx_ok, f"ADX strength {adx_strength:.2f} < min {cfg['min_adx_strength']}" if not adx_ok else f"ADX strength {adx_strength:.2f} OK.")
-        if not adx_ok: self._log_final_decision("HOLD", "ADX filter failed."); return None
-        confirmations['adx_filter'] = "Passed"
-
-        # ✅ HTF LOGIC FIX: Using the weighted scoring system from BaseStrategy.
-        htf_ok = True
         if cfg.get('htf_confirmation_enabled'):
-            htf_ok = self._get_trend_confirmation(signal_direction)
-        self._log_criteria("HTF Filter", htf_ok, "Not aligned with HTF." if not htf_ok else "HTF aligned.")
-        if not htf_ok: self._log_final_decision("HOLD", "HTF filter failed."); return None
-        confirmations['htf_filter'] = "Passed"
-        
-        candlestick_ok = True
+            if self._get_trend_confirmation(signal_direction): score += weights.get('htf_alignment', 0); confirmations_passed.append("HTF")
+
         if cfg.get('candlestick_confirmation_enabled'):
-            candlestick_ok = self._get_candlestick_confirmation(signal_direction) is not None
-        self._log_criteria("Candlestick Filter", candlestick_ok, "No confirming candle." if not candlestick_ok else "Confirming candle found.")
-        if not candlestick_ok: self._log_final_decision("HOLD", "Candlestick filter failed."); return None
-        confirmations['candlestick_filter'] = "Passed"
-        
+            if self._get_candlestick_confirmation(signal_direction) is not None: score += weights.get('candlestick', 0); confirmations_passed.append("Candlestick")
+
+        min_score = cfg.get('min_confirmation_score', 6)
+        score_is_ok = score >= min_score
+        self._log_criteria("Final Score", score_is_ok, f"Total Score: {score} vs Minimum: {min_score}")
+        if not score_is_ok: self._log_final_decision("HOLD", f"Confirmation score {score} is below required {min_score}."); return None
+
         # --- 4. Dynamic Risk Management ---
         entry_price = self.price_data.get('close')
         long_ema_val = (indicators['ema_cross'].get('values') or {}).get('long_ema')
         atr_value = (indicators['atr'].get('values') or {}).get('atr')
-        
-        risk_data_ok = all(v is not None for v in [entry_price, long_ema_val, atr_value])
-        self._log_criteria("Risk Data", risk_data_ok, "Missing data for SL." if not risk_data_ok else "Risk data available.")
-        if not risk_data_ok: self._log_final_decision("HOLD", "Risk data missing."); return None
+        if not all(v is not None for v in [entry_price, long_ema_val, atr_value]):
+            self._log_final_decision("HOLD", "Risk data missing."); return None
 
         vol_cfg = cfg.get('volatility_regimes', {})
         atr_pct = (indicators['atr'].get('values') or {}).get('atr_percent', 2.0)
         is_low_vol = atr_pct < vol_cfg.get('low_atr_pct_threshold', 1.5)
         atr_sl_multiplier = vol_cfg.get('low_vol_sl_multiplier', 2.0) if is_low_vol else vol_cfg.get('high_vol_sl_multiplier', 3.0)
-        
         stop_loss = long_ema_val - (atr_value * atr_sl_multiplier) if signal_direction == "BUY" else long_ema_val + (atr_value * atr_sl_multiplier)
         risk_params = self._calculate_smart_risk_management(entry_price, signal_direction, stop_loss)
         
-        risk_calc_ok = risk_params and risk_params.get("targets")
-        self._log_criteria("Risk Calculation", risk_calc_ok, "Failed to produce targets.")
-        if not risk_calc_ok: self._log_final_decision("HOLD", "Risk calc failed."); return None
+        if not (risk_params and risk_params.get("targets")):
+            self._log_final_decision("HOLD", "Risk calculation failed."); return None
         
         # --- 5. Final Decision ---
+        confirmations = {"score": score, "confirmations_passed": ", ".join(confirmations_passed)}
         self._log_final_decision(signal_direction, "All criteria met. EMA Crossover signal confirmed.")
 
         return { "direction": signal_direction, "entry_price": entry_price, **risk_params, "confirmations": confirmations }
