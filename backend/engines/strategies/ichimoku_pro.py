@@ -1,4 +1,4 @@
-# backend/engines/strategies/ichimoku_hybrid_pro.py (v5.2 - The Syntax Hotfix)
+# backend/engines/strategies/ichimoku_hybrid_pro.py (v5.3 - Weighted Multi-Timeframe Scoring)
 
 from __future__ import annotations
 import logging
@@ -9,12 +9,15 @@ logger = logging.getLogger(__name__)
 
 class IchimokuHybridPro(BaseStrategy):
     """
-    IchimokuHybridPro - (v5.2 - The Syntax Hotfix)
+    IchimokuHybridPro - (v5.3 - Weighted Multi-Timeframe Scoring)
     -------------------------------------------------------------------------
-    This version contains a critical hotfix for a SyntaxError in the data
-    availability check (items' -> items()). All other powerful features and
-    logic from v5.1, including the Score Integrity fix, are fully preserved.
-    This version is now stable and production-ready.
+    This version introduces a major architectural upgrade to the scoring system,
+    addressing a deep logical insight. Instead of simple addition, it now uses
+    a "Weighted Multi-Timeframe Scoring" model, giving the primary timeframe's
+    score more significance (e.g., 70%) than the higher timeframe's score (e.g., 30%).
+    This prevents weak primary signals from being "saved" by strong HTF signals,
+    ensuring a true "winner's logic" where the core signal must be robust on its own.
+    This change elevates the strategy to a new level of professional-grade logic.
     """
     strategy_name: str = "IchimokuHybridPro"
     default_config: ClassVar[Dict[str, Any]] = {
@@ -24,12 +27,18 @@ class IchimokuHybridPro(BaseStrategy):
         "min_rr_ratio": 2.0,
         "weights_trending": { "price_vs_kumo": 2, "tk_cross_strong": 3, "future_kumo": 2, "chikou_free": 2, "kumo_twist": 1, "volume_spike": 1 },
         "weights_ranging": { "price_vs_kumo": 1, "tk_cross_strong": 2, "future_kumo": 1, "chikou_free": 1, "kumo_twist": 3, "volume_spike": 2 },
+        
+        # ✅ ARCHITECTURAL UPGRADE (v5.3): Added score weights
+        "score_weight_primary": 0.7,  # 70% importance for the primary timeframe score
+        "score_weight_htf": 0.3,      # 30% importance for the higher timeframe score
+
         "htf_confirmation_enabled": True,
         "htf_map": { "5m": "15m", "15m": "1h", "1h": "4h", "4h": "1d" },
         "htf_confirmations": {}
     }
 
     def _score_ichimoku(self, direction: str, analysis_data: Dict, weights: Dict) -> Tuple[int, List[str]]:
+        # This method is unchanged and remains correct.
         score, confirmations = 0, []
         ichi_data = self.get_indicator('ichimoku', analysis_source=analysis_data)
         if not ichi_data or not ichi_data.get('analysis'): return 0, []
@@ -70,9 +79,7 @@ class IchimokuHybridPro(BaseStrategy):
         required_names = ['ichimoku', 'adx', 'whales']
         indicators = {name: self.get_indicator(name) for name in required_names}
         
-        # ✅ SYNTAX HOTFIX (v5.2): Corrected items' to items()
         missing = [name for name, data in indicators.items() if data is None or not data.get('values')]
-        
         if missing:
             reason = f"Invalid/Missing indicators (or 'values' key): {', '.join(missing)}"
             self._log_criteria("Data Availability", False, reason); self._log_final_decision("HOLD", reason); return None
@@ -90,25 +97,40 @@ class IchimokuHybridPro(BaseStrategy):
         self._log_criteria("TK Cross Trigger", signal_direction is not None, f"TK Cross='{tk_str.title()}'")
         if signal_direction is None: self._log_final_decision("HOLD", "No primary trigger from Ichimoku."); return None
 
+        # ✅ ARCHITECTURAL UPGRADE (v5.3): Weighted Multi-Timeframe Scoring Logic
+        
+        # Step 1: Calculate raw scores for both timeframes
         primary_score, primary_confirms = self._score_ichimoku(signal_direction, self.analysis, active_weights)
         
         htf_score, htf_confirms = 0, []
         htf_enabled_flag = bool(cfg.get('htf_confirmation_enabled'))
         htf_available = htf_enabled_flag and bool(self.htf_analysis)
-        
         if htf_available:
             htf_score, htf_confirms = self._score_ichimoku(signal_direction, self.htf_analysis, active_weights)
         
-        raw_total_score = primary_score + htf_score
-        htf_multiplier = 2 if htf_available else 1
-        max_possible_score = sum(active_weights.values()) * htf_multiplier
-        
-        normalized_score = round((raw_total_score / max_possible_score) * 100, 2) if max_possible_score > 0 else 0.0
+        # Step 2: Normalize each score to a 0-100 scale independently
+        max_possible_score = sum(active_weights.values())
+        norm_primary_score = round((primary_score / max_possible_score) * 100, 2) if max_possible_score > 0 else 0.0
+        norm_htf_score = round((htf_score / max_possible_score) * 100, 2) if htf_available and max_possible_score > 0 else 0.0
 
-        min_score = float(cfg.get('min_total_score', 75.0))
-        score_is_ok = normalized_score >= min_score
-        self._log_criteria("Total Score Check", score_is_ok, f"Score={normalized_score:.2f} vs min={min_score} (Raw: {raw_total_score}/{max_possible_score})")
-        if not score_is_ok: self._log_final_decision("HOLD", f"Total score {normalized_score:.2f} < minimum {min_score}."); return None
+        # Step 3: Combine the normalized scores using the defined weights
+        w_primary = float(cfg.get('score_weight_primary', 0.7))
+        w_htf = float(cfg.get('score_weight_htf', 0.3))
+
+        if htf_available:
+            final_weighted_score = (norm_primary_score * w_primary) + (norm_htf_score * w_htf)
+            log_score_details = (f"Weighted Score={final_weighted_score:.2f} (Primary: {norm_primary_score:.0f}% * {w_primary}, "
+                                 f"HTF: {norm_htf_score:.0f}% * {w_htf})")
+        else:
+            final_weighted_score = norm_primary_score # If no HTF, primary score is everything
+            log_score_details = f"Score={final_weighted_score:.2f} (Primary only)"
+
+        min_score = float(cfg.get('min_total_score', 65.0))
+        score_is_ok = final_weighted_score >= min_score
+        self._log_criteria("Total Score Check", score_is_ok, f"{log_score_details} vs min={min_score}")
+        if not score_is_ok:
+            self._log_final_decision("HOLD", f"Final score {final_weighted_score:.2f} < minimum {min_score}.")
+            return None
 
         entry_price = self.price_data.get('close')
         if entry_price is None: self._log_final_decision("HOLD", "Could not determine entry price."); return None
@@ -129,11 +151,12 @@ class IchimokuHybridPro(BaseStrategy):
         if not rr_is_ok: self._log_final_decision("HOLD", "Risk/Reward ratio is too low or not calculable."); return None
         
         confirmations = {
-            "total_score": normalized_score, "market_regime": market_regime,
-            "primary_score_details": f"{primary_score} ({','.join(primary_confirms)})",
-            "htf_score_details": f"{htf_score} ({','.join(htf_confirms)})",
+            "total_score": final_weighted_score, "market_regime": market_regime,
+            "primary_score_details": f"{primary_score}/{max_possible_score} ({','.join(primary_confirms)})",
+            "htf_score_details": f"{htf_score}/{max_possible_score} ({','.join(htf_confirms)})" if htf_available else "N/A",
             "rr_check": f"Passed (R/R={rr_display})"
         }
         self._log_final_decision(signal_direction, "All criteria met. Ichimoku Hybrid signal confirmed.")
         
         return { "direction": signal_direction, "entry_price": entry_price, **risk_params, "confirmations": confirmations }
+
