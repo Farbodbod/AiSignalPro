@@ -19,14 +19,14 @@ class KeltnerMomentumBreakout(BaseStrategy):
     strategy_name: str = "KeltnerMomentumBreakout"
 
     default_config: ClassVar[Dict[str, Any]] = {
-        "market_regime_filter_enabled": True, "required_regime": "TRENDING", "regime_adx_threshold": 22.0,
+        "market_regime_filter_enabled": True, "required_regime": "TRENDING", "regime_adx_threshold": 21.0,
         "outlier_candle_shield_enabled": True, "outlier_atr_multiplier": 3.5,
         "exhaustion_shield_enabled": True, "rsi_exhaustion_lookback": 200, "rsi_buy_percentile": 90, "rsi_sell_percentile": 10,
-        "min_momentum_score": {"low_tf": 7, "high_tf": 10},
-        "cooldown_bars": 5,
+        "min_momentum_score": {"low_tf": 8, "high_tf": 10},
+        "cooldown_bars": 3,
         "weights": { 
-            "volume_catalyst": 4, "momentum_thrust": 3, "volatility_release": 3,
-            "adx_strength": 2, "htf_alignment": 2, "candlestick": 1
+            "volume_catalyst": 2, "momentum_thrust": 3, "volatility_release": 2,
+            "adx_strength": 3, "htf_alignment": 2, "candlestick": 1
         },
         "adx_threshold": 25.0, "cci_threshold": 100.0, "min_rr_ratio": 2.0,
         
