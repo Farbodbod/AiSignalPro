@@ -218,16 +218,16 @@
       "enabled": true,
       "market_regime_filter_enabled": true,
       "required_regime": "TRENDING",
-      "regime_adx_threshold": 21.0,
+      "regime_adx_threshold": 20.0,
       "outlier_candle_shield_enabled": true,
-      "outlier_atr_multiplier": 4,
+      "outlier_atr_multiplier": 3.5,
       "exhaustion_shield_enabled": true,
-      "rsi_exhaustion_lookback": 150,
-      "rsi_buy_percentile": 85,
-      "rsi_sell_percentile": 15,
+      "rsi_exhaustion_lookback": 200,
+      "rsi_buy_percentile": 90,
+      "rsi_sell_percentile": 10,
       "min_momentum_score": {
-        "low_tf": 5,
-        "high_tf": 7
+        "low_tf": 8,
+        "high_tf": 10
       },
       "cooldown_bars": 3,
       "weights": {
@@ -239,7 +239,7 @@
         "candlestick": 1
       },
       "adx_threshold": 25.0,
-      "cci_threshold": 75.0,
+      "cci_threshold": 100,
       "min_rr_ratio": 2.0,
       "htf_confirmation_enabled": true,
       "htf_map": {
@@ -249,10 +249,10 @@
         "4h": "1d"
       },
       "htf_confirmations": {
-        "min_required_score": 2,
+        "min_required_score": 1,
         "adx": {
           "weight": 1,
-          "min_strength": 20
+          "min_strength": 25
         },
         "supertrend": {
           "weight": 1
