@@ -129,10 +129,12 @@
     },
     "IchimokuHybridPro": {
       "enabled": true,
-      "min_total_score": 65.0,
+      "min_total_score": 58.0,
       "market_regime_adx": 23,
       "sl_mode": "kumo",
       "min_rr_ratio": 2.0,
+      "score_weight_primary": 0.7,
+      "score_weight_htf": 0.3,
       "weights_trending": { "price_vs_kumo": 2, "tk_cross_strong": 3, "future_kumo": 2, "chikou_free": 2, "kumo_twist": 1, "volume_spike": 1 },
       "weights_ranging": { "price_vs_kumo": 1, "tk_cross_strong": 2, "future_kumo": 1, "chikou_free": 1, "kumo_twist": 3, "volume_spike": 2 },
       "htf_confirmation_enabled": true,
