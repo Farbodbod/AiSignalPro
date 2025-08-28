@@ -358,13 +358,13 @@
       "regime_filter_enabled": true,
       "max_adx_for_range": 20.0,
       "bbw_squeeze_enabled": true,
-      "bbw_quantile": 0.25,
+      "bbw_quantile": 0.40,
       "rsi_confirmation_enabled": true,
       "rsi_oversold_entry": 35.0,
       "rsi_overbought_entry": 65.0,
       "sl_atr_multiplier": 1.2,
       "min_rr_ratio": 1.5,
-      "max_sl_pct": 3.0
+      "max_sl_pct": 3.5
     },
     "WhaleReversal": {
       "enabled": true,
