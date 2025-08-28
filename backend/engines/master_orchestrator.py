@@ -14,7 +14,7 @@ from .gemini_handler import GeminiHandler
 from .strategies import *
 from core.news_fetcher import NewsFetcher
 from engines.signal_adapter import SignalAdapter
-from core.telegram_handler import TelegramHandler
+from .telegram_handler import TelegramHandler
 
 logger = logging.getLogger(__name__)
 
