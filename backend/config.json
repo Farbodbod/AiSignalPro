@@ -187,14 +187,38 @@
       "default_params": {
         "pivot_levels_to_check": ["R2", "R1", "S1", "S2"],
         "confluence_proximity_percent": 0.3,
-        "stoch_oversold": 25.0, "stoch_overbought": 75.0,
-        "cci_oversold": -100.0, "cci_overbought": 100.0,
-        "atr_sl_multiplier": 1.5, "min_rr_ratio": 2.0
+        "stoch_oversold": 25.0,
+        "stoch_overbought": 75.0,
+        "cci_oversold": -100.0,
+        "cci_overbought": 100.0,
+        "atr_sl_multiplier": 1.5,
+        "min_rr_ratio": 2.0,
+        "oscillator_logic": "OR"
       },
-      "timeframe_overrides": { "5m": { "confluence_proximity_percent": 0.2, "atr_sl_multiplier": 1.2 }, "1d": { "confluence_proximity_percent": 0.5, "min_rr_ratio": 2.5 } },
+      "timeframe_overrides": {
+        "5m": {
+          "confluence_proximity_percent": 0.2,
+          "atr_sl_multiplier": 1.2
+        },
+        "1d": {
+          "confluence_proximity_percent": 0.5,
+          "min_rr_ratio": 2.5
+        }
+      },
       "htf_confirmation_enabled": true,
-      "htf_map": { "5m": "15m", "15m": "1h", "1h": "4h", "4h": "1d" },
-      "htf_confirmations": { "min_required_score": 1, "adx": {"weight": 1, "min_strength": 25} }
+      "htf_map": {
+        "5m": "15m",
+        "15m": "1h",
+        "1h": "4h",
+        "4h": "1d"
+      },
+      "htf_confirmations": {
+        "min_required_score": 1,
+        "adx": {
+          "weight": 1,
+          "min_strength": 25
+        }
+      }
     },
     "PullbackSniperPro": {
       "enabled": true,
@@ -312,7 +336,7 @@
     "VwapMeanReversion": {
       "enabled": true,
       "max_adx_for_reversion": 25.0,
-      "oscillator_logic": "AND",
+      "oscillator_logic": "OR",
       "use_rsi": true,
       "rsi_oversold": 30.0,
       "rsi_overbought": 70.0,
