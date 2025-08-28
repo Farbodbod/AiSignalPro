@@ -1,134 +1,179 @@
-"""
-divergence.py
-ماژول تشخیص واگرایی‌های حرفه‌ای بین قیمت و اندیکاتورها:
-- پشتیبانی واگرایی‌های Regular و Hidden بین قیمت و RSI، MACD، OBV و اندیکاتورهای سفارشی
-- پشتیبانی مولتی‌تایم‌فریم و ساختار توسعه‌پذیر
-- شناسایی پیوت‌ها با الگوریتم ZigZag (argrelextrema)
-- اعتبارسنجی واگرایی‌ها با کندل، حجم، مومنتوم و شدت حرکت
-- اتصال به مدل یادگیری ماشین جهت یادگیری واگرایی‌های معتبر و پرتکرار
-Author: farbodbod1990
-"""
+# backend/engines/strategies/divergence_sniper.py (v6.0 - Scoring Engine Upgrade)
 
-import pandas as pd
-import numpy as np
-from typing import Dict, List, Any, Optional, Callable
-from scipy.signal import argrelextrema
-from sklearn.ensemble import RandomForestClassifier
+import logging
+from typing import Dict, Any, Optional, List, ClassVar
+from .base_strategy import BaseStrategy
 
-# ========================= اندیکاتورها =========================
-def calc_rsi(df: pd.DataFrame, period: int = 14) -> pd.Series:
-    delta = df['close'].diff()
-    gain = np.where(delta > 0, delta, 0)
-    loss = np.where(delta < 0, -delta, 0)
-    avg_gain = pd.Series(gain).rolling(window=period).mean()
-    avg_loss = pd.Series(loss).rolling(window=period).mean()
-    rs = avg_gain / (avg_loss + 1e-9)
-    return 100 - (100 / (1 + rs))
+logger = logging.getLogger(__name__)
 
-def calc_macd(df: pd.DataFrame, fast=12, slow=26, signal=9):
-    ema_fast = df['close'].ewm(span=fast, adjust=False).mean()
-    ema_slow = df['close'].ewm(span=slow, adjust=False).mean()
-    macd_line = ema_fast - ema_slow
-    signal_line = macd_line.ewm(span=signal, adjust=False).mean()
-    hist = macd_line - signal_line
-    return macd_line, signal_line, hist
+class DivergenceSniperPro(BaseStrategy):
+    """
+    DivergenceSniperPro - (v6.0 - Scoring Engine Upgrade)
+    -----------------------------------------------------------------------
+    This version marks a major architectural evolution, replacing the rigid,
+    all-or-nothing filter funnel with a sophisticated weighted "Scoring Engine".
+    Each piece of evidence (Fortress S/R, Volume, Candlestick, etc.) now
+    contributes to a final score. This provides immense flexibility, allowing the
+    strategy to act on high-probability signals that might have been discarded
+    due to a single minor unmet condition, transforming it into a more adaptive
+    and intelligent reversal hunter.
+    """
+    strategy_name: str = "DivergenceSniperPro"
 
-def calc_obv(df: pd.DataFrame) -> pd.Series:
-    obv = [0]
-    for i in range(1, len(df)):
-        if df['close'][i] > df['close'][i - 1]:
-            obv.append(obv[-1] + df['volume'][i])
-        elif df['close'][i] < df['close'][i - 1]:
-            obv.append(obv[-1] - df['volume'][i])
-        else:
-            obv.append(obv[-1])
-    return pd.Series(obv, index=df.index)
-
-# ========================= پیوت‌ها =========================
-def find_pivots(series: pd.Series, order: int = 5) -> Dict[str, List[int]]:
-    lows = argrelextrema(series.values, np.less_equal, order=order)[0].tolist()
-    highs = argrelextrema(series.values, np.greater_equal, order=order)[0].tolist()
-    return {'lows': lows, 'highs': highs}
-
-# ========================= اعتبارسنجی واگرایی =========================
-def validate_divergence(df: pd.DataFrame, idx: int, window: int = 3) -> bool:
-    if idx < window or idx >= len(df) - window:
-        return False
-    price_change = df['close'][idx] - df['close'][idx - window]
-    volume_avg = df['volume'].rolling(window).mean().iloc[idx]
-    volume_now = df['volume'].iloc[idx]
-    momentum = abs(price_change / (df['close'].iloc[idx - window] + 1e-9))
-    return momentum > 0.01 and volume_now > volume_avg
-
-# ========================= واگرایی =========================
-def match_divergence(price: pd.Series, indicator: pd.Series, pivots: Dict[str, List[int]],
-                     kind: str = 'regular', df: Optional[pd.DataFrame] = None) -> List[Dict[str, Any]]:
-    divergences = []
-    highs = pivots['highs']
-    lows = pivots['lows']
+    default_config: ClassVar[Dict[str, Any]] = {
+        # ✅ ARCHITECTURAL UPGRADE (v6.0): New Scoring Engine
+        "min_score": 7,
+        "weights": {
+            "fortress_sr": 3,
+            "climactic_volume": 3,
+            "candlestick": 2,
+            "williams_r_trigger": 2,
+            "htf_filter": 1
+        },
+        
+        # --- Component Settings ---
+        "min_structure_strength": 3,
+        "volatility_regimes": {
+            "low_atr_pct_threshold": 1.5,
+            "low_vol_sl_multiplier": 1.0,
+            "high_vol_sl_multiplier": 1.5
+        },
+        "htf_confirmation_enabled": True,
+        "htf_map": { "5m": "15m", "15m": "1h", "1h": "4h", "4h": "1d" },
+        "htf_confirmations": {
+            "min_required_score": 1,
+            "adx": {"weight": 1, "min_strength": 25}
+        }
+    }
     
-    for i in range(1, len(highs)):
-        p1, p2 = highs[i - 1], highs[i]
-        if kind == 'regular' and price[p2] > price[p1] and indicator[p2] < indicator[p1]:
-            if validate_divergence(df, p2):
-                divergences.append({'type': 'bearish_regular', 'index': p2})
-        elif kind == 'hidden' and price[p2] < price[p1] and indicator[p2] > indicator[p1]:
-            if validate_divergence(df, p2):
-                divergences.append({'type': 'bearish_hidden', 'index': p2})
+    def _confirm_fortress_sr(self, direction: str, structure_data: Dict) -> Optional[Dict[str, Any]]:
+        # This helper is unchanged and correct.
+        min_strength = self.config.get("min_structure_strength", 3)
+        prox_data = (structure_data.get('analysis') or {}).get('proximity') or {}
+        
+        zone_details = None
+        if direction == "BUY":
+            if prox_data.get('is_testing_support'):
+                zone_details = prox_data.get('nearest_support_details')
+        elif direction == "SELL":
+            if prox_data.get('is_testing_resistance'):
+                zone_details = prox_data.get('nearest_resistance_details')
+        
+        if (zone_details or {}).get('strength', 0) >= min_strength:
+            return zone_details
+        return None
 
-    for i in range(1, len(lows)):
-        p1, p2 = lows[i - 1], lows[i]
-        if kind == 'regular' and price[p2] < price[p1] and indicator[p2] > indicator[p1]:
-            if validate_divergence(df, p2):
-                divergences.append({'type': 'bullish_regular', 'index': p2})
-        elif kind == 'hidden' and price[p2] > price[p1] and indicator[p2] < indicator[p1]:
-            if validate_divergence(df, p2):
-                divergences.append({'type': 'bullish_hidden', 'index': p2})
+    def check_signal(self) -> Optional[Dict[str, Any]]:
+        cfg = self.config
+        if not self.price_data:
+            self._log_final_decision("HOLD", "No price data available.")
+            return None
 
-    return divergences
+        # --- 1. Data Availability Check (Unchanged) ---
+        required_names = ['divergence', 'structure', 'williams_r', 'atr', 'whales', 'patterns']
+        indicators = {name: self.get_indicator(name) for name in required_names}
+        missing_indicators = [name for name, data in indicators.items() if data is None]
+        data_is_ok = not missing_indicators
+        self._log_criteria("Data Availability", data_is_ok, "All required indicator data is valid." if data_is_ok else f"Invalid/Missing: {', '.join(missing_indicators)}")
+        if not data_is_ok:
+            self._log_final_decision("HOLD", "Indicators missing.")
+            return None
 
-# ========================= یادگیری ماشین =========================
-def train_divergence_model(features: pd.DataFrame, labels: pd.Series) -> RandomForestClassifier:
-    model = RandomForestClassifier(n_estimators=100, random_state=42)
-    model.fit(features, labels)
-    return model
+        # --- 2. Primary Signal (Unchanged) ---
+        divergence_data = indicators['divergence'] or {}
+        potential_signals = [s for s in (divergence_data.get('analysis', {}).get('signals') or []) if "Regular" in s.get('type', '')]
+        primary_signal_ok = bool(potential_signals)
+        self._log_criteria("Primary Signal", primary_signal_ok, "No valid Regular Divergence found.")
+        if not primary_signal_ok:
+            self._log_final_decision("HOLD", "No primary trigger.")
+            return None
+        divergence = potential_signals[0]
+        signal_direction = "BUY" if "Bullish" in divergence['type'] else "SELL"
+        
+        # --- 3. ✅ NEW: Confirmation Scoring Engine ---
+        score = 0
+        confirmations: Dict[str, Any] = {"divergence_type": divergence['type']}
+        weights = cfg.get('weights', {})
 
-def extract_features(df: pd.DataFrame, indices: List[int]) -> pd.DataFrame:
-    features = []
-    for idx in indices:
-        if idx >= 5:
-            f = {
-                'rsi': df['rsi'].iloc[idx],
-                'macd': df['macd'].iloc[idx],
-                'obv': df['obv'].iloc[idx],
-                'volume': df['volume'].iloc[idx],
-                'momentum': df['close'].iloc[idx] - df['close'].iloc[idx - 5]
-            }
-            features.append(f)
-    return pd.DataFrame(features)
+        # Pillar 1: Fortress S/R
+        fortress_zone = self._confirm_fortress_sr(signal_direction, indicators['structure'])
+        fortress_ok = bool(fortress_zone)
+        fortress_strength = (fortress_zone or {}).get('strength', 0)
+        self._log_criteria("Score Check: Fortress S/R", fortress_ok, f"Passed (Zone Strength: {fortress_strength})" if fortress_ok else "Divergence not at strong S/R.")
+        if fortress_ok:
+            score += weights.get('fortress_sr', 0)
+            confirmations['fortress_sr'] = f"Passed (Strength: {fortress_strength})"
 
-# ========================= اجرای کامل =========================
-def detect_divergences(df: pd.DataFrame, order: int = 5, indicators: Optional[List[Callable]] = None) -> Dict[str, Any]:
-    df = df.copy()
-    df['rsi'] = calc_rsi(df)
-    df['macd'], _, _ = calc_macd(df)
-    df['obv'] = calc_obv(df)
+        # Pillar 2: Climactic Volume
+        volume_ok = (indicators.get('whales') or {}).get('analysis', {}).get('is_climactic_volume', False)
+        self._log_criteria("Score Check: Volume", volume_ok, "Climactic volume confirmed." if volume_ok else "Climactic volume not found.")
+        if volume_ok:
+            score += weights.get('climactic_volume', 0)
+            confirmations['climactic_volume'] = "Passed"
 
-    pivots = find_pivots(df['close'], order=order)
+        # Pillar 3: HTF Filter
+        htf_ok = True
+        if cfg.get('htf_confirmation_enabled'):
+            opposite = "SELL" if signal_direction == "BUY" else "BUY"
+            htf_ok = not self._get_trend_confirmation(opposite)
+        self._log_criteria("Score Check: HTF Filter", htf_ok, "No strong opposing trend on HTF." if htf_ok else "Strong opposing trend on HTF.")
+        if htf_ok:
+            score += weights.get('htf_filter', 0)
+            confirmations['htf_filter'] = "Passed"
 
-    results = {}
-    for ind_name in ['rsi', 'macd', 'obv']:
-        results[ind_name] = (
-            match_divergence(df['close'], df[ind_name], pivots, kind='regular', df=df) +
-            match_divergence(df['close'], df[ind_name], pivots, kind='hidden', df=df)
-        )
-    return results
+        # Pillar 4: Candlestick Confirmation
+        confirming_pattern = self._get_candlestick_confirmation(signal_direction, min_reliability='Strong')
+        candlestick_ok = confirming_pattern is not None
+        pattern_name = (confirming_pattern or {}).get('name', 'N/A')
+        self._log_criteria("Score Check: Candlestick", candlestick_ok, f"Pattern: {pattern_name}" if candlestick_ok else "No strong reversal candle.")
+        if candlestick_ok:
+            score += weights.get('candlestick', 0)
+            confirmations['candlestick'] = f"Passed ({pattern_name})"
 
-# ========================= نمونه استفاده =========================
-"""
-import pandas as pd
-df = pd.read_csv("btc_1h.csv")
-results = detect_divergences(df)
-for key in results:
-    print(f"{key}: {results[key]}")
-"""
+        # Pillar 5: Williams %R Momentum Trigger
+        wr_signal = str((indicators.get('williams_r') or {}).get('analysis', {}).get('crossover_signal', 'hold')).lower()
+        trigger_fired = (signal_direction == "BUY" and "buy" in wr_signal) or (signal_direction == "SELL" and "sell" in wr_signal)
+        self._log_criteria("Score Check: Momentum Trigger", trigger_fired, f"Williams %R confirmed ({wr_signal})." if trigger_fired else "No crossover confirmation.")
+        if trigger_fired:
+            score += weights.get('williams_r_trigger', 0)
+            confirmations['williams_r_trigger'] = f"Passed ({wr_signal})"
+        
+        # --- Final Score Check ---
+        min_score = cfg.get('min_score', 7)
+        score_is_ok = score >= min_score
+        self._log_criteria("Final Score", score_is_ok, f"Total Score: {score} >= Minimum: {min_score}")
+        if not score_is_ok:
+            self._log_final_decision("HOLD", f"Confirmation score {score} is below required {min_score}.")
+            return None
+        confirmations['final_score'] = f"{score}/{sum(weights.values())}"
+
+        # --- 4. Adaptive Risk (Unchanged) ---
+        entry_price = self.price_data.get('close')
+        atr_data = indicators['atr'] or {}
+        atr_pct = (atr_data.get('values') or {}).get('atr_percent', 2.0)
+        atr_value = (atr_data.get('values') or {}).get('atr')
+        pivots = divergence.get('pivots') or []
+        pivot_price = pivots[1].get('price') if len(pivots) > 1 else None
+        
+        risk_data_ok = all(v is not None for v in [entry_price, pivot_price, atr_value, atr_pct])
+        self._log_criteria("Risk Data Availability", risk_data_ok, "All risk inputs are valid." if risk_data_ok else "Missing entry/pivot/ATR for SL calculation.")
+        if not risk_data_ok:
+            self._log_final_decision("HOLD", "Risk data missing.")
+            return None
+        
+        vol_cfg = cfg.get('volatility_regimes', {})
+        is_low_vol = atr_pct < vol_cfg.get('low_atr_pct_threshold', 1.5)
+        atr_sl_mult = vol_cfg.get('low_vol_sl_multiplier', 1.0) if is_low_vol else vol_cfg.get('high_vol_sl_multiplier', 1.5)
+        
+        stop_loss = pivot_price - (atr_value * atr_sl_mult) if signal_direction == "BUY" else pivot_price + (atr_value * atr_sl_mult)
+        risk_params = self._calculate_smart_risk_management(entry_price, signal_direction, stop_loss)
+        
+        if not risk_params or not risk_params.get("targets"):
+            self._log_final_decision("HOLD", "Risk parameter calculation failed.")
+            return None
+        confirmations['risk_management'] = "Passed"
+        
+        # --- 5. Final Decision (Unchanged) ---
+        self._log_final_decision(signal_direction, "All filters passed. Divergence Sniper confirmed.")
+        
+        return {"direction": signal_direction, "entry_price": entry_price, **risk_params, "confirmations": confirmations}
