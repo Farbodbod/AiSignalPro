@@ -1,4 +1,4 @@
-# strategies/pivot_reversal.py (v4.1 - CRITICAL CONFIG FIX & Logging)
+# strategies/pivot_reversal.py (v4.2 - Flexible Oscillator Logic)
 
 import logging
 from typing import Dict, Any, Optional, List
@@ -7,17 +7,17 @@ from .base_strategy import BaseStrategy
 
 logger = logging.getLogger(__name__)
 
-# This class was causing the crash. The name in the file is pivot_reversal.py.
-# The class name inside is PivotConfluenceSniper, which is confusing but we will fix the logic.
 class PivotConfluenceSniper(BaseStrategy):
     """
-    PivotConfluenceSniper - (v4.1 - CRITICAL CONFIG FIX & Logging)
+    PivotConfluenceSniper - (v4.2 - Flexible Oscillator Logic)
     ----------------------------------------------------------------------------
-    This version fixes a critical bug in the configuration loading logic that
-    caused default parameters to be ignored. It also integrates the new
-    professional logging system for full transparency.
+    This version introduces a significant architectural enhancement by making the
+    oscillator confirmation logic configurable. A new 'oscillator_logic'
+    parameter ('AND'/'OR') allows for flexible switching between requiring both
+    Stochastic & CCI confirmation (stricter) or just one (more opportunities).
+    This elevates the strategy's adaptability to match our best practices.
     """
-    strategy_name: str = "PivotConfluenceSniper" # We can correct this to PivotReversal later.
+    strategy_name: str = "PivotConfluenceSniper"
 
     default_config = {
         "default_params": {
@@ -26,7 +26,9 @@ class PivotConfluenceSniper(BaseStrategy):
             "stoch_oversold": 25.0, "stoch_overbought": 75.0,
             "cci_oversold": -100.0, "cci_overbought": 100.0,
             "atr_sl_multiplier": 1.5,
-            "min_rr_ratio": 2.0
+            "min_rr_ratio": 2.0,
+            # ✅ UPGRADE (v4.2): Added new configurable parameter.
+            "oscillator_logic": "AND" 
         },
         "timeframe_overrides": {
             "5m": { "confluence_proximity_percent": 0.2, "atr_sl_multiplier": 1.2 },
@@ -41,25 +43,17 @@ class PivotConfluenceSniper(BaseStrategy):
     }
 
     def _get_signal_config(self) -> Dict[str, Any]:
-        """ ✅ CRITICAL FIX: Smartly merges configs instead of replacing them. """
-        # 1. Start with the complete list of defaults FROM THE CODE.
+        # This method is unchanged and correct.
         code_defaults = self.default_config.get("default_params", {})
-        
-        # 2. Get the user's specific overrides from config.json (via self.config).
         json_defaults = self.config.get("default_params", {})
-        
-        # 3. Merge them: user's settings will override the code's defaults if they exist.
         base_configs = {**code_defaults, **json_defaults}
-        
-        # 4. Apply timeframe-specific overrides on top of the merged base.
         tf_overrides = self.config.get("timeframe_overrides", {}).get(self.primary_timeframe, {})
         final_config = {**base_configs, **tf_overrides}
-
         logger.debug(f"Final config for {self.primary_timeframe}: {final_config}")
         return final_config
 
     def _find_best_confluence_zone(self, direction: str, cfg: Dict, pivots_data: Dict, structure_data: Dict) -> Optional[Dict]:
-        # This helper's logic remains unchanged.
+        # This method is unchanged and correct.
         current_price = self.price_data.get('close')
         if not current_price: return None
         pivot_levels = {lvl['level']: lvl['price'] for lvl in pivots_data.get('levels', [])}
@@ -78,7 +72,6 @@ class PivotConfluenceSniper(BaseStrategy):
         return min(confluence_zones, key=lambda x: x['distance_to_price']) if confluence_zones else None
 
     def check_signal(self) -> Optional[Dict[str, Any]]:
-        # This is the refactored version with full logging.
         cfg = self._get_signal_config()
         if not self.price_data:
             self._log_final_decision("HOLD", "No price data available.")
@@ -114,15 +107,30 @@ class PivotConfluenceSniper(BaseStrategy):
         stoch_k = indicators['stochastic'].get('values', {}).get('k')
         cci_val = indicators['cci'].get('values', {}).get('value')
         
+        # ✅ UPGRADE (v4.2): Re-engineered oscillator logic to be flexible.
         osc_confirmed = False
+        logic = cfg.get('oscillator_logic', 'AND').upper()
+        log_details = "Oscillator values missing."
+
         if stoch_k is not None and cci_val is not None:
-            if signal_direction == "BUY" and stoch_k < cfg['stoch_oversold'] and cci_val < cfg['cci_oversold']: osc_confirmed = True
-            elif signal_direction == "SELL" and stoch_k > cfg['stoch_overbought'] and cci_val > cfg['cci_overbought']: osc_confirmed = True
-        self._log_criteria("Oscillator Filter", osc_confirmed, "Stochastic and CCI are not in agreement for a reversal.")
+            stoch_ok = (signal_direction == "BUY" and stoch_k < cfg['stoch_oversold']) or \
+                       (signal_direction == "SELL" and stoch_k > cfg['stoch_overbought'])
+            
+            cci_ok = (signal_direction == "BUY" and cci_val < cfg['cci_oversold']) or \
+                     (signal_direction == "SELL" and cci_val > cfg['cci_overbought'])
+            
+            if logic == 'OR':
+                osc_confirmed = stoch_ok or cci_ok
+            else:  # Default to AND for safety and original behavior
+                osc_confirmed = stoch_ok and cci_ok
+            
+            log_details = f"Logic='{logic}', Stoch OK={stoch_ok}, CCI OK={cci_ok}"
+
+        self._log_criteria("Oscillator Filter", osc_confirmed, "No oscillator confirmed the reversal." if not osc_confirmed else f"Confirmation passed. {log_details}")
         if not osc_confirmed:
             self._log_final_decision("HOLD", "Oscillator filter failed.")
             return None
-        confirmations['oscillator_filter'] = "Passed (Stoch & CCI agree)"
+        confirmations['oscillator_filter'] = f"Passed (Logic: {logic})"
 
         candlestick_ok = self._get_candlestick_confirmation(signal_direction, min_reliability='Strong') is not None
         self._log_criteria("Candlestick Filter", candlestick_ok, "No strong reversal candlestick pattern found.")
@@ -132,7 +140,7 @@ class PivotConfluenceSniper(BaseStrategy):
         confirmations['candlestick_filter'] = "Passed (Strong Pattern)"
         
         htf_ok = True
-        if cfg['htf_confirmation_enabled']:
+        if self.config.get('htf_confirmation_enabled', True): # Checking the raw config for the global switch
             opposite_direction = "SELL" if signal_direction == "BUY" else "BUY"
             htf_ok = not self._get_trend_confirmation(opposite_direction)
         self._log_criteria("HTF Filter", htf_ok, "A strong opposing trend was found on the higher timeframe.")
@@ -150,7 +158,7 @@ class PivotConfluenceSniper(BaseStrategy):
         
         pivots_data = indicators['pivots']
         pivot_p_level = next((lvl['price'] for lvl in pivots_data.get('levels', []) if lvl['level'] == 'P'), None)
-        if pivot_p_level and risk_params.get('targets'):
+        if pivot_p_level and risk_params and risk_params.get('targets'):
             risk_params['targets'][0] = pivot_p_level
             risk_amount = abs(entry_price - stop_loss)
             if risk_amount > 1e-9:
