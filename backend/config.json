@@ -88,13 +88,13 @@
       "enabled": true,
       "min_score": 7,
       "weights": {
-        "htf_alignment": 3,
-        "adx_dmi": 3,
-        "squeeze_release": 2,
+        "htf_alignment": 4,
+        "adx_dmi": 4,
+        "squeeze_release": 3,
         "supertrend_cross": 2,
         "active_session": 1
       },
-      "session_filter_enabled": true,
+      "session_filter_enabled": false,
       "active_hours_utc": [
         [8, 16],
         [13, 21]
@@ -109,7 +109,7 @@
         "4h": "1d"
       },
       "htf_confirmations": {
-        "min_required_score": 1,
+        "min_required_score": 2,
         "adx": {
           "weight": 1,
           "min_strength": 25
