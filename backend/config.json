@@ -294,14 +294,14 @@
       "rsi_buy_percentile": 90,
       "rsi_sell_percentile": 10,
       "min_momentum_score": {
-        "low_tf": 8,
-        "high_tf": 10
+        "low_tf": 7,
+        "high_tf": 11
       },
       "cooldown_bars": 3,
       "weights": {
         "volume_catalyst": 3,
         "momentum_thrust": 3,
-        "volatility_release": 2,
+        "volatility_release": 3,
         "adx_strength": 3,
         "htf_alignment": 2,
         "candlestick": 1
@@ -317,10 +317,10 @@
         "4h": "1d"
       },
       "htf_confirmations": {
-        "min_required_score": 1,
+        "min_required_score": 2,
         "adx": {
           "weight": 1,
-          "min_strength": 25
+          "min_strength": 30
         },
         "supertrend": {
           "weight": 1
