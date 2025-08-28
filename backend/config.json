@@ -230,19 +230,19 @@
       "enabled": true,
       "default_params": {
         "pivot_levels_to_check": ["R2", "R1", "S1", "S2"],
-        "confluence_proximity_percent": 0.3,
+        "confluence_proximity_percent": 0.5,
         "stoch_oversold": 25.0,
         "stoch_overbought": 75.0,
         "cci_oversold": -100.0,
         "cci_overbought": 100.0,
         "atr_sl_multiplier": 1.5,
         "min_rr_ratio": 2.0,
-        "oscillator_logic": "OR"
+        "oscillator_logic": "AND"
       },
       "timeframe_overrides": {
         "5m": {
-          "confluence_proximity_percent": 0.2,
-          "atr_sl_multiplier": 1.2
+          "confluence_proximity_percent": 0.3,
+          "atr_sl_multiplier": 1.5
         },
         "1d": {
           "confluence_proximity_percent": 0.5,
@@ -257,7 +257,7 @@
         "4h": "1d"
       },
       "htf_confirmations": {
-        "min_required_score": 1,
+        "min_required_score": 2,
         "adx": {
           "weight": 1,
           "min_strength": 25
