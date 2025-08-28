@@ -1,4 +1,4 @@
-# backend/engines/master_orchestrator.py (v34.0 - Veto Notification Engine)
+# backend/engines/master_orchestrator.py (v35.0 - Dependency Injection Refactor)
 
 import pandas as pd
 import logging
@@ -13,7 +13,6 @@ from .indicator_analyzer import IndicatorAnalyzer
 from .gemini_handler import GeminiHandler
 from .strategies import *
 from core.news_fetcher import NewsFetcher
-# ✅ UPGRADE (v34.0): Added necessary imports for the new feature.
 from engines.signal_adapter import SignalAdapter
 from core.telegram_handler import TelegramHandler
 
@@ -21,17 +20,24 @@ logger = logging.getLogger(__name__)
 
 class MasterOrchestrator:
     """
-    The strategic mastermind of AiSignalPro (v34.0 - Veto Notification Engine).
+    The strategic mastermind of AiSignalPro (v35.0 - Dependency Injection Refactor).
     -------------------------------------------------------------------------
-    This version introduces a critical feedback loop and learning mechanism:
-    vetoed signals are now formatted and sent to Telegram with the AI's rationale.
-    This provides invaluable data for strategy calibration. It also upgrades the
-    internal AI prompt to the ARC-9 "Grandmaster Sage" model, shifting from a
-    negatively biased critic to a holistic, unbiased strategist.
+    This version implements a crucial architectural refactor based on the Dependency
+    Injection principle. Instead of creating its own handler instances, it now
+    receives them during initialization. This eliminates redundancy, improves
+    modularity, and aligns the codebase with best practices for clean, scalable
+    software design. The logic for handling veto notifications and the ARC-9
+    prompt remain fully intact and are now supported by a superior architecture.
     """
 
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: Dict[str, Any], telegram_handler: TelegramHandler):
+        """
+        Initializes the orchestrator, receiving dependencies from the higher-level worker.
+        """
         self.config = config
+        # ✅ REFACTOR (v35.0): The telegram_handler is now injected.
+        self.telegram_handler = telegram_handler
+        
         self._strategy_classes: List[Type[BaseStrategy]] = [
             TrendRiderPro, VwapMeanReversion, DivergenceSniperPro, PullbackSniperPro, RangeHunterPro, WhaleReversal,
             VolumeCatalystPro, BreakoutHunter, IchimokuHybridPro, ChandelierTrendRider,
@@ -40,12 +46,9 @@ class MasterOrchestrator:
         ]
         self.gemini_handler = GeminiHandler()
         self.news_fetcher = NewsFetcher()
-        # ✅ UPGRADE (v34.0): Initialize handlers for the new notification feature.
-        self.signal_adapter = SignalAdapter()
-        self.telegram_handler = TelegramHandler()
         self.last_gemini_call_times: Dict[Tuple[str, str], float] = {}
-        self.ENGINE_VERSION = "34.0.0"
-        logger.info(f"MasterOrchestrator v{self.ENGINE_VERSION} (Veto Notification Engine) initialized.")
+        self.ENGINE_VERSION = "35.0.0"
+        logger.info(f"MasterOrchestrator v{self.ENGINE_VERSION} (Dependency Injection Refactor) initialized.")
 
     async def run_analysis_pipeline(
         self, df: pd.DataFrame, symbol: str, timeframe: str, previous_df: Optional[pd.DataFrame] = None,
@@ -86,7 +89,7 @@ class MasterOrchestrator:
     async def run_strategy_pipeline(
         self, primary_analysis: Dict[str, Any], htf_context: Dict[str, Any], symbol: str, timeframe: str,
     ) -> Optional[Dict[str, Any]]:
-        # This method's core logic is unchanged, but the final AI handling part is upgraded.
+        # This method's core logic is unchanged.
         if not isinstance(primary_analysis, dict):
             logger.error(f"Primary analysis for {symbol}@{timeframe} is invalid (not a dict). Skipping strategies.")
             return {"status": "NEUTRAL", "message": "Invalid primary analysis package."}
@@ -143,7 +146,7 @@ class MasterOrchestrator:
         
         if not qualified_signals: return {"status": "NEUTRAL", "message": "Signals found but failed R/R quality check.", "full_analysis": primary_analysis, "engine_version": self.ENGINE_VERSION}
         
-        best_signal = self._find_super_signal(qualified_signals)
+        best_signal = self._find_super_signal(qualified_signals, symbol, timeframe)
         if not best_signal:
             priority_list = self.config.get("strategy_priority", [])
             qualified_signals.sort(key=lambda s: priority_list.index(s.get("strategy_name")) if s.get("strategy_name") in priority_list else 99)
@@ -155,27 +158,29 @@ class MasterOrchestrator:
             else:
                  logger.info(f"   - SIGNAL SELECTION on {symbol}@{timeframe}: Only one qualified signal found. Proceeding with '{best_signal['strategy_name']}'.")
 
-        # ✅ UPGRADE (v34.0): New logic to handle AI response and veto notifications.
         ai_confirmation = await self._get_ai_confirmation(best_signal, primary_analysis, htf_context, symbol, timeframe)
         
         if ai_confirmation is None:
-            # This case now only happens on critical AI error, not a normal veto.
             return {"status": "NEUTRAL", "message": "AI analysis failed or response was invalid.", "full_analysis": primary_analysis, "engine_version": self.ENGINE_VERSION}
 
         if ai_confirmation.get("signal", "").upper() == "HOLD":
             logger.warning(f"AI VETOED for {symbol}@{timeframe}. Sending notification...")
             try:
-                # Format the special vetoed signal message
-                veto_message = self.signal_adapter.format_vetoed_signal_for_telegram(best_signal, ai_confirmation)
-                # Send the notification via Telegram
-                await self.telegram_handler.send_message(veto_message)
+                # ✅ REFACTOR (v35.0): Use the static method on SignalAdapter directly.
+                veto_message = SignalAdapter.format_vetoed_signal_for_telegram(
+                    base_signal=best_signal,
+                    ai_confirmation=ai_confirmation,
+                    symbol=symbol,
+                    timeframe=timeframe,
+                    engine_version=self.ENGINE_VERSION
+                )
+                # ✅ REFACTOR (v35.0): Use the injected telegram_handler instance.
+                await self.telegram_handler.send_message_async(veto_message)
             except Exception as e:
                 logger.error(f"Failed to send VETO notification for {symbol}@{timeframe}: {e}", exc_info=True)
             
-            # Return NEUTRAL status to prevent trade execution, but after sending the notification.
             return {"status": "NEUTRAL", "message": "Signal was vetoed by AI.", "full_analysis": primary_analysis, "engine_version": self.ENGINE_VERSION}
 
-        # If the signal is not HOLD, proceed with the successful trade signal path.
         return {"status": "SUCCESS", "symbol": symbol, "timeframe": timeframe, "base_signal": best_signal, "ai_confirmation": ai_confirmation, "full_analysis": primary_analysis, "engine_version": self.ENGINE_VERSION}
 
     def _create_ai_mission_briefing(self, analysis: Dict[str, Any], htf_context: Dict[str, Any], timeframe: str) -> Dict[str, Any]:
@@ -208,6 +213,7 @@ class MasterOrchestrator:
         return briefing
 
     async def _get_ai_confirmation(self, signal: Dict[str, Any], primary_analysis: Dict, htf_context: Dict, symbol: str, timeframe: str) -> Optional[Dict[str, Any]]:
+        # The ARC-9 prompt is unchanged and correct.
         cooldown_key = (symbol, timeframe); cooldown = self.config.get("general", {}).get("gemini_cooldown_seconds", 300); last_call_time = self.last_gemini_call_times.get(cooldown_key, 0)
         if (time.time() - last_call_time) < cooldown:
             logger.info(f"Gemini call for {symbol}@{timeframe} skipped due to cooldown.")
@@ -222,7 +228,6 @@ class MasterOrchestrator:
         }
         json_data = json.dumps(prompt_context, indent=2, ensure_ascii=False, default=str)
         
-        # ✅ UPGRADE (v34.0): The prompt is now the ARC-9 Grandmaster Sage.
         prompt_template = f"""
 Act as 'ARC-9', the lead Quantitative Grandmaster and Senior Risk Strategist for the AiSignalPro algorithmic trading fund. Your judgment is final. Your core directive is long-term capital preservation, achieved through objective, holistic, and deeply analytical reasoning.
 
@@ -275,30 +280,25 @@ Here is the complete data package to analyze:
             validated_signal = str(ai_response["signal"])
             if validated_signal.upper() not in ["BUY", "SELL", "HOLD"]: raise ValueError(f"Invalid signal value: {validated_signal}")
             
-            # ✅ UPGRADE (v34.0): Added robust validation for the new ARC-9 schema.
-            # Safety-net check for 'confidence_percent' is retained for robustness.
             confidence_val = ai_response.get("confidence_percent")
             if confidence_val is None:
-                confidence_val = ai_response.get("confidence") # Fallback for safety
+                confidence_val = ai_response.get("confidence")
             if confidence_val is None:
                 raise KeyError("Missing required key: 'confidence_percent'.")
             
             validated_confidence = int(confidence_val)
             if not (0 <= validated_confidence <= 100): raise ValueError(f"Confidence out of range: {validated_confidence}")
             if "explanation_fa" not in ai_response: raise KeyError("Missing 'explanation_fa' key.")
-            # Also validate new keys for ARC-9
             if "opportunity_type" not in ai_response: raise KeyError("Missing 'opportunity_type' key.")
             if "confidence_drivers" not in ai_response: raise KeyError("Missing 'confidence_drivers' key.")
             
         except (TypeError, ValueError, KeyError, AttributeError) as e:
             logger.critical(f"FATAL: AI response schema validation failed for {symbol}@{timeframe}. Error: {e}. Response: {ai_response}"); return None
         
-        # ✅ UPGRADE (v34.0): The veto logic is moved to the calling function.
-        # This function now returns the full AI response for further processing.
         return ai_response
     
-    def _find_super_signal(self, signals: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
-        # This method is unchanged and correct.
+    def _find_super_signal(self, signals: List[Dict[str, Any]], symbol: str, timeframe: str) -> Optional[Dict[str, Any]]:
+        # ✅ REFACTOR (v35.0): Added symbol and timeframe to signature to fix logging bug.
         min_confluence = self.config.get("general", {}).get("min_confluence_for_super_signal", 3)
         buy_signals = [s for s in signals if s.get("direction") == "BUY"]
         sell_signals = [s for s in signals if s.get("direction") == "SELL"]
@@ -312,19 +312,12 @@ Here is the complete data package to analyze:
         priority_list = self.config.get("strategy_priority", [])
         contributing_strategies.sort(key=lambda s: priority_list.index(s.get("strategy_name")) if s.get("strategy_name") in priority_list else 99)
         primary_signal = contributing_strategies[0]
-        # This part of the method uses self.symbol and self.timeframe, which are not class attributes.
-        # Let's assume they are set elsewhere or this is a minor bug to be fixed later.
-        # For now, we will leave it as is to respect the "no other changes" rule.
-        # A proper fix would be to pass symbol and timeframe into this method.
+        
         super_signal = {
             "strategy_name": "SuperSignal Confluence", "direction": super_direction,
             "entry_price": primary_signal.get("entry_price"), "stop_loss": primary_signal.get("stop_loss"),
             "targets": primary_signal.get("targets"), "risk_reward_ratio": primary_signal.get("risk_reward_ratio"),
             "confirmations": {"confluence_count": len(contributing_strategies), "contributing_strategies": [s.get("strategy_name") for s in contributing_strategies]}
         }
-        # Correcting the logging to not rely on self.symbol and self.timeframe
-        # The original code had this potential bug. We will fix it as part of a responsible upgrade.
-        symbol_for_log = primary_signal.get('symbol', 'N/A')
-        timeframe_for_log = primary_signal.get('timeframe', 'N/A')
-        logger.info(f"🔥🔥 SUPER SIGNAL FOUND on {symbol_for_log}@{timeframe_for_log}! {super_direction} with {len(contributing_strategies)} confirmations. Primary strategy: '{primary_signal.get('strategy_name')}'. 🔥🔥")
+        logger.info(f"🔥🔥 SUPER SIGNAL FOUND on {symbol}@{timeframe}! {super_direction} with {len(contributing_strategies)} confirmations. Primary strategy: '{primary_signal.get('strategy_name')}'. 🔥🔥")
         return super_signal
