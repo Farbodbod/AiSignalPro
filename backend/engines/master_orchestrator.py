@@ -1,4 +1,4 @@
-# backend/engines/master_orchestrator.py (v35.0 - Dependency Injection Refactor)
+# backend/engines/master_orchestrator.py (v35.1 - Resilient AI Parser)
 
 import pandas as pd
 import logging
@@ -20,22 +20,18 @@ logger = logging.getLogger(__name__)
 
 class MasterOrchestrator:
     """
-    The strategic mastermind of AiSignalPro (v35.0 - Dependency Injection Refactor).
+    The strategic mastermind of AiSignalPro (v35.1 - Resilient AI Parser).
     -------------------------------------------------------------------------
-    This version implements a crucial architectural refactor based on the Dependency
-    Injection principle. Instead of creating its own handler instances, it now
-    receives them during initialization. This eliminates redundancy, improves
-    modularity, and aligns the codebase with best practices for clean, scalable
-    software design. The logic for handling veto notifications and the ARC-9
-    prompt remain fully intact and are now supported by a superior architecture.
+    Based on operational feedback, this version introduces a critical anti-fragile
+    update to the AI response validation logic. Instead of crashing on missing
+    keys (e.g., 'opportunity_type'), the parser now handles incomplete AI responses
+    gracefully by providing safe, default values. This ensures maximum system
+    stability and uptime, even when dealing with intermittent API inconsistencies,
+    fully embracing the "Trust but Verify" principle.
     """
 
     def __init__(self, config: Dict[str, Any], telegram_handler: TelegramHandler):
-        """
-        Initializes the orchestrator, receiving dependencies from the higher-level worker.
-        """
         self.config = config
-        # ✅ REFACTOR (v35.0): The telegram_handler is now injected.
         self.telegram_handler = telegram_handler
         
         self._strategy_classes: List[Type[BaseStrategy]] = [
@@ -47,8 +43,8 @@ class MasterOrchestrator:
         self.gemini_handler = GeminiHandler()
         self.news_fetcher = NewsFetcher()
         self.last_gemini_call_times: Dict[Tuple[str, str], float] = {}
-        self.ENGINE_VERSION = "35.0.0"
-        logger.info(f"MasterOrchestrator v{self.ENGINE_VERSION} (Dependency Injection Refactor) initialized.")
+        self.ENGINE_VERSION = "35.1.0"
+        logger.info(f"MasterOrchestrator v{self.ENGINE_VERSION} (Resilient AI Parser) initialized.")
 
     async def run_analysis_pipeline(
         self, df: pd.DataFrame, symbol: str, timeframe: str, previous_df: Optional[pd.DataFrame] = None,
@@ -89,7 +85,7 @@ class MasterOrchestrator:
     async def run_strategy_pipeline(
         self, primary_analysis: Dict[str, Any], htf_context: Dict[str, Any], symbol: str, timeframe: str,
     ) -> Optional[Dict[str, Any]]:
-        # This method's core logic is unchanged.
+        # This method is unchanged and correct.
         if not isinstance(primary_analysis, dict):
             logger.error(f"Primary analysis for {symbol}@{timeframe} is invalid (not a dict). Skipping strategies.")
             return {"status": "NEUTRAL", "message": "Invalid primary analysis package."}
@@ -166,7 +162,6 @@ class MasterOrchestrator:
         if ai_confirmation.get("signal", "").upper() == "HOLD":
             logger.warning(f"AI VETOED for {symbol}@{timeframe}. Sending notification...")
             try:
-                # ✅ REFACTOR (v35.0): Use the static method on SignalAdapter directly.
                 veto_message = SignalAdapter.format_vetoed_signal_for_telegram(
                     base_signal=best_signal,
                     ai_confirmation=ai_confirmation,
@@ -174,7 +169,6 @@ class MasterOrchestrator:
                     timeframe=timeframe,
                     engine_version=self.ENGINE_VERSION
                 )
-                # ✅ REFACTOR (v35.0): Use the injected telegram_handler instance.
                 await self.telegram_handler.send_message_async(veto_message)
             except Exception as e:
                 logger.error(f"Failed to send VETO notification for {symbol}@{timeframe}: {e}", exc_info=True)
@@ -275,30 +269,49 @@ Here is the complete data package to analyze:
         except Exception as e:
             logger.error(f"Gemini API call failed for {symbol}@{timeframe}: {e}"); return None
         
+        # ✅ UPGRADE (v35.1): Resiliently parse the AI response, providing safe defaults.
         try:
-            if not isinstance(ai_response, dict): raise TypeError("Response is not a dictionary.")
-            validated_signal = str(ai_response["signal"])
-            if validated_signal.upper() not in ["BUY", "SELL", "HOLD"]: raise ValueError(f"Invalid signal value: {validated_signal}")
-            
+            if not isinstance(ai_response, dict):
+                logger.warning(f"AI response was not a dictionary. Response: {ai_response}")
+                ai_response = {} # Create empty dict to allow safe .get() calls
+
+            # Safely get and validate 'signal'
+            validated_signal = str(ai_response.get("signal", "HOLD")).upper()
+            if validated_signal not in ["BUY", "SELL", "HOLD"]:
+                logger.warning(f"Invalid 'signal' value from AI: '{validated_signal}'. Defaulting to HOLD.")
+                validated_signal = "HOLD"
+
+            # Safely get 'confidence' with fallback and default
             confidence_val = ai_response.get("confidence_percent")
             if confidence_val is None:
                 confidence_val = ai_response.get("confidence")
-            if confidence_val is None:
-                raise KeyError("Missing required key: 'confidence_percent'.")
+            validated_confidence = int(confidence_val or 0)
+            if not (0 <= validated_confidence <= 100):
+                logger.warning(f"Confidence '{validated_confidence}' out of range. Clamping to 0-100.")
+                validated_confidence = max(0, min(100, validated_confidence))
+
+            # Safely get other fields with defaults
+            explanation_fa = ai_response.get("explanation_fa", "AI response was incomplete or malformed.")
+            opportunity_type = ai_response.get("opportunity_type", "Uncertain")
+            confidence_drivers = ai_response.get("confidence_drivers", ["Incomplete Response"])
+            improvement_suggestion = ai_response.get("improvement_suggestion", "")
+
+            # Reconstruct a guaranteed-valid dictionary to pass to the rest of the system
+            validated_response = {
+                "signal": validated_signal,
+                "confidence_percent": validated_confidence,
+                "opportunity_type": opportunity_type,
+                "confidence_drivers": confidence_drivers,
+                "explanation_fa": explanation_fa,
+                "improvement_suggestion": improvement_suggestion
+            }
+            return validated_response
             
-            validated_confidence = int(confidence_val)
-            if not (0 <= validated_confidence <= 100): raise ValueError(f"Confidence out of range: {validated_confidence}")
-            if "explanation_fa" not in ai_response: raise KeyError("Missing 'explanation_fa' key.")
-            if "opportunity_type" not in ai_response: raise KeyError("Missing 'opportunity_type' key.")
-            if "confidence_drivers" not in ai_response: raise KeyError("Missing 'confidence_drivers' key.")
-            
-        except (TypeError, ValueError, KeyError, AttributeError) as e:
-            logger.critical(f"FATAL: AI response schema validation failed for {symbol}@{timeframe}. Error: {e}. Response: {ai_response}"); return None
-        
-        return ai_response
-    
+        except Exception as e:
+            logger.critical(f"FATAL: AI response could not be parsed even with safeguards. Error: {e}. Response: {ai_response}"); return None
+
     def _find_super_signal(self, signals: List[Dict[str, Any]], symbol: str, timeframe: str) -> Optional[Dict[str, Any]]:
-        # ✅ REFACTOR (v35.0): Added symbol and timeframe to signature to fix logging bug.
+        # This method is unchanged and correct.
         min_confluence = self.config.get("general", {}).get("min_confluence_for_super_signal", 3)
         buy_signals = [s for s in signals if s.get("direction") == "BUY"]
         sell_signals = [s for s in signals if s.get("direction") == "SELL"]
