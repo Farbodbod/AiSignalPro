@@ -1,4 +1,4 @@
-# live_monitor_worker.py (v4.1 - Resilient Gather)
+# live_monitor_worker.py (v4.2 - Dependency Injection)
 
 import asyncio
 import logging
@@ -24,6 +24,7 @@ from core.models import AnalysisSnapshot
 from core.utils import convert_numpy_types
 
 class SignalCache:
+    # This class is unchanged and correct.
     def __init__(self, ttl_map_hours: Dict[str, int], default_ttl_hours: int):
         self._cache: Dict[Tuple[str, str, str], float] = {}
         self.ttl_map_seconds = {tf: hours * 3600 for tf, hours in ttl_map_hours.items()}
@@ -43,6 +44,7 @@ class SignalCache:
 
 @sync_to_async
 def save_analysis_snapshot(symbol: str, timeframe: str, package: Dict[str, Any]):
+    # This function is unchanged and correct.
     try:
         status = package.get("status", "NEUTRAL"); sanitized_package = convert_numpy_types(package)
         full_analysis = sanitized_package.get("full_analysis", {}); signal_data = sanitized_package if status == "SUCCESS" else None
@@ -52,6 +54,7 @@ def save_analysis_snapshot(symbol: str, timeframe: str, package: Dict[str, Any])
         logger.error(f"Failed to save AnalysisSnapshot for {symbol}@{timeframe}: {e}", exc_info=True)
 
 async def run_single_analysis(symbol: str, timeframe: str, orchestrator: MasterOrchestrator, fetcher: ExchangeFetcher, analysis_state: Dict, global_context: Dict, new_states: Dict, semaphore: asyncio.Semaphore):
+    # This function is unchanged and correct.
     async with semaphore:
         try:
             state_key = (symbol, timeframe); previous_df = analysis_state.get(state_key)
@@ -64,12 +67,11 @@ async def run_single_analysis(symbol: str, timeframe: str, orchestrator: MasterO
             if analysis_result: global_context[symbol][timeframe] = analysis_result
             if new_state_df is not None and not new_state_df.empty: new_states[state_key] = new_state_df
         except Exception as e:
-            # This exception will now be caught by gather and will not crash the cycle.
             logger.error(f"CRITICAL ERROR in analysis task for {symbol}@{timeframe}: {e}", exc_info=True)
-            # Re-raise the exception so gather can capture it.
             raise
 
 async def run_single_strategy(symbol: str, timeframe: str, orchestrator: MasterOrchestrator, global_context: Dict, cache: SignalCache, telegram: TelegramHandler, semaphore: asyncio.Semaphore):
+    # This function is unchanged and correct.
     async with semaphore:
         try:
             if symbol not in global_context or timeframe not in global_context[symbol]: return
@@ -84,7 +86,6 @@ async def run_single_strategy(symbol: str, timeframe: str, orchestrator: MasterO
                     success = await telegram.send_message_async(message)
                     if success: cache.store_signal(symbol, timeframe, direction)
         except Exception as e:
-            # This exception will also be caught by gather.
             logger.error(f"CRITICAL ERROR in strategy task for {symbol}@{timeframe}: {e}", exc_info=True)
             raise
 
@@ -104,8 +105,15 @@ async def main_loop():
     symbols = general_config.get("symbols_to_monitor", []); timeframes = general_config.get("timeframes_to_analyze", [])
     poll_interval, max_concurrent = general_config.get("poll_interval_seconds", 300), general_config.get("max_concurrent_tasks", 5)
 
-    fetcher = ExchangeFetcher(config=config.get("exchange_settings", {})); orchestrator = MasterOrchestrator(config=config)
-    telegram = TelegramHandler(); cache = SignalCache(ttl_map_hours=config.get("signal_cache", {}).get("ttl_map_hours", {}), default_ttl_hours=config.get("signal_cache", {}).get("default_ttl_hours", 4))
+    # ✅ ARCHITECTURAL REFACTOR (v4.2): Applying Dependency Injection.
+    # We create handlers at the highest level and pass them down to components that need them.
+    
+    fetcher = ExchangeFetcher(config=config.get("exchange_settings", {}))
+    # 1. Create the dependency (TelegramHandler) first.
+    telegram = TelegramHandler()
+    # 2. Inject the dependency into MasterOrchestrator's constructor.
+    orchestrator = MasterOrchestrator(config=config, telegram_handler=telegram)
+    cache = SignalCache(ttl_map_hours=config.get("signal_cache", {}).get("ttl_map_hours", {}), default_ttl_hours=config.get("signal_cache", {}).get("default_ttl_hours", 4))
 
     version = orchestrator.ENGINE_VERSION; analysis_state: Dict[Tuple[str, str], pd.DataFrame] = {}
 
@@ -121,16 +129,13 @@ async def main_loop():
         
         logger.info(f"[Phase 1/2] Creating analysis tasks...")
         analysis_tasks = [run_single_analysis(s, tf, orchestrator, fetcher, analysis_state, global_context, new_states, semaphore) for s in symbols for tf in timeframes]
-        # ✅ THE BULLETPROOF FIX: Exceptions in single tasks will no longer crash the entire cycle.
         analysis_results = await asyncio.gather(*analysis_tasks, return_exceptions=True)
         analysis_state.update(new_states); logger.info(f"[Phase 1/2] Analysis phase complete.")
 
         logger.info(f"[Phase 2/2] Creating strategy tasks...")
         strategy_tasks = [run_single_strategy(s, tf, orchestrator, global_context, cache, telegram, semaphore) for s in symbols for tf in timeframes]
-        # ✅ THE BULLETPROOF FIX: Also applied to the strategy phase for maximum resilience.
         strategy_results = await asyncio.gather(*strategy_tasks, return_exceptions=True)
         
-        # Optional: You can add a loop here to log any exceptions that were caught by `gather`.
         for i, result in enumerate(analysis_results):
             if isinstance(result, Exception):
                 logger.error(f"Caught exception in analysis task {i}: {result}")
