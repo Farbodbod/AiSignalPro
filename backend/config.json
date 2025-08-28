@@ -202,7 +202,7 @@
       "adx_confirmation_enabled": true,
       "min_adx_strength": 25.0,
       "candlestick_confirmation_enabled": true,
-      "master_trend_ma_indicator": "slow_ma",
+      "master_trend_ma_indicator": "fast_ma",
       "volatility_regimes": {
         "low_atr_pct_threshold": 3,
         "low_vol_sl_multiplier": 2.5,
