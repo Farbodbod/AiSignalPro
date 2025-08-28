@@ -186,6 +186,7 @@
     },
     "EmaCrossoverStrategy": {
       "enabled": true,
+      "divergence_veto_enabled": true,
       "min_confirmation_score": 6,
       "weights": {
         "master_trend": 3,
