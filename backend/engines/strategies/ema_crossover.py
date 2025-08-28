@@ -1,4 +1,4 @@
-# backend/engines/strategies/ema_crossover.py (v5.0 - Scoring Engine Upgrade)
+# backend/engines/strategies/ema_crossover.py (v5.1 - Divergence Veto Shield)
 
 import logging
 from typing import Dict, Any, Optional, ClassVar, List
@@ -8,20 +8,21 @@ logger = logging.getLogger(__name__)
 
 class EmaCrossoverStrategy(BaseStrategy):
     """
-    EmaCrossoverStrategy - (v5.0 - Scoring Engine Upgrade)
+    EmaCrossoverStrategy - (v5.1 - Divergence Veto Shield)
     -------------------------------------------------------------------
-    This version represents a major architectural evolution. The previous
-    "all-or-nothing" sequential filter funnel has been replaced with a
-    sophisticated weighted "Scoring Engine". Instead of failing on a single
-    unmet condition, the strategy now calculates a confirmation score based on
-    configurable weights for each pillar (Master Trend, MACD, HTF, etc.).
-    This provides immense flexibility and intelligence, transforming the strategy
-    from a rigid checklist-follower into an adaptive, high-performance engine.
+    This version integrates a critical safety feature: the "Divergence Veto
+    Shield". Based on live signal analysis, this upgrade adds a hard filter
+    that checks for opposing regular divergence immediately after an EMA cross.
+    If a signal occurs while a counter-divergence is forming (a sign of trend
+    exhaustion), the signal is immediately vetoed. This prevents entering
+    trades at the worst possible moment, right before a potential reversal.
     """
     strategy_name: str = "EmaCrossoverStrategy"
 
     default_config: ClassVar[Dict[str, Any]] = {
-        # ✅ ARCHITECTURAL UPGRADE (v5.0): New Scoring Engine
+        # ✅ UPGRADE (v5.1): Added a toggle for the new safety feature.
+        "divergence_veto_enabled": True,
+
         "min_confirmation_score": 6,
         "weights": {
             "master_trend": 3,
@@ -31,8 +32,6 @@ class EmaCrossoverStrategy(BaseStrategy):
             "volume": 1,
             "candlestick": 1
         },
-
-        # --- Component Settings (used by the scoring engine) ---
         "master_trend_filter_enabled": True,
         "macd_confirmation_enabled": True,
         "volume_confirmation_enabled": True,
@@ -40,7 +39,6 @@ class EmaCrossoverStrategy(BaseStrategy):
         "min_adx_strength": 20.0,
         "candlestick_confirmation_enabled": True,
         
-        # --- Unchanged Settings ---
         "master_trend_ma_indicator": "fast_ma",
         "volatility_regimes": { "low_atr_pct_threshold": 1.5, "low_vol_sl_multiplier": 2.0, "high_vol_sl_multiplier": 3.0 },
         "htf_confirmation_enabled": True,
@@ -56,7 +54,7 @@ class EmaCrossoverStrategy(BaseStrategy):
         return self.config.copy()
 
     def check_signal(self) -> Optional[Dict[str, Any]]:
-        cfg = self._get_signal_config()
+        cfg = self.config.copy()
         if not self.price_data:
             self._log_final_decision("HOLD", "No price data available.")
             return None
@@ -68,9 +66,10 @@ class EmaCrossoverStrategy(BaseStrategy):
         if cfg.get('volume_confirmation_enabled'): required_names.append('whales')
         if cfg.get('adx_confirmation_enabled'): required_names.append('adx')
         if cfg.get('candlestick_confirmation_enabled'): required_names.append('patterns')
+        # ✅ UPGRADE (v5.1): Add divergence as a dependency if the shield is active.
+        if cfg.get('divergence_veto_enabled'): required_names.append('divergence')
         if cfg.get('htf_confirmation_enabled'):
             htf_rules = cfg.get('htf_confirmations', {})
-            # ✅ FINAL POLISH (v5.0): Corrected typo hf_rules -> htf_rules
             if "supertrend" in htf_rules: required_names.append('supertrend')
         
         indicators = {name: self.get_indicator(name) for name in list(set(required_names))}
@@ -86,7 +85,23 @@ class EmaCrossoverStrategy(BaseStrategy):
         self._log_criteria("Primary Trigger (EMA Cross)", True, f"Signal: {primary_signal}")
         signal_direction = primary_signal.upper()
         
-        # --- 3. Confirmation Scoring Engine ---
+        # --- 3. ✅ NEW: Divergence Veto Shield (Hard Filter) ---
+        if cfg.get('divergence_veto_enabled', True):
+            divergence_indicator = indicators.get('divergence')
+            opposing_div_found = False
+            if divergence_indicator and (div_signals := (divergence_indicator.get('analysis') or {}).get('signals', [])):
+                if signal_direction == "BUY" and any("Regular Bearish" in s.get('type', '') for s in div_signals):
+                    opposing_div_found = True
+                elif signal_direction == "SELL" and any("Regular Bullish" in s.get('type', '') for s in div_signals):
+                    opposing_div_found = True
+            
+            veto_is_active = opposing_div_found
+            self._log_criteria("Divergence Veto Shield", not veto_is_active, "Opposing regular divergence detected. VETOED." if veto_is_active else "No opposing divergence found. Shield passed.")
+            if veto_is_active:
+                self._log_final_decision("HOLD", "Vetoed by opposing regular divergence.")
+                return None
+        
+        # --- 4. Confirmation Scoring Engine ---
         score = 0; confirmations_passed: List[str] = []; weights = cfg.get('weights', {})
 
         if cfg.get('master_trend_filter_enabled'):
@@ -119,7 +134,7 @@ class EmaCrossoverStrategy(BaseStrategy):
         self._log_criteria("Final Score", score_is_ok, f"Total Score: {score} vs Minimum: {min_score}")
         if not score_is_ok: self._log_final_decision("HOLD", f"Confirmation score {score} is below required {min_score}."); return None
 
-        # --- 4. Dynamic Risk Management ---
+        # --- 5. Dynamic Risk Management ---
         entry_price = self.price_data.get('close')
         long_ema_val = (indicators['ema_cross'].get('values') or {}).get('long_ema')
         atr_value = (indicators['atr'].get('values') or {}).get('atr')
@@ -136,9 +151,8 @@ class EmaCrossoverStrategy(BaseStrategy):
         if not (risk_params and risk_params.get("targets")):
             self._log_final_decision("HOLD", "Risk calculation failed."); return None
         
-        # --- 5. Final Decision ---
+        # --- 6. Final Decision ---
         confirmations = {"score": score, "confirmations_passed": ", ".join(confirmations_passed)}
         self._log_final_decision(signal_direction, "All criteria met. EMA Crossover signal confirmed.")
 
         return { "direction": signal_direction, "entry_price": entry_price, **risk_params, "confirmations": confirmations }
-
