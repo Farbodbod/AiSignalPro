@@ -189,11 +189,11 @@
       "divergence_veto_enabled": true,
       "min_confirmation_score": 6,
       "weights": {
-        "master_trend": 3,
-        "macd": 2,
-        "htf_alignment": 2,
-        "adx_strength": 1,
-        "volume": 1,
+        "master_trend": 4,
+        "macd": 1,
+        "htf_alignment": 3,
+        "adx_strength": 2,
+        "volume": 2,
         "candlestick": 1
       },
       "master_trend_filter_enabled": true,
@@ -202,11 +202,11 @@
       "adx_confirmation_enabled": true,
       "min_adx_strength": 25.0,
       "candlestick_confirmation_enabled": true,
-      "master_trend_ma_indicator": "fast_ma",
+      "master_trend_ma_indicator": "slow_ma",
       "volatility_regimes": {
-        "low_atr_pct_threshold": 1.5,
-        "low_vol_sl_multiplier": 2.0,
-        "high_vol_sl_multiplier": 3.0
+        "low_atr_pct_threshold": 3,
+        "low_vol_sl_multiplier": 2.5,
+        "high_vol_sl_multiplier": 3.5
       },
       "htf_confirmation_enabled": true,
       "htf_map": {
@@ -219,7 +219,7 @@
         "min_required_score": 1,
         "adx": {
           "weight": 1,
-          "min_strength": 22
+          "min_strength": 25
         },
         "supertrend": {
           "weight": 1
