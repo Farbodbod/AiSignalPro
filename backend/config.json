@@ -368,7 +368,7 @@
     },
     "WhaleReversal": {
       "enabled": true,
-      "min_reversal_score": 7,
+      "min_reversal_score": 8,
       "weights": { "whale_intensity": 4, "rejection_wick": 3, "volatility_context": 3, "candlestick_pattern": 2 },
       "adaptive_proximity_multiplier": 0.5,
       "min_rr_ratio": 2.0,
