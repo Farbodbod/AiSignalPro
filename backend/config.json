@@ -99,13 +99,34 @@
     },
     "DivergenceSniperPro": {
       "enabled": true,
-      "volume_confirmation_enabled": true,
-      "candlestick_confirmation_enabled": true,
+      "min_score": 7,
+      "weights": {
+        "fortress_sr": 3,
+        "climactic_volume": 3,
+        "candlestick": 2,
+        "williams_r_trigger": 2,
+        "htf_filter": 1
+      },
       "min_structure_strength": 3,
-      "volatility_regimes": { "low_atr_pct_threshold": 1.5, "low_vol_sl_multiplier": 1.0, "high_vol_sl_multiplier": 1.5 },
+      "volatility_regimes": {
+        "low_atr_pct_threshold": 1.5,
+        "low_vol_sl_multiplier": 1.0,
+        "high_vol_sl_multiplier": 1.5
+      },
       "htf_confirmation_enabled": true,
-      "htf_map": { "5m": "15m", "15m": "1h", "1h": "4h", "4h": "1d" },
-      "htf_confirmations": { "min_required_score": 1, "adx": {"weight": 1, "min_strength": 25} }
+      "htf_map": {
+        "5m": "15m",
+        "15m": "1h",
+        "1h": "4h",
+        "4h": "1d"
+      },
+      "htf_confirmations": {
+        "min_required_score": 1,
+        "adx": {
+          "weight": 1,
+          "min_strength": 25
+        }
+      }
     },
     "BreakoutHunter": {
       "enabled": true,
