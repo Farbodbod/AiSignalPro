@@ -78,6 +78,7 @@
     "structure": { "enabled": true, "zone_proximity_pct": 0.1, "dependencies": { "zigzag": { "deviation": 3.0 } } },
     "supertrend": { "enabled": true, "period": 10, "multiplier": 3.0, "dependencies": { "atr": { "period": 14 } } },
     "vwap_bands": { "enabled": true },
+    "volume": { "enabled": true, "period": 20, "long_period": 50, "climactic_std_threshold": 2.5 },
     "whales": { "enabled": true, "period": 20, "stdev_multiplier": 2.0, "climactic_multiplier": 4.0 },
     "williams_r": { "enabled": true, "period": 14 },
     "zigzag": { "enabled": true, "deviation": 3.0 }
