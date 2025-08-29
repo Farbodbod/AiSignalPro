@@ -329,6 +329,7 @@
     "BollingerBandsDirectedMaestro": {
       "enabled": true,
       "direction": 0,
+      "sl_atr_multiplier": 2.0,
       "adx_trend_threshold": 23.0,
       "min_squeeze_score": 4,
       "weights_squeeze": {
