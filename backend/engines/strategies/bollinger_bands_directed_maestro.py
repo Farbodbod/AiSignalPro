@@ -223,7 +223,7 @@ class BollingerBandsDirectedMaestro(BaseStrategy):
                         "direction": temp_direction, "entry_price": current_price, "trade_mode": trade_mode,
                         "confirmations": {"final_score": score, "adx_strength": adx_value},
                         "sl_logic": {"type": "band", "band_name": "middle_band", "buffer_atr_multiplier": final_multiplier},
-                        "tp_logic": {"type": "fibonacci_extension", "levels": [1.618, 2.618, 4.236]}
+                        "tp_logic": {"type": "band_target", "band_name": "bb_upper" if temp_direction == "BUY" else "bb_lower"}
                     }
                     if self._validate_blueprint(blueprint):
                         risk_params = self._calculate_smart_risk_management(
