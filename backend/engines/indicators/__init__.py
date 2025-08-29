@@ -26,6 +26,7 @@ from .williams_r import WilliamsRIndicator
 from .keltner_channel import KeltnerChannelIndicator
 from .zigzag import ZigzagIndicator
 from .fibonacci import FibonacciIndicator
+from .volume import VolumeIndicator
 
 # ✨ World-Class Refinement: Define the public API of the package
 __all__ = [
@@ -55,4 +56,5 @@ __all__ = [
     'KeltnerChannelIndicator',
     'ZigzagIndicator',
     'FibonacciIndicator',
+    'VolumeIndicator',
 ]
