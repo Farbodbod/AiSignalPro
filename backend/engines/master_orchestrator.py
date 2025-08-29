@@ -37,7 +37,7 @@ class MasterOrchestrator:
         self._strategy_classes: List[Type[BaseStrategy]] = [
             TrendRiderPro, VwapMeanReversion, DivergenceSniperPro, PullbackSniperPro, RangeHunterPro, WhaleReversal,
             VolumeCatalystPro, BreakoutHunter, IchimokuHybridPro, ChandelierTrendRider,
-            KeltnerMomentumBreakout, PivotConfluenceSniper, ConfluenceSniper,
+            KeltnerMomentumBreakout, BollingerBandsDirectedMaestro, PivotConfluenceSniper, ConfluenceSniper,
             EmaCrossoverStrategy,
         ]
         self.gemini_handler = GeminiHandler()
