@@ -331,19 +331,19 @@
       "direction": 0,
       "sl_atr_multiplier": 2.0,
       "adx_trend_threshold": 23.0,
-      "min_squeeze_score": 4,
+      "min_squeeze_score": 10,
       "weights_squeeze": {
         "breakout_strength": 3,
         "momentum_confirmation": 2,
         "htf_alignment": 1
       },
-      "min_ranging_score": 4,
+      "min_ranging_score": 10,
       "weights_ranging": {
         "rsi_reversal": 3,
         "volume_fade": 2,
         "candlestick": 1
       },
-      "min_trending_score": 4,
+      "min_trending_score": 10,
       "weights_trending": {
         "htf_alignment": 3,
         "rsi_cooldown": 2,
