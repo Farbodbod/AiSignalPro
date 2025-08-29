@@ -6,6 +6,7 @@ from .base_strategy import BaseStrategy
 
 # Import all strategy classes from their respective files using their final, correct names
 # This list is now 100% synchronized with your final, verified file structure.
+from .bollinger_bands_directed_maestro import BollingerBandsDirectedMaestro # ✅ ADDED: The new Maestro is now imported.
 from .breakout import BreakoutHunter
 from .chandelier_trend import ChandelierTrendRider
 from .divergence_sniper import DivergenceSniperPro
@@ -15,7 +16,7 @@ from .ichimoku_pro import IchimokuHybridPro
 from .keltner_breakout import KeltnerMomentumBreakout
 from .pivot_reversal import PivotConfluenceSniper
 from .pullback_sniper import PullbackSniperPro
-from .range_hunter import RangeHunterPro # ✅ ADDED: The new Range Hunter is now imported.
+from .range_hunter import RangeHunterPro
 from .trend_rider import TrendRiderPro
 from .volume_catalyst import VolumeCatalystPro
 from .volume_reversal import WhaleReversal
@@ -24,6 +25,7 @@ from .vwap_reversion import VwapMeanReversion
 # This is the definitive list of our world-class strategies.
 __all__ = [
     'BaseStrategy',
+    'BollingerBandsDirectedMaestro', # ✅ ADDED: The new Maestro is now registered.
     'BreakoutHunter',
     'ChandelierTrendRider',
     'DivergenceSniperPro',
@@ -33,7 +35,7 @@ __all__ = [
     'KeltnerMomentumBreakout',
     'PivotConfluenceSniper',
     'PullbackSniperPro',
-    'RangeHunterPro', # ✅ ADDED: The new Range Hunter is now registered.
+    'RangeHunterPro',
     'TrendRiderPro',
     'VolumeCatalystPro',
     'WhaleReversal',
