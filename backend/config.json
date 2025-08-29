@@ -198,9 +198,9 @@
       "max_adx_for_ranging": 20.0,
       "min_adx_for_trending": 25.0,
       "sl_atr_buffer_multipliers": {
-        "squeeze": 0.4,
-        "ranging": 1.0,
-        "trending": 0.6
+        "squeeze": 0.3,
+        "ranging": 0.8,
+        "trending": 0.5
       },
       "vol_ratio_cap": 0.1,
       "max_sl_multiplier_cap": 2.5,
