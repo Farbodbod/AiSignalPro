@@ -1,290 +1,246 @@
-# backend/engines/strategies/bollinger_bands_directed_maestro.py (v2.2 - Logic & Stability Fixes)
+# backend/engines/strategies/bollinger_bands_directed_maestro.py (v3.3 - The Final, Corrected Standard)
 
 import logging
-from typing import Dict, Any, Optional, ClassVar, List
+from typing import Dict, Any, Optional, ClassVar
 from .base_strategy import BaseStrategy
 
 logger = logging.getLogger(__name__)
 
 class BollingerBandsDirectedMaestro(BaseStrategy):
     """
-    BollingerBandsDirectedMaestro - (v2.2 - Logic & Stability Fixes)
-    -------------------------------------------------------------------------
-    This version implements critical fixes to address fundamental logic flaws,
-    runtime errors, and risk management weaknesses identified in v2.1.
-    
-    Changelog:
-    - [FIX] Overhauled the 'TRENDING' mode logic to use the Middle Band for
-      valid pullback entries, correcting a major logical contradiction.
-    - [FIX] Resolved the fatal 'TypeError' by adding robust validation for
-      price and indicator values before they are used in comparisons.
-    - [ENH] Implemented an intelligent ATR-based stop-loss mechanism to
-      provide a volatility-adjusted buffer, preventing premature stop-outs.
-    - [FIX] Changed trigger conditions from '<' and '>' to '<=' and '>=' to
-      prevent missed signals on exact band touches.
-    - [ARCH] Preserved the separation of Ranging/Trending logic blocks as
-      per architectural review to maintain configuration flexibility.
+    BollingerBandsDirectedMaestro - (v3.3 - The Final, Corrected Standard)
+    --------------------------------------------------------------------------------
+    This is the definitive, fully corrected version incorporating all architectural
+    decisions, bug fixes, and logic calibrations. It strictly adheres to the
+    original 3-engine design and integer-based scoring system. All hidden
+    parameters have been made explicit in the default config for full transparency.
     """
-    strategy_name: str = "BollingerBandsDirectedMaestro"
+    strategy_name: "BollingerBandsDirectedMaestro"
     
     default_config: ClassVar[Dict[str, Any]] = {
       "enabled": True,
       "direction": 0,
-      "adx_trend_threshold": 23.0,
-      "sl_atr_multiplier": 2.0, # ATR multiplier for stop-loss buffer
       
+      "sl_atr_multiplier": 2.0,
+      "min_sl_percentage": 0.5,
+      "max_sl_percentage": 10.0,
+
+      "adx_trend_threshold": 23.0,
+
       "min_squeeze_score": 4,
-      "weights_squeeze": {
-        "breakout_strength": 3,
-        "momentum_confirmation": 2,
-        "htf_alignment": 1
-      },
+      "weights_squeeze": {"breakout_strength": 3, "momentum_confirmation": 2, "htf_alignment": 1},
+      
       "min_ranging_score": 4,
-      "weights_ranging": {
-        "rsi_reversal": 3,
-        "volume_fade": 2,
-        "candlestick": 1
-      },
+      "weights_ranging": {"rsi_reversal": 3, "volume_fade": 2, "candlestick": 1},
+      
       "min_trending_score": 4,
-      "weights_trending": {
-        "htf_alignment": 3,
-        "rsi_cooldown": 2,
-        "adx_strength": 1
-      },
+      "weights_trending": {"htf_alignment": 3, "rsi_cooldown": 2, "adx_strength": 1},
       
       "htf_confirmation_enabled": True,
-      "htf_map": { "5m": "15m", "15m": "1h", "1h": "4h", "4h": "1d" },
-      "htf_confirmations": { "min_required_score": 1, "adx": {"weight": 1}, "supertrend": {"weight": 1}}
+      "htf_map": {"5m": "15m", "15m": "1h", "1h": "4h", "4h": "1d"},
+      
+      # ✅ TRANSPARENCY FIX: Made the hidden 'min_strength' parameter explicit.
+      "htf_confirmations": {
+          "min_required_score": 1,
+          "adx": {
+              "weight": 1,
+              "min_strength": 25
+          },
+          "supertrend": {
+              "weight": 1
+          }
+      }
     }
 
     def check_signal(self) -> Optional[Dict[str, Any]]:
         cfg = self.config
-        if not self.price_data:
-            self._log_final_decision("HOLD", "No price data available.")
-            return None
+        if not self.price_data: return None
 
-        # --- 1. Data Availability ---
-        required = ['bollinger', 'rsi', 'adx', 'patterns', 'whales', 'atr'] # ADDED: atr for SL
+        required = ['bollinger', 'rsi', 'adx', 'patterns', 'whales', 'atr']
         indicators = {name: self.get_indicator(name) for name in required}
-        if any(data is None for data in indicators.values()):
-            missing = [name for name, data in indicators.items() if data is None]
-            self._log_final_decision("HOLD", f"Indicators missing: {', '.join(missing)}")
-            return None
-        self._log_criteria("Data Availability", True, "All required indicators are valid.")
+        if any(data is None for data in indicators.values()): return None
 
-        # --- Variable Extraction & Validation ---
-        bollinger_analysis = indicators['bollinger'].get('analysis', {})
-        bb_values = indicators['bollinger'].get('values', {})
         current_price = self.price_data.get('close')
-        atr_value = indicators['atr'].get('values', {}).get('atr')
+        bollinger_analysis = indicators['bollinger'].get('analysis', {})
         
-        # [FIX] Robust validation to prevent TypeError
-        if any(v is None for v in [current_price, atr_value]):
-             self._log_final_decision("HOLD", "Critical price or ATR value is None.")
-             return None
+        if current_price is None or not bollinger_analysis: return None
 
-        signal_direction: Optional[str] = None
-        stop_loss: Optional[float] = None
-        confirmations: Dict[str, Any] = {}
-        
-        # --- 2. Hierarchical Logic ---
         is_squeeze_release = bollinger_analysis.get('is_squeeze_release', False)
-        
-        # --- PATH 1: SQUEEZE RELEASE (BREAKOUT) LOGIC ---
-        self._log_criteria("Path 1: Squeeze Release Check", is_squeeze_release, "Squeeze Release detected. Activating Breakout Hunter." if is_squeeze_release else "No Squeeze Release. Proceeding to standard analysis.")
+        is_in_squeeze = bollinger_analysis.get('is_in_squeeze', False)
+
         if is_squeeze_release:
-            score = 0
-            weights = cfg.get('weights_squeeze', {})
-            min_score = cfg.get('min_squeeze_score', 4)
-            
-            bb_trade_signal = bollinger_analysis.get('trade_signal', '')
-            signal_direction = "BUY" if "Bullish" in bb_trade_signal else "SELL" if "Bearish" in bb_trade_signal else None
+            return self._evaluate_breakout_signal(indicators, current_price)
 
-            if not signal_direction:
-                self._log_final_decision("HOLD", "Squeeze Release detected but direction is unclear.")
-                return None
+        if is_in_squeeze:
+            self._log_final_decision("HOLD", "Squeeze Active. Strategic patience engaged.")
+            return None
 
-            # Scoring for Squeeze Release
-            strength_ok = bollinger_analysis.get('strength') == 'Strong'
-            self._log_criteria("Score Check: Breakout Strength", strength_ok, f"Volume confirmed strength." if strength_ok else "Weak volume on breakout.")
-            if strength_ok: score += weights.get('breakout_strength', 0)
+        market_regime, adx_value = self._get_market_regime(cfg.get('adx_trend_threshold', 23.0))
+        if market_regime == "TRENDING":
+            return self._evaluate_trending_signal(indicators, current_price, adx_value)
+        elif market_regime == "RANGING":
+            return self._evaluate_ranging_signal(indicators, current_price)
 
-            rsi_value = indicators['rsi'].get('values', {}).get('rsi', 50)
-            momentum_ok = (signal_direction == "BUY" and rsi_value > 50) or (signal_direction == "SELL" and rsi_value < 50)
-            self._log_criteria("Score Check: Momentum Confirm", momentum_ok, f"RSI {rsi_value:.2f} confirms direction." if momentum_ok else f"RSI {rsi_value:.2f} does not confirm direction.")
-            if momentum_ok: score += weights.get('momentum_confirmation', 0)
-
-            htf_ok = self._get_trend_confirmation(signal_direction)
-            self._log_criteria("Score Check: HTF Alignment", htf_ok, "Aligned with HTF." if htf_ok else "Not aligned with HTF.")
-            if htf_ok: score += weights.get('htf_alignment', 0)
-
-            if score >= min_score:
-                middle_band = bb_values.get('middle_band')
-                if middle_band is None:
-                    self._log_final_decision("HOLD", "Squeeze confirmed but middle band is missing for SL.")
-                    return None
-                
-                # [ENH] ATR-based Stop Loss
-                sl_buffer = atr_value * cfg.get('sl_atr_multiplier', 2.0)
-                stop_loss = middle_band - sl_buffer if signal_direction == "BUY" else middle_band + sl_buffer
-                confirmations = {"mode": "Squeeze Breakout", "final_score": score}
-            else:
-                self._log_final_decision("HOLD", f"Squeeze Release score {score} is below required {min_score}.")
-                return None
+        return None
         
-        # --- PATH 2: STANDARD REGIME (RANGING/TRENDING) LOGIC ---
-        else:
-            market_regime, adx_value = self._get_market_regime(cfg.get('adx_trend_threshold', 23.0))
-            self._log_criteria("Path 2: Market Regime", True, f"Detected '{market_regime}' (ADX: {adx_value:.2f})")
+    def _evaluate_breakout_signal(self, indicators: Dict, price: float) -> Optional[Dict[str, Any]]:
+        bb_analysis = indicators['bollinger'].get('analysis', {})
+        direction = "BUY" if "Bullish" in bb_analysis.get('trade_signal', '') else "SELL"
+        
+        score, contributors = 0, []
+        weights = self.config.get('weights_squeeze', {})
+        
+        if bb_analysis.get('strength') == 'Strong':
+            score += weights.get('breakout_strength', 0)
+            contributors.append("Breakout_Strength")
+
+        rsi_value = indicators['rsi'].get('values', {}).get('rsi', 50)
+        if (direction == "BUY" and rsi_value > 50) or (direction == "SELL" and rsi_value < 50):
+            score += weights.get('momentum_confirmation', 0)
+            contributors.append("Momentum_Confirm")
+
+        if self._get_trend_confirmation(direction):
+            score += weights.get('htf_alignment', 0)
+            contributors.append("HTF_Alignment")
+
+        min_score = self.config.get('min_squeeze_score', 4)
+        if score < min_score:
+            self._log_final_decision("HOLD", f"Breakout score {score} is below required {min_score}.")
+            return None
+        
+        return self._build_final_signal(
+            direction=direction, entry_price=price, indicators=indicators,
+            engine="Breakout", final_score=score, contributors=contributors
+        )
+
+    def _evaluate_trending_signal(self, indicators: Dict, price: float, adx_value: float) -> Optional[Dict[str, Any]]:
+        middle_band = indicators['bollinger'].get('values', {}).get('middle_band')
+        if middle_band is None: return None
+        
+        direction = "BUY" if price <= middle_band else "SELL"
+        if (self.config.get('direction', 0) == 1 and direction == "SELL") or \
+           (self.config.get('direction', 0) == -1 and direction == "BUY"):
+            return None
+
+        score, contributors = 0, []
+        weights = self.config.get('weights_trending', {})
+
+        if self._get_trend_confirmation(direction):
+            score += weights.get('htf_alignment', 0)
+            contributors.append("HTF_Alignment")
+
+        rsi_value = indicators['rsi'].get('values', {}).get('rsi', 50)
+        if (direction == "BUY" and rsi_value < 50) or (direction == "SELL" and rsi_value > 50):
+            score += weights.get('rsi_cooldown', 0)
+            contributors.append("RSI_Cooldown")
             
-            if market_regime == "RANGING":
-                lower_band, upper_band = bb_values.get('bb_lower'), bb_values.get('bb_upper')
-                if any(v is None for v in [lower_band, upper_band]):
-                    self._log_final_decision("HOLD", "Ranging mode active but BB bands are missing.")
-                    return None
+        if adx_value > self.config.get('adx_trend_threshold', 23.0):
+            score += weights.get('adx_strength', 0)
+            contributors.append("ADX_Strength")
+            
+        min_score = self.config.get('min_trending_score', 4)
+        if score < min_score:
+            self._log_final_decision("HOLD", f"Trending score {score} is below required {min_score}.")
+            return None
 
-                # [FIX] Using '<=' and '>=' for trigger conditions
-                long_trigger = current_price <= lower_band
-                short_trigger = current_price >= upper_band
+        return self._build_final_signal(
+            direction=direction, entry_price=price, indicators=indicators,
+            engine="Trend_Pullback", final_score=score, contributors=contributors
+        )
 
-                self._log_criteria("Primary Trigger (Long)", long_trigger, f"Price {current_price:.4f} vs Lower Band {lower_band:.4f}")
-                self._log_criteria("Primary Trigger (Short)", short_trigger, f"Price {current_price:.4f} vs Upper Band {upper_band:.4f}")
+    def _evaluate_ranging_signal(self, indicators: Dict, price: float) -> Optional[Dict[str, Any]]:
+        bb_values = indicators['bollinger'].get('values', {})
+        lower_band, upper_band = bb_values.get('lower_band'), bb_values.get('upper_band')
+        if lower_band is None or upper_band is None: return None
+        
+        # In ranging, trigger should be a clear breach
+        direction = "BUY" if price <= lower_band else "SELL" if price >= upper_band else None
+        if direction is None: return None
 
-                if not (long_trigger or short_trigger):
-                    self._log_final_decision("HOLD", "Price is not touching the bands for Mean Reversion.")
-                    return None
+        if (self.config.get('direction', 0) == 1 and direction == "SELL") or \
+           (self.config.get('direction', 0) == -1 and direction == "BUY"):
+            return None
 
-                temp_signal_direction = "BUY" if long_trigger else "SELL"
-                score = 0
-                weights = cfg.get('weights_ranging', {})
-                min_score = cfg.get('min_ranging_score', 4)
-                rsi_value = indicators['rsi'].get('values', {}).get('rsi', 50)
-                
-                if temp_signal_direction == "BUY" and cfg.get('direction', 0) in [0, 1]:
-                    rsi_ok = rsi_value < 30
-                    self._log_criteria("Score Check: RSI Reversal", rsi_ok, f"RSI is oversold ({rsi_value:.2f})." if rsi_ok else f"RSI not oversold ({rsi_value:.2f}).")
-                    if rsi_ok: score += weights.get('rsi_reversal', 0)
-                    
-                    volume_ok = not (indicators['whales'].get('analysis', {}).get('is_whale_activity', False))
-                    self._log_criteria("Score Check: Volume Fade", volume_ok, "Volume is low (fading)." if volume_ok else "High volume detected.")
-                    if volume_ok: score += weights.get('volume_fade', 0)
-                    
-                    candle_ok = self._get_candlestick_confirmation("BUY") is not None
-                    self._log_criteria("Score Check: Candlestick", candle_ok, "Reversal candle found." if candle_ok else "No reversal candle.")
-                    if candle_ok: score += weights.get('candlestick', 0)
+        score, contributors = 0, []
+        weights = self.config.get('weights_ranging', {})
 
-                    if score >= min_score:
-                        signal_direction = "BUY"
-                        sl_buffer = atr_value * cfg.get('sl_atr_multiplier', 2.0)
-                        stop_loss = lower_band - sl_buffer
-                        confirmations = {"mode": "Mean Reversion", "final_score": score}
+        rsi_value = indicators['rsi'].get('values', {}).get('rsi', 50)
+        if (direction == "BUY" and rsi_value < 30) or (direction == "SELL" and rsi_value > 70):
+            score += weights.get('rsi_reversal', 0)
+            contributors.append("RSI_Reversal")
 
-                elif temp_signal_direction == "SELL" and cfg.get('direction', 0) in [0, -1]:
-                    rsi_ok = rsi_value > 70
-                    self._log_criteria("Score Check: RSI Reversal", rsi_ok, f"RSI is overbought ({rsi_value:.2f})." if rsi_ok else f"RSI not overbought ({rsi_value:.2f}).")
-                    if rsi_ok: score += weights.get('rsi_reversal', 0)
-                    
-                    volume_ok = not (indicators['whales'].get('analysis', {}).get('is_whale_activity', False))
-                    self._log_criteria("Score Check: Volume Fade", volume_ok, "Volume is low (fading)." if volume_ok else "High volume detected.")
-                    if volume_ok: score += weights.get('volume_fade', 0)
-                    
-                    candle_ok = self._get_candlestick_confirmation("SELL") is not None
-                    self._log_criteria("Score Check: Candlestick", candle_ok, "Reversal candle found." if candle_ok else "No reversal candle.")
-                    if candle_ok: score += weights.get('candlestick', 0)
-                    
-                    if score >= min_score:
-                        signal_direction = "SELL"
-                        sl_buffer = atr_value * cfg.get('sl_atr_multiplier', 2.0)
-                        stop_loss = upper_band + sl_buffer
-                        confirmations = {"mode": "Mean Reversion", "final_score": score}
-                
-                if not signal_direction:
-                    self._log_final_decision("HOLD", f"Ranging score {score} is below required {min_score}.")
-                    return None
+        if not (indicators['whales'].get('analysis', {}).get('is_whale_activity', False)):
+            score += weights.get('volume_fade', 0)
+            contributors.append("Volume_Fade")
 
-            elif market_regime == "TRENDING":
-                middle_band = bb_values.get('middle_band')
-                if middle_band is None:
-                    self._log_final_decision("HOLD", "Trending mode active but middle band is missing.")
-                    return None
-                
-                # [REWORKED] Logic for Pullback entries
-                score = 0
-                weights = cfg.get('weights_trending', {})
-                min_score = cfg.get('min_trending_score', 4)
-                rsi_value = indicators['rsi'].get('values', {}).get('rsi', 50)
+        if self._get_candlestick_confirmation(direction):
+            score += weights.get('candlestick', 0)
+            contributors.append("Candlestick")
 
-                # Check for BUY pullback in an uptrend
-                if cfg.get('direction', 0) in [0, 1]:
-                    htf_ok = self._get_trend_confirmation("BUY")
-                    pullback_trigger = current_price <= middle_band
-                    self._log_criteria("Primary Trigger (BUY Pullback)", pullback_trigger and htf_ok, f"Price {current_price:.4f} vs Middle Band {middle_band:.4f} with HTF confirmation ({htf_ok}).")
+        min_score = self.config.get('min_ranging_score', 4)
+        if score < min_score:
+            self._log_final_decision("HOLD", f"Ranging score {score} is below required {min_score}.")
+            return None
 
-                    if htf_ok and pullback_trigger:
-                        score += weights.get('htf_alignment', 0)
-                        
-                        rsi_ok = rsi_value < 50
-                        self._log_criteria("Score Check: RSI Cooldown", rsi_ok, f"RSI is cooled down ({rsi_value:.2f})." if rsi_ok else "RSI is still hot.")
-                        if rsi_ok: score += weights.get('rsi_cooldown', 0)
+        return self._build_final_signal(
+            direction=direction, entry_price=price, indicators=indicators,
+            engine="Mean_Reversion", final_score=score, contributors=contributors
+        )
 
-                        adx_ok = adx_value > cfg.get('adx_trend_threshold', 23.0)
-                        self._log_criteria("Score Check: ADX Strength", adx_ok, "Trend is strong." if adx_ok else "Trend is not strong enough.")
-                        if adx_ok: score += weights.get('adx_strength', 0)
-                        
-                        if score >= min_score:
-                            signal_direction = "BUY"
-                            lower_band = bb_values.get('bb_lower') # Use lower band as max SL point
-                            sl_base = lower_band if lower_band is not None else middle_band
-                            sl_buffer = atr_value * cfg.get('sl_atr_multiplier', 2.0)
-                            stop_loss = sl_base - sl_buffer
-                            confirmations = {"mode": "Pullback", "final_score": score}
+    def _build_final_signal(self, direction: str, entry_price: float, indicators: Dict, engine: str, final_score: int, contributors: list) -> Optional[Dict[str, Any]]:
+        bb_values = indicators['bollinger'].get('values', {})
+        atr_value = indicators['atr'].get('values', {}).get('atr')
 
-                # Check for SELL pullback in a downtrend
-                if not signal_direction and cfg.get('direction', 0) in [0, -1]:
-                    htf_ok = self._get_trend_confirmation("SELL")
-                    pullback_trigger = current_price >= middle_band
-                    self._log_criteria("Primary Trigger (SELL Pullback)", pullback_trigger and htf_ok, f"Price {current_price:.4f} vs Middle Band {middle_band:.4f} with HTF confirmation ({htf_ok}).")
-
-                    if htf_ok and pullback_trigger:
-                        score = 0 # Reset score for SELL check
-                        score += weights.get('htf_alignment', 0)
-
-                        rsi_ok = rsi_value > 50
-                        self._log_criteria("Score Check: RSI Cooldown", rsi_ok, f"RSI is cooled down ({rsi_value:.2f})." if rsi_ok else "RSI is still hot.")
-                        if rsi_ok: score += weights.get('rsi_cooldown', 0)
-                        
-                        adx_ok = adx_value > cfg.get('adx_trend_threshold', 23.0)
-                        self._log_criteria("Score Check: ADX Strength", adx_ok, "Trend is strong." if adx_ok else "Trend is not strong enough.")
-                        if adx_ok: score += weights.get('adx_strength', 0)
-                        
-                        if score >= min_score:
-                            signal_direction = "SELL"
-                            upper_band = bb_values.get('bb_upper') # Use upper band as max SL point
-                            sl_base = upper_band if upper_band is not None else middle_band
-                            sl_buffer = atr_value * cfg.get('sl_atr_multiplier', 2.0)
-                            stop_loss = sl_base + sl_buffer
-                            confirmations = {"mode": "Pullback", "final_score": score}
-                
-                if not signal_direction:
-                    self._log_final_decision("HOLD", f"Trending conditions not met or score {score} is below required {min_score}.")
-                    return None
-
-        # --- 3. Final Validation & Risk Management ---
-        if not signal_direction or stop_loss is None:
-            self._log_final_decision("HOLD", "No valid trade path was fully confirmed.")
+        if atr_value is None:
+            self._log_final_decision("HOLD", "ATR value is missing, cannot build final signal.")
             return None
             
-        risk_params = self._calculate_smart_risk_management(entry_price=current_price, direction=signal_direction, stop_loss=stop_loss)
+        sl_buffer = atr_value * self.config.get('sl_atr_multiplier', 2.0)
 
+        sl_base = None
+        if engine == "Breakout" or engine == "Trend_Pullback":
+            sl_base = bb_values.get('middle_band')
+        elif engine == "Mean_Reversion":
+            sl_base = bb_values.get('lower_band') if direction == "BUY" else bb_values.get('upper_band')
+
+        if sl_base is None:
+            self._log_final_decision("HOLD", f"Could not determine SL base for {engine} engine.")
+            return None
+
+        stop_loss = sl_base - sl_buffer if direction == "BUY" else sl_base + sl_buffer
+        
+        if (direction == "BUY" and stop_loss >= entry_price) or \
+           (direction == "SELL" and stop_loss <= entry_price):
+            logger.error(f"FATAL LOGIC ERROR: Invalid SL calculated for {direction} signal. SL: {stop_loss}, Entry: {entry_price}. Aborting.")
+            return None
+
+        min_sl_dist = entry_price * (self.config.get('min_sl_percentage', 0.5) / 100)
+        max_sl_dist = entry_price * (self.config.get('max_sl_percentage', 10.0) / 100)
+        current_sl_dist = abs(entry_price - stop_loss)
+        
+        if current_sl_dist < min_sl_dist:
+            stop_loss = entry_price - min_sl_dist if direction == "BUY" else entry_price + min_sl_dist
+        
+        if current_sl_dist > max_sl_dist:
+            self._log_final_decision("HOLD", f"Calculated SL distance exceeds max {self.config.get('max_sl_percentage')}% threshold.")
+            return None
+
+        risk_params = self._calculate_smart_risk_management(
+            entry_price=entry_price, direction=direction, stop_loss=stop_loss
+        )
         if not risk_params or not risk_params.get("targets"):
             self._log_final_decision("HOLD", "Risk parameter calculation failed.")
             return None
 
-        self._log_final_decision(signal_direction, f"Adaptive signal confirmed in '{confirmations.get('mode')}' mode with score {confirmations.get('final_score')}.")
-        
+        self._log_final_decision(direction, f"Signal confirmed via {engine} engine with score {final_score}.")
+
         return {
-            "direction": signal_direction,
-            "entry_price": current_price,
+            "direction": direction,
+            "entry_price": entry_price,
             **risk_params,
-            "confirmations": confirmations
+            "confirmations": {
+                "engine": engine,
+                "final_score": final_score,
+                "contributors": contributors
+            }
         }
