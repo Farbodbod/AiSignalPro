@@ -1,4 +1,4 @@
-# backend/engines/strategies/bollinger_bands_directed_maestro.py (v10.0 - Unified Logging Edition)
+# backend/engines/strategies/bollinger_bands_directed_maestro.py (v10.3 - Final Polish Edition)
 
 import logging
 from typing import Dict, Any, Optional, ClassVar, List
@@ -8,14 +8,16 @@ logger = logging.getLogger(__name__)
 
 class BollingerBandsDirectedMaestro(BaseStrategy):
     """
-    BollingerBandsDirectedMaestro - (v10.0 - Unified Logging Edition)
+    BollingerBandsDirectedMaestro - (v10.3 - Final Polish Edition)
     -------------------------------------------------------------------------
-    This definitive version achieves perfect architectural harmony by adopting the
-    project's standard logging protocol. All internal diagnostic checks have been
-    refactored to use the '_log_criteria' method from BaseStrategy, mirroring the
-    clean, structured, and transparent logging style of other advanced strategies
-    like IchimokuHybridPro. This ensures complete consistency and readability
-    across the entire system.
+    The definitive, Gold Master version of the strategy, incorporating final
+    polishes for maximum robustness and code clarity. This version includes:
+    1.  A semantically correct 'is not None' check for ADX values.
+    2.  Informative warnings for unrecognized candlestick strength values.
+    3.  A robust and consistent logging protocol using '_log_criteria'.
+    4.  Pre-extraction of variables for enhanced readability.
+    This represents the culmination of our collaborative development and
+    rigorous auditing process.
     """
     strategy_name: str = "BollingerBandsDirectedMaestro"
     
@@ -54,17 +56,22 @@ class BollingerBandsDirectedMaestro(BaseStrategy):
 
         required = ['bollinger', 'rsi', 'adx', 'patterns', 'volume', 'atr']
         indicators = {name: self.get_indicator(name) for name in required}
-        if any(data is None for data in indicators.values()):
-            self._log_final_decision("HOLD", "One or more required indicators are missing."); return None
+        
+        missing_indicators = [name for name, data in indicators.items() if data is None]
+        if missing_indicators:
+            self._log_final_decision("HOLD", f"Required indicators are missing: {', '.join(missing_indicators)}"); return None
         
         atr_value = self._safe_get(indicators, ['atr', 'values', 'atr'])
-        if atr_value is None: self._log_final_decision("HOLD", "ATR is missing."); return None
+        if atr_value is None: self._log_final_decision("HOLD", "ATR value is missing."); return None
         
         vol_ratio = atr_value / current_price
         clamped_vol_ratio = min(vol_ratio, cfg.get('vol_ratio_cap', 0.1))
-
-        # --- Path 1: Squeeze Breakout (The Breakout Hunter) ---
+        
         bollinger_analysis = self._safe_get(indicators, ['bollinger', 'analysis'], default={})
+        bollinger_values = self._safe_get(indicators, ['bollinger', 'values'], default={})
+        rsi_val = self._safe_get(indicators, ['rsi', 'values', 'rsi'])
+        _, adx_value = self._get_market_regime(0)
+        
         is_squeeze = self._safe_get(bollinger_analysis, ['is_squeeze_release'], False)
         self._log_criteria("Path Check: Squeeze", is_squeeze, f"Squeeze Release detected: {is_squeeze}")
         if is_squeeze:
@@ -78,9 +85,9 @@ class BollingerBandsDirectedMaestro(BaseStrategy):
                 self._log_criteria("Squeeze: Breakout Strength", strength_ok, "Breakout confirmed with strong volume.")
                 if strength_ok: score += weights['breakout_strength']
                 
-                rsi_val = self._safe_get(indicators, ['rsi', 'values', 'rsi'])
-                rsi_ok = rsi_val and ((temp_direction == "BUY" and rsi_val > 55) or (temp_direction == "SELL" and rsi_val < 45))
-                self._log_criteria("Squeeze: Momentum Confirmation", rsi_ok, f"RSI={rsi_val:.2f} confirms momentum.")
+                rsi_ok = rsi_val is not None and ((temp_direction == "BUY" and rsi_val > 55) or (temp_direction == "SELL" and rsi_val < 45))
+                rsi_display = f"{rsi_val:.2f}" if rsi_val is not None else "N/A"
+                self._log_criteria("Squeeze: Momentum Confirmation", rsi_ok, f"RSI={rsi_display} confirms momentum.")
                 if rsi_ok: score += weights['momentum_confirmation']
                 
                 htf_ok = self._get_trend_confirmation(temp_direction)
@@ -103,34 +110,39 @@ class BollingerBandsDirectedMaestro(BaseStrategy):
                 else:
                     self._log_final_decision("HOLD", f"{trade_mode} score {score}/{min_score} was below threshold.")
                     return None
-
-        # --- Path 2: Ranging / Trending Analysis ---
-        _, adx_value = self._get_market_regime(0)
+        
+        adx_display = f"{adx_value:.2f}" if adx_value is not None else "N/A"
         market_regime = "RANGING" if adx_value is not None and adx_value <= cfg['max_adx_for_ranging'] else "TRENDING" if adx_value is not None and adx_value >= cfg['min_adx_for_trending'] else "UNCERTAIN"
-        self._log_criteria("Path Check: Market Regime", market_regime, f"ADX={adx_value:.2f}")
+        self._log_criteria("Path Check: Market Regime", market_regime, f"ADX={adx_display}")
 
         if market_regime == "RANGING":
             trade_mode = "Mean Reversion"
-            bb_lower = self._safe_get(indicators, ['bollinger', 'values', 'bb_lower'])
-            bb_upper = self._safe_get(indicators, ['bollinger', 'values', 'bb_upper'])
-            if bb_lower is None or bb_upper is None: return None
+            bb_lower = self._safe_get(bollinger_values, ['bb_lower'])
+            bb_upper = self._safe_get(bollinger_values, ['bb_upper'])
+            if bb_lower is None or bb_upper is None: 
+                self._log_final_decision("HOLD", "Bollinger Bands values missing for Ranging check."); return None
             
             temp_direction = "BUY" if current_price <= bb_lower else "SELL" if current_price >= bb_upper else None
             trigger_ok = temp_direction is not None
-            self._log_criteria("Ranging: Entry Trigger", trigger_ok, f"Price is at outer bands.")
+            self._log_criteria("Ranging: Entry Trigger", trigger_ok, "Price is at outer bands.")
             
             if trigger_ok and cfg['direction'] in [0, 1 if temp_direction == "BUY" else -1]:
                 score, weights, min_score = 0, cfg['weights_ranging'], cfg['min_ranging_score']
                 
-                rsi_val = self._safe_get(indicators, ['rsi', 'values', 'rsi'])
-                rsi_ok = rsi_val and ((temp_direction == "BUY" and rsi_val < 30) or (temp_direction == "SELL" and rsi_val > 70))
-                self._log_criteria("Ranging: RSI Reversal", rsi_ok, f"RSI={rsi_val:.2f} shows over-extension.")
+                rsi_ok = rsi_val is not None and ((temp_direction == "BUY" and rsi_val < 30) or (temp_direction == "SELL" and rsi_val > 70))
+                rsi_display = f"{rsi_val:.2f}" if rsi_val is not None else "N/A"
+                self._log_criteria("Ranging: RSI Reversal", rsi_ok, f"RSI={rsi_display} shows over-extension.")
                 if rsi_ok: score += weights['rsi_reversal']
                 
                 candle_info = self._get_candlestick_confirmation(temp_direction)
                 candle_ok = candle_info is not None
                 self._log_criteria("Ranging: Candlestick Confirmation", candle_ok, f"Found pattern: {self._safe_get(candle_info, ['name'])}")
-                if candle_ok: score += weights['candlestick'].get(self._safe_get(candle_info, ['strength'], default='weak'), 0)
+                if candle_ok:
+                    strength = self._safe_get(candle_info, ['strength'], default='weak')
+                    if strength in weights['candlestick']:
+                        score += weights['candlestick'][strength]
+                    else:
+                        logger.warning(f"[{self.strategy_name}] Unrecognized candlestick strength '{strength}' received. Assigning 0 score.")
 
                 volume_ok = self._safe_get(indicators, ['volume', 'analysis', 'is_below_average'], False)
                 self._log_criteria("Ranging: Volume Fade", volume_ok, "Volume is below average, confirming exhaustion.")
@@ -155,7 +167,7 @@ class BollingerBandsDirectedMaestro(BaseStrategy):
 
         elif market_regime == "TRENDING":
             trade_mode = "Pullback"
-            middle_band = self._safe_get(indicators, ['bollinger', 'values', 'middle_band'])
+            middle_band = self._safe_get(bollinger_values, ['middle_band'])
             price_low = self._safe_get(self.price_data, ['low'])
             price_high = self._safe_get(self.price_data, ['high'])
             temp_direction = None
@@ -168,17 +180,17 @@ class BollingerBandsDirectedMaestro(BaseStrategy):
             if trigger_ok:
                 score, weights, min_score = 0, cfg['weights_trending'], cfg['min_trending_score']
                 
-                # HTF alignment is the trigger, so it's a guaranteed pass if we are here.
+                self._log_criteria("Trending: HTF Alignment", True, "HTF trend confirmed (trigger condition).")
                 score += weights['htf_alignment']
-                self._log_criteria("Trending: HTF Alignment", True, "HTF trend confirmed.")
                 
-                rsi_val = self._safe_get(indicators, ['rsi', 'values', 'rsi'])
-                rsi_ok = rsi_val and ((temp_direction == "BUY" and 40 < rsi_val < 70) or (temp_direction == "SELL" and 30 < rsi_val < 60))
-                self._log_criteria("Trending: RSI Cooldown", rsi_ok, f"RSI={rsi_val:.2f} is in healthy pullback zone.")
+                rsi_ok = rsi_val is not None and ((temp_direction == "BUY" and 40 < rsi_val < 70) or (temp_direction == "SELL" and 30 < rsi_val < 60))
+                rsi_display = f"{rsi_val:.2f}" if rsi_val is not None else "N/A"
+                self._log_criteria("Trending: RSI Cooldown", rsi_ok, f"RSI={rsi_display} is in healthy pullback zone.")
                 if rsi_ok: score += weights['rsi_cooldown']
                 
-                adx_ok = adx_value and adx_value >= cfg['min_adx_for_trending']
-                self._log_criteria("Trending: ADX Strength", adx_ok, f"ADX={adx_value:.2f} confirms strong trend.")
+                # POLISH 1: Use semantically correct check for ADX
+                adx_ok = adx_value is not None and adx_value >= cfg['min_adx_for_trending']
+                self._log_criteria("Trending: ADX Strength", adx_ok, f"ADX={adx_display} confirms strong trend.")
                 if adx_ok: score += weights['adx_strength']
 
                 if score >= min_score:
@@ -197,6 +209,6 @@ class BollingerBandsDirectedMaestro(BaseStrategy):
                 else:
                     self._log_final_decision("HOLD", f"{trade_mode} score {score}/{min_score} was below threshold.")
                     return None
-
+        
         self._log_final_decision("HOLD", f"Market regime is '{market_regime}', no actionable setup found.")
         return None
