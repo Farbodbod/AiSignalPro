@@ -1,4 +1,4 @@
-# backend/engines/strategies/bollinger_bands_directed_maestro.py (v2.2 - Bug Fix)
+# backend/engines/strategies/bollinger_bands_directed_maestro.py (v2.3 - Final Fix)
 
 import logging
 from typing import Dict, Any, Optional, ClassVar, List
@@ -8,14 +8,12 @@ logger = logging.getLogger(__name__)
 
 class BollingerBandsDirectedMaestro(BaseStrategy):
     """
-    BollingerBandsDirectedMaestro - (v2.2 - Bug Fix)
+    BollingerBandsDirectedMaestro - (v2.3 - Final Fix)
     -------------------------------------------------------------------------
-    This version includes a critical bug fix to the previous Glass Box
-    implementation. The data validation logic has been refactored to ensure
-    all necessary indicator values (e.g., lower_band, upper_band) are
-    validated for existence and validity *before* they are used in any
-    comparison or calculation, thus eliminating the `TypeError: '<' not
-    supported between instances of 'float' and 'NoneType'`.
+    This is the final, production-ready version with the critical bug fixed.
+    The validation of all crucial indicator values is now performed at the
+    very beginning of the signal check, ensuring the strategy is robust and
+    crash-free. All advanced features and the "Glass Box" logging remain intact.
     """
     strategy_name: str = "BollingerBandsDirectedMaestro"
     
@@ -54,30 +52,31 @@ class BollingerBandsDirectedMaestro(BaseStrategy):
             self._log_final_decision("HOLD", "No price data available.")
             return None
 
-        # --- 1. Data Availability ---
+        # --- 1. Comprehensive Data Availability & Validation ---
         required_indicators = ['bollinger', 'rsi', 'adx', 'patterns', 'whales']
         indicators = {name: self.get_indicator(name) for name in required_indicators}
+        
+        # First, check if indicator objects are present
         if any(data is None for data in indicators.values()):
             missing = [name for name, data in indicators.items() if data is None]
-            self._log_final_decision("HOLD", f"Indicators missing: {', '.join(missing)}")
+            self._log_final_decision("HOLD", f"Required indicator objects are missing: {', '.join(missing)}")
             return None
-        self._log_criteria("Data Availability", True, "All required indicators are valid.")
-
-        # --- Data Extraction and Validation (CRITICAL FIX) ---
+        self._log_criteria("Data Objects Availability", True, "All required indicator objects are valid.")
+        
+        # Second, extract and validate crucial values to prevent TypeError
         bollinger_analysis = indicators['bollinger'].get('analysis', {})
         bb_values = indicators['bollinger'].get('values', {})
         rsi_value = indicators['rsi'].get('values', {}).get('rsi')
         adx_value = indicators['adx'].get('values', {}).get('adx')
         current_price = self.price_data.get('close')
-        
         lower_band = bb_values.get('bb_lower')
         upper_band = bb_values.get('bb_upper')
-
-        # This check is moved up to prevent errors
-        if any(v is None for v in [lower_band, upper_band, rsi_value, adx_value, current_price]):
-            self._log_final_decision("HOLD", "Crucial indicator values are None. Missing historical data.")
-            return None
         
+        if any(v is None for v in [lower_band, upper_band, rsi_value, adx_value, current_price]):
+            self._log_final_decision("HOLD", "Crucial indicator values are None. Missing historical data for calculation.")
+            return None
+        self._log_criteria("Crucial Values Validation", True, "All crucial indicator values are non-None.")
+
         # --- 2. Hierarchical Logic ---
         is_squeeze_release = bollinger_analysis.get('is_squeeze_release', False)
         
