@@ -40,7 +40,12 @@ class GeminiHandler:
                 genai.configure(api_key=api_key)
                 model = genai.GenerativeModel(model_name)
                 # --- ✨ تغییر کلیدی: فراخوانی همزمان ---
-                response = model.generate_content(prompt)
+                response = model.generate_content(
+                    prompt,
+                    generation_config=genai.types.GenerationConfig(
+                        temperature=0.0
+                    )
+                )
                 
                 cleaned_response = response.text.replace("`", "").replace("json", "").strip()
                 if not cleaned_response.startswith("{") or not cleaned_response.endswith("}"):
