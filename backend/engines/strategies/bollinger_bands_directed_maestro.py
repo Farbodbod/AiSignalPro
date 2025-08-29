@@ -105,7 +105,18 @@ class BollingerBandsDirectedMaestro(BaseStrategy):
                         "tp_logic": {"type": "atr_multiple", "multiples": [2.0, 3.5, 5.0]}
                     }
                     if self._validate_blueprint(blueprint):
+                        risk_params = self._calculate_smart_risk_management(
+                            entry_price=current_price,
+                            direction=temp_direction,
+                            sl_params=blueprint['sl_logic'],
+                            tp_logic=blueprint['tp_logic']
+                        )
+                        if not risk_params or not risk_params.get("risk_reward_ratio", 0) > 0:
+                            self._log_final_decision("HOLD", "Risk management failed or R/R is zero.")
+                            return None
+                        
                         self._log_final_decision(temp_direction, f"{trade_mode} triggered (Score: {score})")
+                        blueprint.update(risk_params)
                         return blueprint
                 else:
                     self._log_final_decision("HOLD", f"{trade_mode} score {score}/{min_score} was below threshold.")
@@ -159,7 +170,18 @@ class BollingerBandsDirectedMaestro(BaseStrategy):
                         "tp_logic": {"type": "range_targets", "targets": ["middle_band", "opposite_band"]}
                     }
                     if self._validate_blueprint(blueprint):
+                        risk_params = self._calculate_smart_risk_management(
+                            entry_price=current_price,
+                            direction=temp_direction,
+                            sl_params=blueprint['sl_logic'],
+                            tp_logic=blueprint['tp_logic']
+                        )
+                        if not risk_params or not risk_params.get("risk_reward_ratio", 0) > 0:
+                            self._log_final_decision("HOLD", "Risk management failed or R/R is zero.")
+                            return None
+                        
                         self._log_final_decision(temp_direction, f"{trade_mode} triggered (Score: {score})")
+                        blueprint.update(risk_params)
                         return blueprint
                 else:
                     self._log_final_decision("HOLD", f"{trade_mode} score {score}/{min_score} was below threshold.")
@@ -204,7 +226,18 @@ class BollingerBandsDirectedMaestro(BaseStrategy):
                         "tp_logic": {"type": "fibonacci_extension", "levels": [1.618, 2.618, 4.236]}
                     }
                     if self._validate_blueprint(blueprint):
+                        risk_params = self._calculate_smart_risk_management(
+                            entry_price=current_price,
+                            direction=temp_direction,
+                            sl_params=blueprint['sl_logic'],
+                            tp_logic=blueprint['tp_logic']
+                        )
+                        if not risk_params or not risk_params.get("risk_reward_ratio", 0) > 0:
+                            self._log_final_decision("HOLD", "Risk management failed or R/R is zero.")
+                            return None
+                        
                         self._log_final_decision(temp_direction, f"{trade_mode} triggered (Score: {score})")
+                        blueprint.update(risk_params)
                         return blueprint
                 else:
                     self._log_final_decision("HOLD", f"{trade_mode} score {score}/{min_score} was below threshold.")
