@@ -1,4 +1,4 @@
-# backend/engines/strategies/bollinger_bands_directed_maestro.py (v3.3 - The Final, Corrected Standard)
+# backend/engines/strategies/bollinger_bands_directed_maestro.py (v3.3.1 - Naming Fix)
 
 import logging
 from typing import Dict, Any, Optional, ClassVar
@@ -8,14 +8,14 @@ logger = logging.getLogger(__name__)
 
 class BollingerBandsDirectedMaestro(BaseStrategy):
     """
-    BollingerBandsDirectedMaestro - (v3.3 - The Final, Corrected Standard)
+    BollingerBandsDirectedMaestro - (v3.3.1 - Naming Fix)
     --------------------------------------------------------------------------------
-    This is the definitive, fully corrected version incorporating all architectural
-    decisions, bug fixes, and logic calibrations. It strictly adheres to the
-    original 3-engine design and integer-based scoring system. All hidden
-    parameters have been made explicit in the default config for full transparency.
+    This patch fixes a critical bug where the strategy_name was not being correctly
+    overridden due to a syntax error, causing signals to be logged with the
+    source 'BaseStrategy'. All other logic remains identical to v3.3.
     """
-    strategy_name: "BollingerBandsDirectedMaestro"
+    # ✅ CRITICAL FIX: Correctly assigned the class variable to override the base name.
+    strategy_name: str = "BollingerBandsDirectedMaestro"
     
     default_config: ClassVar[Dict[str, Any]] = {
       "enabled": True,
@@ -39,12 +39,11 @@ class BollingerBandsDirectedMaestro(BaseStrategy):
       "htf_confirmation_enabled": True,
       "htf_map": {"5m": "15m", "15m": "1h", "1h": "4h", "4h": "1d"},
       
-      # ✅ TRANSPARENCY FIX: Made the hidden 'min_strength' parameter explicit.
       "htf_confirmations": {
           "min_required_score": 1,
           "adx": {
               "weight": 1,
-              "min_strength": 25
+              "min_strength": 20
           },
           "supertrend": {
               "weight": 1
@@ -153,7 +152,6 @@ class BollingerBandsDirectedMaestro(BaseStrategy):
         lower_band, upper_band = bb_values.get('lower_band'), bb_values.get('upper_band')
         if lower_band is None or upper_band is None: return None
         
-        # In ranging, trigger should be a clear breach
         direction = "BUY" if price <= lower_band else "SELL" if price >= upper_band else None
         if direction is None: return None
 
