@@ -128,12 +128,12 @@ class BollingerBandsDirectedMaestro(BaseStrategy):
 
         if market_regime == "RANGING":
             trade_mode = "Mean Reversion"
-            bb_lower = self._safe_get(bollinger_values, ['bb_lower'])
-            bb_upper = self._safe_get(bollinger_values, ['bb_upper'])
-            if bb_lower is None or bb_upper is None: 
+            lower_band = self._safe_get(bollinger_values, ['lower_band'])
+            upper_band = self._safe_get(bollinger_values, ['upper_band'])
+            if lower_band is None or upper_band is None: 
                 self._log_final_decision("HOLD", "Bollinger Bands values missing for Ranging check."); return None
             
-            temp_direction = "BUY" if current_price <= bb_lower else "SELL" if current_price >= bb_upper else None
+            temp_direction = "BUY" if current_price <= lower_band else "SELL" if current_price >= upper_band else None
             trigger_ok = temp_direction is not None
             self._log_criteria("Ranging: Entry Trigger", trigger_ok, "Price is at outer bands.")
             
@@ -166,7 +166,7 @@ class BollingerBandsDirectedMaestro(BaseStrategy):
                     blueprint = {
                         "direction": temp_direction, "entry_price": current_price, "trade_mode": trade_mode,
                         "confirmations": {"final_score": score},
-                        "sl_logic": {"type": "band", "band_name": "bb_lower" if temp_direction == "BUY" else "bb_upper", "buffer_atr_multiplier": final_multiplier},
+                        "sl_logic": {"type": "band", "band_name": "lower_band" if temp_direction == "BUY" else "upper_band", "buffer_atr_multiplier": final_multiplier},
                         "tp_logic": {"type": "range_targets", "targets": ["middle_band", "opposite_band"]}
                     }
                     if self._validate_blueprint(blueprint):
@@ -223,7 +223,7 @@ class BollingerBandsDirectedMaestro(BaseStrategy):
                         "direction": temp_direction, "entry_price": current_price, "trade_mode": trade_mode,
                         "confirmations": {"final_score": score, "adx_strength": adx_value},
                         "sl_logic": {"type": "band", "band_name": "middle_band", "buffer_atr_multiplier": final_multiplier},
-                        "tp_logic": {"type": "band_target", "band_name": "bb_upper" if temp_direction == "BUY" else "bb_lower"}
+                        "tp_logic": {"type": "band_target", "band_name": "upper_band" if temp_direction == "BUY" else "lower_band"}
                     }
                     if self._validate_blueprint(blueprint):
                         risk_params = self._calculate_smart_risk_management(
