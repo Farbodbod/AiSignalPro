@@ -150,7 +150,7 @@
       "macd_confirmation_enabled": true,
       "volume_confirmation_enabled": true,
       "adx_confirmation_enabled": true,
-      "min_adx_strength": 25.0,
+      "min_adx_strength": 23.0,
       "candlestick_confirmation_enabled": true,
       "master_trend_ma_indicator": "fast_ma",
       "volatility_regimes": { "low_atr_pct_threshold": 3, "low_vol_sl_multiplier": 2.5, "high_vol_sl_multiplier": 3.5 },
@@ -247,7 +247,7 @@
     },
     "TrendRiderPro": {
       "enabled": true,
-      "market_regime_filter_enabled": true, "required_regime": "TRENDING", "regime_adx_threshold": 25.0,
+      "market_regime_filter_enabled": true, "required_regime": "TRENDING", "regime_adx_threshold": 23.0,
       "default_params": {
         "entry_trigger_type": "supertrend", "min_adx_strength": 25.0,
         "st_multiplier": 3.0, "ch_atr_multiplier": 3.0, "tactical_tp_rr_ratio": 2.0, "min_risk_pct": 0.1
