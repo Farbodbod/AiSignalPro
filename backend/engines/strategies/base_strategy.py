@@ -1,4 +1,4 @@
-# strategies/base_strategy.py (v12.0 - The Blueprint Processor Edition)
+# strategies/base_strategy.py (v12.1 - Enhanced Blueprint Processor)
 
 from __future__ import annotations
 from abc import ABC, abstractmethod
@@ -30,23 +30,18 @@ def deep_merge(dict1: Dict[str, Any], dict2: Dict[str, Any]) -> Dict[str, Any]:
 
 class BaseStrategy(ABC):
     """
-    World-Class Base Strategy Framework - (v12.0 - The Blueprint Processor Edition)
+    World-Class Base Strategy Framework - (v12.1 - Enhanced Blueprint Processor)
     ---------------------------------------------------------------------------------------------
-    This is a major architectural upgrade. The _calculate_smart_risk_management
-    method has been transformed into a "Blueprint Processor". It is now fully
-    backward-compatible, capable of handling both legacy stop-loss values and the
-    new, highly detailed "Trade Blueprint" dictionary.
-
-    This upgrade centralizes and hardens the risk calculation logic, enabling:
-    - Context-aware SL and TP calculations based on strategy-defined logic.
-    - Built-in validation to prevent inverted or invalid stop-losses.
-    - Strategy-specific TP algorithms (e.g., ATR multiples, range targets).
-    - Seamless operation for all existing and future strategies.
+    This version enhances the Blueprint Processor by adding the logic for a new,
+    highly requested TP logic type: 'band_target'. This allows strategies to
+    define specific Bollinger Bands (e.g., the upper band) as take-profit targets,
+    increasing the tactical flexibility of the system. All other functionalities,
+    including full backward compatibility, are preserved.
     """
     strategy_name: str = "BaseStrategy"
     default_config: ClassVar[Dict[str, Any]] = {}
 
-    # --- __init__ and logging methods (unchanged from v11.3) ---
+    # --- __init__ and logging methods (unchanged) ---
     def __init__(self, primary_analysis: Dict[str, Any], config: Dict[str, Any], main_config: Dict[str, Any], primary_timeframe: str, symbol: str, htf_analysis: Optional[Dict[str, Any]] = None):
         self.analysis, self.config, self.main_config, self.htf_analysis = primary_analysis, deep_merge(self.default_config, config or {}), main_config, htf_analysis or {}
         self.primary_timeframe, self.symbol, self.price_data, self.df = primary_timeframe, symbol, self.analysis.get('price_data'), self.analysis.get('final_df')
@@ -76,7 +71,7 @@ class BaseStrategy(ABC):
     @abstractmethod
     def check_signal(self) -> Optional[Dict[str, Any]]: pass
 
-    # --- Indicator getters and shields (unchanged from v11.3) ---
+    # --- Indicator getters and shields (unchanged) ---
     def get_indicator(self, name_or_alias: str, analysis_source: Optional[Dict] = None) -> Optional[Dict[str, Any]]:
         source = analysis_source if analysis_source is not None else self.analysis;
         if not source: return None
@@ -161,7 +156,6 @@ class BaseStrategy(ABC):
     # ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓
     
     def _calculate_sl_from_blueprint(self, entry_price: float, direction: str, sl_params: Dict[str, Any]) -> Optional[float]:
-        """Calculates and validates the stop-loss based on a logic blueprint."""
         sl_type = sl_params.get('type')
         if sl_type == 'band':
             band_name = sl_params.get('band_name')
@@ -180,7 +174,6 @@ class BaseStrategy(ABC):
             buffer = atr_value * multiplier
             calculated_sl = band_value - buffer if direction == 'BUY' else band_value + buffer
             
-            # Critical Validation: Ensure SL is not inverted
             if (direction == 'BUY' and calculated_sl >= entry_price) or \
                (direction == 'SELL' and calculated_sl <= entry_price):
                 logger.error(f"INVERTED STOP-LOSS DETECTED AND BLOCKED! Entry: {entry_price}, Calculated SL: {calculated_sl}, Direction: {direction}.")
@@ -192,7 +185,6 @@ class BaseStrategy(ABC):
         return None
 
     def _calculate_tp_from_blueprint(self, entry_price: float, stop_loss: float, direction: str, tp_logic: Dict[str, Any]) -> List[float]:
-        """Calculates take-profit targets based on a logic blueprint."""
         targets = []
         tp_type = tp_logic.get('type')
         risk_per_unit = abs(entry_price - stop_loss)
@@ -214,8 +206,21 @@ class BaseStrategy(ABC):
                     target_price = bb_values.get(target_band_name)
                 else:
                     target_price = bb_values.get(name)
-                
                 if target_price: targets.append(target_price)
+
+        # ✅ SURGICAL ADDITION: Logic for the new 'band_target' type
+        elif tp_type == 'band_target':
+            band_name = tp_logic.get('band_name')
+            bb_values = (self.get_indicator('bollinger').get('values') or {})
+            target_price = bb_values.get(band_name)
+            
+            if target_price:
+                middle_band = bb_values.get('middle_band')
+                if direction == 'BUY' and middle_band and entry_price < middle_band < target_price:
+                    targets.append(middle_band)
+                elif direction == 'SELL' and middle_band and entry_price > middle_band > target_price:
+                    targets.append(middle_band)
+                targets.append(target_price)
 
         elif tp_type == 'fibonacci_extension':
             levels = tp_logic.get('levels', [1.618, 2.618])
@@ -226,7 +231,6 @@ class BaseStrategy(ABC):
         return sorted(targets) if direction == 'BUY' else sorted(targets, reverse=True)
 
     def _finalize_risk_parameters(self, entry_price: float, stop_loss: float, targets: List[float], direction: str) -> Dict[str, Any]:
-        """A centralized function to calculate final R/R and format the output dict."""
         if not targets or entry_price == stop_loss: return {}
         
         fees_pct = self.main_config.get("general", {}).get("assumed_fees_pct", 0.001)
@@ -255,21 +259,17 @@ class BaseStrategy(ABC):
         
         final_sl, final_targets = None, []
 
-        # --- PATH 1: New "Blueprint" Logic ---
         if sl_params and tp_logic:
             logger.debug(f"Using Blueprint Processor for risk calculation.")
             final_sl = self._calculate_sl_from_blueprint(entry_price, direction, sl_params)
             if final_sl is None:
                 logger.error(f"Blueprint SL calculation failed. Aborting risk management.")
                 return {}
-            
             final_targets = self._calculate_tp_from_blueprint(entry_price, final_sl, direction, tp_logic)
 
-        # --- PATH 2: Legacy Logic (for older strategies) ---
         elif stop_loss is not None:
             logger.debug(f"Using Legacy path for risk calculation.")
             final_sl = stop_loss
-            # Fallback to key levels for legacy TP calculation
             structure_data = self.get_indicator('structure'); key_levels = (structure_data.get('key_levels') if structure_data else {}) or {}
             if direction.upper() == 'BUY': final_targets = [r['price'] for r in sorted((key_levels.get('resistances') or []), key=lambda x: x['price']) if r['price'] > entry_price][:3]
             elif direction.upper() == 'SELL': final_targets = [s['price'] for s in sorted((key_levels.get('supports') or []), key=lambda x: x['price'], reverse=True) if s['price'] < entry_price][:3]
@@ -278,7 +278,6 @@ class BaseStrategy(ABC):
             logger.error("Risk management called with neither a blueprint nor a stop_loss value.")
             return {}
 
-        # If blueprint TP logic fails or for legacy path, use fallback
         if not final_targets:
             logger.info(f"No targets found from primary logic. Using reward ratios fallback.")
             reward_ratios = self.config.get('reward_tp_ratios', [1.5, 3.0, 5.0])
