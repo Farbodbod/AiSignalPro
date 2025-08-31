@@ -145,7 +145,7 @@
       "enabled": true,
       "divergence_veto_enabled": true,
       "min_confirmation_score": 8,
-      "weights": { "master_trend": 4, "macd": 1, "htf_alignment": 3, "adx_strength": 2, "volume": 2, "candlestick": 1 },
+      "weights": { "master_trend": 3, "macd": 1, "htf_alignment": 3, "adx_strength": 2, "volume": 2, "candlestick": 1 },
       "master_trend_filter_enabled": true,
       "macd_confirmation_enabled": true,
       "volume_confirmation_enabled": true,
