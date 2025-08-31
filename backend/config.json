@@ -210,7 +210,7 @@
         "momentum_confirmation": 3,
         "htf_alignment": 3
       },
-      "min_ranging_score": 6,
+      "min_ranging_score": 7,
       "weights_ranging": {
         "rsi_reversal": 4,
         "volume_fade": 3,
@@ -234,7 +234,7 @@
         "4h": "1d"
       },
       "htf_confirmations": {
-        "min_required_score": 1,
+        "min_required_score": 2,
         "adx": {
           "weight": 1,
           "min_strength": 25
