@@ -1,4 +1,4 @@
-# backend/engines/indicators/keltner_channel.py (v7.0 - The Dynamic Engine)
+# backend/engines/indicators/keltner_channel.py (v8.0 - The Volatility Analyst)
 import pandas as pd
 import numpy as np
 import logging
@@ -11,24 +11,48 @@ logger = logging.getLogger(__name__)
 
 class KeltnerChannelIndicator(BaseIndicator):
     """
-    Keltner Channel - (v7.0 - The Dynamic Engine)
+    Keltner Channel - (v8.0 - The Volatility Analyst)
     -----------------------------------------------------------------------------
-    This world-class version introduces a dynamic architecture with parameter-based
-    column naming and a precision dependency link to ATR. It is also hardened
-    with a Sentinel-compliant output structure, making it a fully robust,
-    modular, and multi-instance-safe component for all strategies.
+    This major upgrade transforms the Keltner Channel from a simple calculator
+    into a sophisticated, self-contained volatility analyst. It introduces:
+    
+    1.  **Dynamic Volatility State Analysis:** Instead of a simplistic squeeze check,
+        it now uses statistical percentile ranking of the channel bandwidth over a
+        lookback period to classify volatility into three distinct states:
+        'Squeeze', 'Normal', or 'Expansion'. This provides a much richer and more
+        robust context for strategies.
+        
+    2.  **Precise Breakout Level Reporting:** The analysis output now includes the
+        exact 'breakout_level' (the upper/lower band of the previous candle),
+        a critical piece of data for advanced entry logic like Late-Entry Guards.
+        
+    This version retains the robust dynamic column naming and dependency linking
+    from v7.0, making it a cornerstone indicator for professional strategies.
     """
     dependencies: list = ['atr']
+    
+    default_config: Dict[str, Any] = {
+        'ema_period': 20,
+        'atr_multiplier': 2.0,
+        'volatility_period': 200,      # Lookback period for percentile analysis
+        'squeeze_percentile': 20,    # Bandwidth below this percentile is a 'Squeeze'
+        'expansion_percentile': 80,  # Bandwidth above this percentile is an 'Expansion'
+        'dependencies': {
+            'atr': {'period': 10}
+        }
+    }
 
     def __init__(self, df: pd.DataFrame, params: Dict[str, Any], **kwargs):
         super().__init__(df, params=params, **kwargs)
-        self.ema_period = int(self.params.get('ema_period', 20))
-        self.atr_multiplier = float(self.params.get('atr_multiplier', 2.0))
+        self.ema_period = int(self.params.get('ema_period', self.default_config['ema_period']))
+        self.atr_multiplier = float(self.params.get('atr_multiplier', self.default_config['atr_multiplier']))
+        self.volatility_period = int(self.params.get('volatility_period', self.default_config['volatility_period']))
+        self.squeeze_percentile = int(self.params.get('squeeze_percentile', self.default_config['squeeze_percentile']))
+        self.expansion_percentile = int(self.params.get('expansion_percentile', self.default_config['expansion_percentile']))
         self.timeframe = self.params.get('timeframe')
-        self.squeeze_period = int(self.params.get('squeeze_period', 50))
         
-        # ✅ DYNAMIC ARCHITECTURE: Column names are now based on parameters
-        atr_period = int(self.params.get("dependencies", {}).get("atr", {}).get('period', 10))
+        atr_params = self.params.get("dependencies", {}).get("atr", self.default_config['dependencies']['atr'])
+        atr_period = int(atr_params.get('period', 10))
         suffix = f'_{self.ema_period}_{self.atr_multiplier}_{atr_period}'
         if self.timeframe: suffix += f'_{self.timeframe}'
         
@@ -36,13 +60,11 @@ class KeltnerChannelIndicator(BaseIndicator):
         self.lower_col = f'KC_L{suffix}'
         self.middle_col = f'KC_M{suffix}'
         self.bandwidth_col = f'KC_BW{suffix}'
+        self.bw_percentile_col = f'KC_BW_PCT{suffix}' # New column for percentile rank
 
     def calculate(self) -> 'KeltnerChannelIndicator':
-        my_deps_config = self.params.get("dependencies", {})
+        my_deps_config = self.params.get("dependencies", self.default_config['dependencies'])
         atr_order_params = my_deps_config.get('atr')
-        if not atr_order_params:
-            logger.error(f"[{self.name}] on {self.timeframe}: 'atr' dependency not defined.")
-            return self
         
         atr_unique_key = get_indicator_config_key('atr', atr_order_params)
         atr_instance = self.dependencies.get(atr_unique_key)
@@ -51,7 +73,6 @@ class KeltnerChannelIndicator(BaseIndicator):
             logger.warning(f"[{self.name}] on {self.timeframe}: missing or invalid ATR instance ('{atr_unique_key}').")
             return self
         
-        # ✅ PRECISION DEPENDENCY LINKING: Directly use the column name from the ATR instance.
         atr_col_name = atr_instance.atr_col
         if atr_col_name not in atr_instance.df.columns:
              logger.warning(f"[{self.name}] on {self.timeframe}: could not find ATR column '{atr_col_name}'.")
@@ -60,7 +81,7 @@ class KeltnerChannelIndicator(BaseIndicator):
         df_for_calc = self.df.join(atr_instance.df[[atr_col_name]], how='left')
         atr_period = int(atr_instance.params.get('period', 10))
 
-        if len(df_for_calc) < max(self.ema_period, atr_period):
+        if len(df_for_calc) < max(self.ema_period, atr_period, self.volatility_period):
             logger.warning(f"Not enough data for Keltner Channel on {self.timeframe or 'base'}.")
             return self
 
@@ -68,37 +89,65 @@ class KeltnerChannelIndicator(BaseIndicator):
         middle_band = typical_price.ewm(span=self.ema_period, adjust=False).mean()
         atr_value = df_for_calc[atr_col_name].dropna() * self.atr_multiplier
         
-        upper_band = middle_band + atr_value
-        lower_band = middle_band - atr_value
-        
-        self.df[self.upper_col] = upper_band
-        self.df[self.lower_col] = lower_band
+        self.df[self.upper_col] = middle_band + atr_value
+        self.df[self.lower_col] = middle_band - atr_value
         self.df[self.middle_col] = middle_band
-        self.df[self.bandwidth_col] = ((self.df[self.upper_col] - self.df[self.lower_col]) / self.df[self.middle_col].replace(0, np.nan)) * 100
+        
+        bandwidth = ((self.df[self.upper_col] - self.df[self.lower_col]) / self.df[self.middle_col].replace(0, np.nan)) * 100
+        self.df[self.bandwidth_col] = bandwidth
+        
+        # ✅ DYNAMIC ANALYSIS: Calculate the percentile rank of the current bandwidth
+        self.df[self.bw_percentile_col] = bandwidth.rolling(window=self.volatility_period, min_periods=int(self.volatility_period/2)).rank(pct=True) * 100
         
         return self
 
     def analyze(self) -> Dict[str, Any]:
-        required_cols = [self.upper_col, self.lower_col, self.middle_col, self.bandwidth_col]
+        required_cols = [self.upper_col, self.lower_col, self.middle_col, self.bandwidth_col, self.bw_percentile_col]
         empty_analysis = {"values": {}, "analysis": {}}
         if not all(col in self.df.columns for col in required_cols):
             return {"status": "Calculation Incomplete", **empty_analysis}
 
         valid_df = self.df.dropna(subset=required_cols)
-        if len(valid_df) < self.squeeze_period:
-            return {"status": "Insufficient Data", **empty_analysis}
+        if len(valid_df) < 2:
+            return {"status": "Insufficient Data for Analysis", **empty_analysis}
 
         last = valid_df.iloc[-1]
-        close, upper, middle, lower = last['close'], last[self.upper_col], last[self.middle_col], last[self.lower_col]
+        previous = valid_df.iloc[-2]
+        
+        close = last['close']
+        upper, middle, lower = last[self.upper_col], last[self.middle_col], last[self.lower_col]
+        
+        # Determine position and precise breakout level
         position = "Inside Channel"
-        if close > upper: position = "Breakout Above"
-        elif close < lower: position = "Breakdown Below"
+        breakout_level = None
+        if close > upper:
+            position = "Breakout Above"
+            breakout_level = previous[self.upper_col]
+        elif close < lower:
+            position = "Breakdown Below"
+            breakout_level = previous[self.lower_col]
+
+        # ✅ DYNAMIC VOLATILITY STATE: Classify volatility based on percentile
+        bw_percentile = last[self.bw_percentile_col]
+        volatility_state = "Normal"
+        if bw_percentile <= self.squeeze_percentile:
+            volatility_state = "Squeeze"
+        elif bw_percentile >= self.expansion_percentile:
+            volatility_state = "Expansion"
+
+        values_content = {
+            "upper_band": round(upper, 5),
+            "middle_band": round(middle, 5),
+            "lower_band": round(lower, 5),
+            "bandwidth_percent": round(last[self.bandwidth_col], 2),
+            "width_percentile": round(bw_percentile, 2)
+        }
         
-        recent_bandwidth = valid_df[self.bandwidth_col].tail(self.squeeze_period)
-        is_in_squeeze = last[self.bandwidth_col] <= recent_bandwidth.min()
-        
-        values_content = {"upper_band": round(upper, 5), "middle_band": round(middle, 5), "lower_band": round(lower, 5), "bandwidth_percent": round(last[self.bandwidth_col], 2)}
-        analysis_content = {"position": position, "is_in_squeeze": is_in_squeeze}
+        analysis_content = {
+            "position": position,
+            "breakout_level": round(breakout_level, 5) if breakout_level is not None else None,
+            "volatility_state": volatility_state
+        }
         
         return {
             "status": "OK", "timeframe": self.timeframe or 'Base',
