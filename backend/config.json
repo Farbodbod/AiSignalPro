@@ -38,12 +38,14 @@
         "timeframe_map": { "5m": "5m", "15m": "15m", "1h": "1H", "4h": "4H", "1d": "1D" },
         "rate_limit_delay": 0.2, "kline_schema": ["ts", "o", "h", "l", "c", "v"]
       }
-    },
-    "symbol_map": {
-      "BTC/USDT": { "base": "BTC", "quote": "USDT" }, "ETH/USDT": { "base": "ETH", "quote": "USDT" },
-      "SOL/USDT": { "base": "SOL", "quote": "USDT" }, "XRP/USDT": { "base": "XRP", "quote": "USDT" },
-      "DOGE/USDT": { "base": "DOGE", "quote": "USDT" }
     }
+  },
+  "symbol_map": {
+    "BTC/USDT": { "base": "BTC", "quote": "USDT" },
+    "ETH/USDT": { "base": "ETH", "quote": "USDT" },
+    "SOL/USDT": { "base": "SOL", "quote": "USDT" },
+    "XRP/USDT": { "base": "XRP", "quote": "USDT" },
+    "DOGE/USDT": { "base": "DOGE", "quote": "USDT" }
   },
   "signal_cache": {
     "default_ttl_hours": 8,
@@ -129,17 +131,28 @@
     },
     "IchimokuHybridPro": {
       "enabled": true,
-      "min_total_score": 58.0,
-      "market_regime_adx": 23,
-      "sl_mode": "kumo",
-      "min_rr_ratio": 2.0,
-      "score_weight_primary": 0.7,
-      "score_weight_htf": 0.3,
-      "weights_trending": { "price_vs_kumo": 4, "tk_cross_strong": 4, "future_kumo": 2, "chikou_free": 2, "kumo_twist": 1, "volume_spike": 2 },
-      "weights_ranging": { "price_vs_kumo": 1, "tk_cross_strong": 1, "future_kumo": 1, "chikou_free": 1, "kumo_twist": 4, "volume_spike": 4 },
+      "market_regime_adx": 21,
+      "min_rr_ratio": 1.8,
+      "sl_mode": "hybrid",
+      "weights_trending": {
+        "price_vs_kumo": 2, "tk_cross_strong": 3, "tk_cross_medium": 2,
+        "future_kumo": 2, "chikou_free": 2, "chikou_near_free": 1,
+        "kumo_twist": 1, "volume_spike": 1
+      },
+      "weights_ranging": {
+        "price_vs_kumo": 1, "tk_cross_strong": 2, "tk_cross_medium": 2,
+        "future_kumo": 1, "chikou_free": 1, "chikou_near_free": 1,
+        "kumo_twist": 3, "volume_spike": 2
+      },
       "htf_confirmation_enabled": true,
       "htf_map": { "5m": "15m", "15m": "1h", "1h": "4h", "4h": "1d" },
-      "htf_confirmations": {}
+      "score_weight_primary": 0.75,
+      "score_weight_htf": 0.25,
+      "primary_override_threshold": 80.0,
+      "htf_conflict_dampen_weight": 0.15,
+      "min_total_score_base": 62.0,
+      "volume_z_lookback": 80,
+      "volume_z_threshold": 2.0
     },
     "EmaCrossoverStrategy": {
       "enabled": true,
