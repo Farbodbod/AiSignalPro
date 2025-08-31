@@ -194,7 +194,7 @@
       "htf_confirmations": { "min_required_score": 2, "adx": {"weight": 1, "min_strength": 22}, "supertrend": {"weight": 1} }
     },
     "KeltnerMomentumBreakout": {
-      "enabled": true,
+      "enabled": false,
       "market_regime_filter_enabled": true,
       "required_regime": "TRENDING",
       "regime_adx_threshold": 21.0,
@@ -277,7 +277,7 @@
       }
     },
     "BollingerBandsDirectedMaestro": {
-      "enabled": true,
+      "enabled": false,
       "direction": 0,
       "max_adx_for_ranging": 20.0,
       "min_adx_for_trending": 25.0,
