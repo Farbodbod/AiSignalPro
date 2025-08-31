@@ -1,4 +1,4 @@
-# backend/engines/strategies/keltner_breakout.py (v10.2 - Diagnostic & Contract Fix)
+# backend/engines/strategies/keltner_breakout.py (v10.3 - Self-Processing Edition)
 
 import logging
 from typing import Dict, Any, Optional, List, Tuple, ClassVar
@@ -9,34 +9,41 @@ logger = logging.getLogger(__name__)
 
 class KeltnerMomentumBreakout(BaseStrategy):
     """
-    KeltnerMomentumBreakout - (v10.2 - Diagnostic & Contract Fix)
+    KeltnerMomentumBreakout - (v10.3 - Self-Processing Edition)
     -------------------------------------------------------------------------
-    This version includes two critical fixes:
-    1.  **Diagnostic Patch:** The silent exit on indicator failure has been
-        replaced with robust logging, ensuring that any issues with indicator
-        loading are now explicitly reported instead of causing the strategy
-        to disappear from the logs.
-    2.  **Data Contract Hotfix:** Corrects the data contract with the Volume
-        Indicator (v2.0) by reading 'z_score' from the 'values' dictionary,
-        restoring the "Volume Catalyst" scoring component.
+    This definitive version adapts the strategy to a self-processing architecture,
+    mirroring the robust pattern of the BollingerBandsDirectedMaestro. Instead of
+    returning a raw blueprint, it now generates the blueprint and immediately
+    processes it by calling the BaseStrategy's risk engine (_calculate_smart_risk_management)
+    itself. This ensures full compatibility with the current system architecture
+    and resolves the silent failure bug by bypassing the flawed blueprint
+    processing path in the orchestrator for this specific strategy.
     """
     strategy_name: str = "KeltnerMomentumBreakout"
 
     default_config: ClassVar[Dict[str, Any]] = {
+        # Core Filters & Shields
         "market_regime_filter_enabled": True, "required_regime": "TRENDING", "regime_adx_threshold": 21.0,
         "outlier_candle_shield_enabled": True, "outlier_atr_multiplier": 3.5,
         "exhaustion_shield_enabled": True, "rsi_exhaustion_lookback": 200, "rsi_buy_percentile": 90, "rsi_sell_percentile": 10,
         "cooldown_bars": 3,
+        
+        # Quantum Scoring Engine Weights
         "min_momentum_score": {"low_tf": 8, "high_tf": 10},
         "weights": { 
             "momentum_acceleration": 4, "volume_catalyst": 3, "volatility_expansion": 2,
             "adx_strength": 1, "htf_alignment": 2, "candlestick": 1
         },
         "volume_z_score_threshold": 1.75,
+        
+        # Blueprint Generation & Risk Parameters
         "late_entry_atr_mult": 1.2,
         "max_structural_sl_atr_mult": 2.5,
         "atr_sl_multiplier": 1.5,
         "target_atr_multiples": [1.5, 3.0, 4.5],
+        "min_rr_ratio": 1.8,
+
+        # HTF Configuration (Self-Contained)
         "htf_confirmation_enabled": True,
         "htf_map": { "5m": "15m", "15m": "1h", "1h": "4h", "4h": "1d" },
         "htf_confirmations": { 
@@ -60,7 +67,6 @@ class KeltnerMomentumBreakout(BaseStrategy):
                 confirmations.append(name)
 
         cci_analysis = (indicators.get('cci', {}).get('analysis') or {})
-        # ✅ FIX v10.2: Correctly read from 'values' for z_score
         volume_values = (indicators.get('volume', {}).get('values') or {})
         keltner_analysis = (indicators.get('keltner_channel', {}).get('analysis') or {})
         adx_values = (indicators.get('adx', {}).get('values') or {})
@@ -131,8 +137,7 @@ class KeltnerMomentumBreakout(BaseStrategy):
 
         required = ['keltner_channel', 'cci', 'volume', 'adx', 'atr', 'rsi', 'patterns', 'supertrend']
         indicators = {name: self.get_indicator(name) for name in required}
-
-        # ✅ FIX v10.2: Implement robust logging for missing indicators to prevent silent exits.
+        
         missing_indicators = [name for name, data in indicators.items() if data is None]
         if missing_indicators:
             self._log_final_decision("HOLD", f"Required indicators are missing: {', '.join(missing_indicators)}")
@@ -142,12 +147,15 @@ class KeltnerMomentumBreakout(BaseStrategy):
         signal_direction = "BUY" if "breakout above" in str(keltner_analysis.get('position','')) else "SELL" if "breakdown below" in str(keltner_analysis.get('position','')) else None
         if not signal_direction: return None
         self._log_criteria("Primary Trigger", True, f"Position: {keltner_analysis.get('position')}")
+
         if cfg.get('outlier_candle_shield_enabled') and self._is_outlier_candle(atr_multiplier=cfg.get('outlier_atr_multiplier', 3.5)):
             self._log_final_decision("HOLD", "Outlier candle detected."); return None
+        
         market_regime, adx_val = self._get_market_regime(adx_threshold=cfg.get('regime_adx_threshold', 21.0))
         if cfg.get('market_regime_filter_enabled') and market_regime != cfg.get('required_regime', 'TRENDING'):
             self._log_final_decision("HOLD", f"Market regime is '{market_regime}'."); return None
         self._log_criteria("Market Regime Filter", True, f"Market is '{market_regime}' (ADX={adx_val:.2f})")
+
         entry_price = self.price_data.get('close')
         atr_val = (indicators['atr'].get('values') or {}).get('atr')
         breakout_level = keltner_analysis.get('breakout_level')
@@ -155,15 +163,20 @@ class KeltnerMomentumBreakout(BaseStrategy):
             if abs(entry_price - breakout_level) > (cfg.get('late_entry_atr_mult', 1.2) * atr_val):
                 self._log_final_decision("HOLD", f"Late-Entry Guard: Price too far from breakout."); return None
         self._log_criteria("Late-Entry Guard", True, "Entry is close to breakout level.")
+
         if cfg.get('exhaustion_shield_enabled') and self._is_trend_exhausted_dynamic(signal_direction):
             self._log_final_decision("HOLD", "Adaptive Trend Exhaustion Shield activated."); return None
+        
         min_score = self._get_min_score_for_tf()
         momentum_score, score_details = self._calculate_momentum_score(signal_direction, indicators)
         if momentum_score < min_score:
             self._log_final_decision("HOLD", f"Momentum score {momentum_score} < min {min_score}."); return None
         self._log_criteria("Momentum Score Check", True, f"Score={momentum_score} vs min={min_score} ({', '.join(score_details)})")
+
+        # --- Blueprint Generation ---
         keltner_values = (indicators['keltner_channel'].get('values') or {})
         structural_sl = keltner_values.get('middle_band')
+        
         sl_logic = {}
         if self._is_valid_number(structural_sl) and self._is_valid_number(atr_val):
             sl_dist = abs(entry_price - structural_sl)
@@ -174,15 +187,42 @@ class KeltnerMomentumBreakout(BaseStrategy):
                 sl_logic = {'type': 'structural', 'level_name': 'middle_band', 'indicator': 'keltner_channel'}
         else:
             self._log_final_decision("HOLD", "Could not calculate valid SL logic."); return None
+        
         tp_logic = {'type': 'atr_multiple', 'multiples': cfg.get('target_atr_multiples', [1.5, 3.0, 4.5])}
+
         self.last_signal_bar = current_bar
+        
+        # ✅ FIX v10.3: Strategy takes responsibility for processing its own blueprint
         blueprint = { 
-            "direction": signal_direction, "entry_price": entry_price, "trade_mode": "Early Strike Breakout",
-            "sl_logic": sl_logic, "tp_logic": tp_logic,
+            "direction": signal_direction, 
+            "entry_price": entry_price, 
+            "trade_mode": "Early Strike Breakout",
+            "sl_logic": sl_logic,
+            "tp_logic": tp_logic,
             "confirmations": {"power_score": momentum_score, "details": ", ".join(score_details)}
         }
+        
         if self._validate_blueprint(blueprint):
-            self._log_final_decision(signal_direction, "Keltner Early Strike blueprint generated.")
+            risk_params = self._calculate_smart_risk_management(
+                entry_price=entry_price,
+                direction=signal_direction,
+                sl_params=blueprint['sl_logic'],
+                tp_logic=blueprint['tp_logic']
+            )
+
+            if not risk_params or not risk_params.get("risk_reward_ratio"):
+                self._log_final_decision("HOLD", "Risk management failed to produce valid parameters.")
+                return None
+            
+            # Final check of R/R
+            min_rr = cfg.get('min_rr_ratio', 1.8)
+            if risk_params.get("risk_reward_ratio", 0) < min_rr:
+                self._log_final_decision("HOLD", f"Final R/R {risk_params.get('risk_reward_ratio'):.2f} is below min required {min_rr}.")
+                return None
+
+            self._log_final_decision(signal_direction, f"Keltner Early Strike signal confirmed (Score: {momentum_score})")
+            blueprint.update(risk_params)
             return blueprint
+
         self._log_final_decision("HOLD", "Generated blueprint failed validation.")
         return None
