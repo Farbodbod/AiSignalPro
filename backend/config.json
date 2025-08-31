@@ -135,8 +135,8 @@
       "min_rr_ratio": 2.0,
       "score_weight_primary": 0.7,
       "score_weight_htf": 0.3,
-      "weights_trending": { "price_vs_kumo": 2, "tk_cross_strong": 4, "future_kumo": 2, "chikou_free": 2, "kumo_twist": 1, "volume_spike": 2 },
-      "weights_ranging": { "price_vs_kumo": 1, "tk_cross_strong": 1, "future_kumo": 1, "chikou_free": 1, "kumo_twist": 4, "volume_spike": 3 },
+      "weights_trending": { "price_vs_kumo": 4, "tk_cross_strong": 4, "future_kumo": 2, "chikou_free": 2, "kumo_twist": 1, "volume_spike": 2 },
+      "weights_ranging": { "price_vs_kumo": 1, "tk_cross_strong": 1, "future_kumo": 1, "chikou_free": 1, "kumo_twist": 4, "volume_spike": 4 },
       "htf_confirmation_enabled": true,
       "htf_map": { "5m": "15m", "15m": "1h", "1h": "4h", "4h": "1d" },
       "htf_confirmations": {}
