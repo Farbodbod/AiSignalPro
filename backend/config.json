@@ -206,11 +206,11 @@
       "max_sl_multiplier_cap": 2.5,
       "min_squeeze_score": 6,
       "weights_squeeze": {
-        "breakout_strength": 4,
+        "breakout_strength": 3,
         "momentum_confirmation": 3,
-        "htf_alignment": 2
+        "htf_alignment": 3
       },
-      "min_ranging_score": 7,
+      "min_ranging_score": 6,
       "weights_ranging": {
         "rsi_reversal": 4,
         "volume_fade": 3,
@@ -224,7 +224,7 @@
       "weights_trending": {
         "htf_alignment": 5,
         "rsi_cooldown": 3,
-        "adx_strength": 1
+        "adx_strength": 2
       },
       "htf_confirmation_enabled": true,
       "htf_map": {
