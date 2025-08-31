@@ -8,7 +8,7 @@
     "max_concurrent_tasks": 5,
     "gemini_cooldown_seconds": 300,
     "logging_focus_symbol": "BTC/USDT",
-    "log_level": "DEBUG",
+    "log_level": "INFO",
     "min_confluence_for_super_signal": 3,
     "min_risk_reward_ratio": 2.0,
     "account_equity": 120000,
@@ -194,7 +194,7 @@
       "htf_confirmations": { "min_required_score": 2, "adx": {"weight": 1, "min_strength": 22}, "supertrend": {"weight": 1} }
     },
     "KeltnerMomentumBreakout": {
-      "enabled": false,
+      "enabled": true,
       "market_regime_filter_enabled": true,
       "required_regime": "TRENDING",
       "regime_adx_threshold": 21.0,
@@ -277,7 +277,7 @@
       }
     },
     "BollingerBandsDirectedMaestro": {
-      "enabled": false,
+      "enabled": true,
       "direction": 0,
       "max_adx_for_ranging": 20.0,
       "min_adx_for_trending": 25.0,
