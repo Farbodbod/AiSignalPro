@@ -2,7 +2,7 @@
 
 import logging
 from typing import Dict, Any, Optional, List, Tuple, ClassVar
-
+import pandas as pd
 from .base_strategy import BaseStrategy
 
 logger = logging.getLogger(__name__)
