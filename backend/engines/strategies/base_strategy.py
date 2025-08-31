@@ -1,4 +1,4 @@
-# strategies/base_strategy.py (v12.1 - Enhanced Blueprint Processor)
+# strategies/base_strategy.py (v13.0 - Advanced SL Blueprint Processor)
 
 from __future__ import annotations
 from abc import ABC, abstractmethod
@@ -30,18 +30,17 @@ def deep_merge(dict1: Dict[str, Any], dict2: Dict[str, Any]) -> Dict[str, Any]:
 
 class BaseStrategy(ABC):
     """
-    World-Class Base Strategy Framework - (v12.1 - Enhanced Blueprint Processor)
+    World-Class Base Strategy Framework - (v13.0 - Advanced SL Blueprint Processor)
     ---------------------------------------------------------------------------------------------
-    This version enhances the Blueprint Processor by adding the logic for a new,
-    highly requested TP logic type: 'band_target'. This allows strategies to
-    define specific Bollinger Bands (e.g., the upper band) as take-profit targets,
-    increasing the tactical flexibility of the system. All other functionalities,
-    including full backward compatibility, are preserved.
+    This major architectural upgrade enhances the Blueprint Processor to understand
+    new, sophisticated SL logic types ('structural' and 'atr_based'). This allows
+    advanced strategies like KeltnerMomentumBreakout to delegate their complex
+    risk calculations to the core engine, ensuring system-wide consistency and
+    enabling future extensibility.
     """
     strategy_name: str = "BaseStrategy"
     default_config: ClassVar[Dict[str, Any]] = {}
 
-    # --- __init__ and logging methods (unchanged) ---
     def __init__(self, primary_analysis: Dict[str, Any], config: Dict[str, Any], main_config: Dict[str, Any], primary_timeframe: str, symbol: str, htf_analysis: Optional[Dict[str, Any]] = None):
         self.analysis, self.config, self.main_config, self.htf_analysis = primary_analysis, deep_merge(self.default_config, config or {}), main_config, htf_analysis or {}
         self.primary_timeframe, self.symbol, self.price_data, self.df = primary_timeframe, symbol, self.analysis.get('price_data'), self.analysis.get('final_df')
@@ -71,7 +70,6 @@ class BaseStrategy(ABC):
     @abstractmethod
     def check_signal(self) -> Optional[Dict[str, Any]]: pass
 
-    # --- Indicator getters and shields (unchanged) ---
     def get_indicator(self, name_or_alias: str, analysis_source: Optional[Dict] = None) -> Optional[Dict[str, Any]]:
         source = analysis_source if analysis_source is not None else self.analysis;
         if not source: return None
@@ -151,38 +149,54 @@ class BaseStrategy(ABC):
                 if (direction.upper() == "BUY" and "UP" in st_trend.upper()) or (direction.upper() == "SELL" and "DOWN" in st_trend.upper()): current_score += weight
         self._log_indicator_trace(f"HTF_Score", current_score, reason=f"Required: {min_required_score}"); return current_score >= min_required_score
 
-    # ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓
-    # ▓▓▓                                START OF SURGICAL UPGRADE                                ▓▓▓
-    # ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓
-    
     def _calculate_sl_from_blueprint(self, entry_price: float, direction: str, sl_params: Dict[str, Any]) -> Optional[float]:
         sl_type = sl_params.get('type')
+        atr_data = self.get_indicator('atr')
+        atr_value = (atr_data.get('values') or {}).get('atr') if atr_data else None
+        calculated_sl = None
+
         if sl_type == 'band':
             band_name = sl_params.get('band_name')
             multiplier = sl_params.get('buffer_atr_multiplier', 1.0)
-            
             bollinger_data = self.get_indicator('bollinger')
-            atr_data = self.get_indicator('atr')
-
             band_value = (bollinger_data.get('values') or {}).get(band_name)
-            atr_value = (atr_data.get('values') or {}).get('atr')
-
             if None in [band_name, band_value, atr_value]:
-                logger.warning(f"SL calculation failed for 'band' type: Missing required data (band_name, band_value, or atr_value).")
+                logger.warning(f"SL calculation failed for 'band' type: Missing required data.")
                 return None
-            
             buffer = atr_value * multiplier
             calculated_sl = band_value - buffer if direction == 'BUY' else band_value + buffer
-            
+        
+        elif sl_type == 'structural':
+            indicator_name = sl_params.get('indicator')
+            level_name = sl_params.get('level_name')
+            if not indicator_name or not level_name:
+                logger.warning(f"SL calculation failed for 'structural' type: Missing 'indicator' or 'level_name'.")
+                return None
+            indicator_data = self.get_indicator(indicator_name)
+            structural_level = (indicator_data.get('values') or {}).get(level_name) if indicator_data else None
+            if structural_level is None:
+                logger.warning(f"SL calculation failed for 'structural' type: Could not find level '{level_name}' in indicator '{indicator_name}'.")
+                return None
+            calculated_sl = structural_level
+
+        elif sl_type == 'atr_based':
+            multiplier = sl_params.get('atr_multiplier', 1.5)
+            if atr_value is None:
+                logger.warning(f"SL calculation failed for 'atr_based' type: Missing ATR value.")
+                return None
+            calculated_sl = entry_price - (atr_value * multiplier) if direction == 'BUY' else entry_price + (atr_value * multiplier)
+        
+        else:
+            logger.warning(f"Unknown SL logic type received in blueprint: {sl_type}")
+            return None
+
+        if calculated_sl is not None:
             if (direction == 'BUY' and calculated_sl >= entry_price) or \
                (direction == 'SELL' and calculated_sl <= entry_price):
                 logger.error(f"INVERTED STOP-LOSS DETECTED AND BLOCKED! Entry: {entry_price}, Calculated SL: {calculated_sl}, Direction: {direction}.")
                 return None
-            
-            return calculated_sl
         
-        logger.warning(f"Unknown SL logic type received in blueprint: {sl_type}")
-        return None
+        return calculated_sl
 
     def _calculate_tp_from_blueprint(self, entry_price: float, stop_loss: float, direction: str, tp_logic: Dict[str, Any]) -> List[float]:
         targets = []
@@ -191,7 +205,8 @@ class BaseStrategy(ABC):
 
         if tp_type == 'atr_multiple':
             multiples = tp_logic.get('multiples', [1.5, 3.0, 5.0])
-            atr_value = (self.get_indicator('atr').get('values') or {}).get('atr')
+            atr_data = self.get_indicator('atr')
+            atr_value = (atr_data.get('values') or {}).get('atr') if atr_data else None
             if not atr_value: return []
             for m in multiples:
                 target = entry_price + (atr_value * m) if direction == 'BUY' else entry_price - (atr_value * m)
@@ -208,12 +223,10 @@ class BaseStrategy(ABC):
                     target_price = bb_values.get(name)
                 if target_price: targets.append(target_price)
 
-        # ✅ SURGICAL ADDITION: Logic for the new 'band_target' type
         elif tp_type == 'band_target':
             band_name = tp_logic.get('band_name')
             bb_values = (self.get_indicator('bollinger').get('values') or {})
             target_price = bb_values.get(band_name)
-            
             if target_price:
                 middle_band = bb_values.get('middle_band')
                 if direction == 'BUY' and middle_band and entry_price < middle_band < target_price:
@@ -285,7 +298,3 @@ class BaseStrategy(ABC):
             final_targets = [entry_price + (risk_dist * r if direction.upper() == 'BUY' else -risk_dist * r) for r in reward_ratios]
 
         return self._finalize_risk_parameters(entry_price, final_sl, final_targets, direction)
-
-    # ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓
-    # ▓▓▓                                 END OF SURGICAL UPGRADE                                 ▓▓▓
-    # ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓
