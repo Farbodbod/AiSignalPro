@@ -161,7 +161,7 @@
       "enabled": true,
       "direction": 0,
       "max_adx_for_ranging": 22.0,
-      "min_adx_for_trending": 23.0,
+      "min_adx_for_trending": 24.0,
       "sl_atr_buffer_multipliers": { "squeeze": 0.6, "ranging": 1.1, "trending": 0.7 },
       "max_sl_multiplier_cap": 2.5,
       "vol_ratio_cap": 0.1,
@@ -170,7 +170,7 @@
         "bollinger_breakout": 3, "momentum_confirmation": 3,
         "volume_spike_confirmation": 2, "htf_alignment": 2
       },
-      "min_ranging_score": 6,
+      "min_ranging_score": 7,
       "weights_ranging": {
         "rsi_reversal": 3, "divergence_confirmation": 4, "volume_fade": 2,
         "candlestick": { "weak": 1, "medium": 2, "strong": 3 }
