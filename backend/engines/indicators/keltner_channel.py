@@ -1,4 +1,4 @@
-# backend/engines/indicators/keltner_channel.py (v8.0 - The Volatility Analyst)
+# backend/engines/indicators/keltner_channel.py (v8.2 - Breakout Logic Hotfix)
 import pandas as pd
 import numpy as np
 import logging
@@ -11,32 +11,22 @@ logger = logging.getLogger(__name__)
 
 class KeltnerChannelIndicator(BaseIndicator):
     """
-    Keltner Channel - (v8.0 - The Volatility Analyst)
+    Keltner Channel - (v8.2 - Breakout Logic Hotfix)
     -----------------------------------------------------------------------------
-    This major upgrade transforms the Keltner Channel from a simple calculator
-    into a sophisticated, self-contained volatility analyst. It introduces:
-    
-    1.  **Dynamic Volatility State Analysis:** Instead of a simplistic squeeze check,
-        it now uses statistical percentile ranking of the channel bandwidth over a
-        lookback period to classify volatility into three distinct states:
-        'Squeeze', 'Normal', or 'Expansion'. This provides a much richer and more
-        robust context for strategies.
-        
-    2.  **Precise Breakout Level Reporting:** The analysis output now includes the
-        exact 'breakout_level' (the upper/lower band of the previous candle),
-        a critical piece of data for advanced entry logic like Late-Entry Guards.
-        
-    This version retains the robust dynamic column naming and dependency linking
-    from v7.0, making it a cornerstone indicator for professional strategies.
+    This version includes a critical hotfix to the breakout detection logic.
+    Instead of incorrectly comparing the 'close' price to the bands, it now
+    uses the standard and correct method of comparing the candle's 'high'
+    against the upper band and the 'low' against the lower band. This ensures
+    that true breakouts and breakdowns are accurately detected and reported.
     """
-    dependencies: list = ['atr']
+    # dependencies: list = ['atr'] # This attribute is obsolete in the new architecture
     
     default_config: Dict[str, Any] = {
         'ema_period': 20,
         'atr_multiplier': 2.0,
-        'volatility_period': 200,      # Lookback period for percentile analysis
-        'squeeze_percentile': 20,    # Bandwidth below this percentile is a 'Squeeze'
-        'expansion_percentile': 80,  # Bandwidth above this percentile is an 'Expansion'
+        'volatility_period': 200,
+        'squeeze_percentile': 20,
+        'expansion_percentile': 80,
         'dependencies': {
             'atr': {'period': 10}
         }
@@ -60,7 +50,7 @@ class KeltnerChannelIndicator(BaseIndicator):
         self.lower_col = f'KC_L{suffix}'
         self.middle_col = f'KC_M{suffix}'
         self.bandwidth_col = f'KC_BW{suffix}'
-        self.bw_percentile_col = f'KC_BW_PCT{suffix}' # New column for percentile rank
+        self.bw_percentile_col = f'KC_BW_PCT{suffix}'
 
     def calculate(self) -> 'KeltnerChannelIndicator':
         my_deps_config = self.params.get("dependencies", self.default_config['dependencies'])
@@ -70,12 +60,13 @@ class KeltnerChannelIndicator(BaseIndicator):
         atr_instance = self.dependencies.get(atr_unique_key)
         
         if not isinstance(atr_instance, BaseIndicator) or not hasattr(atr_instance, 'atr_col'):
-            logger.warning(f"[{self.name}] on {self.timeframe}: missing or invalid ATR instance ('{atr_unique_key}').")
+            # Assuming BaseIndicator might not have a `name` attribute, using self.__class__.__name__
+            logger.warning(f"[{self.__class__.__name__}] on {self.timeframe}: missing or invalid ATR instance ('{atr_unique_key}').")
             return self
         
         atr_col_name = atr_instance.atr_col
         if atr_col_name not in atr_instance.df.columns:
-             logger.warning(f"[{self.name}] on {self.timeframe}: could not find ATR column '{atr_col_name}'.")
+             logger.warning(f"[{self.__class__.__name__}] on {self.timeframe}: could not find ATR column '{atr_col_name}'.")
              return self
         
         df_for_calc = self.df.join(atr_instance.df[[atr_col_name]], how='left')
@@ -96,13 +87,12 @@ class KeltnerChannelIndicator(BaseIndicator):
         bandwidth = ((self.df[self.upper_col] - self.df[self.lower_col]) / self.df[self.middle_col].replace(0, np.nan)) * 100
         self.df[self.bandwidth_col] = bandwidth
         
-        # ✅ DYNAMIC ANALYSIS: Calculate the percentile rank of the current bandwidth
         self.df[self.bw_percentile_col] = bandwidth.rolling(window=self.volatility_period, min_periods=int(self.volatility_period/2)).rank(pct=True) * 100
         
         return self
 
     def analyze(self) -> Dict[str, Any]:
-        required_cols = [self.upper_col, self.lower_col, self.middle_col, self.bandwidth_col, self.bw_percentile_col]
+        required_cols = [self.upper_col, self.lower_col, self.middle_col, self.bandwidth_col, self.bw_percentile_col, 'high', 'low']
         empty_analysis = {"values": {}, "analysis": {}}
         if not all(col in self.df.columns for col in required_cols):
             return {"status": "Calculation Incomplete", **empty_analysis}
@@ -114,20 +104,19 @@ class KeltnerChannelIndicator(BaseIndicator):
         last = valid_df.iloc[-1]
         previous = valid_df.iloc[-2]
         
-        close = last['close']
+        # ✅ HOTFIX v8.2: Use high and low for breakout detection
+        high, low = last['high'], last['low']
         upper, middle, lower = last[self.upper_col], last[self.middle_col], last[self.lower_col]
         
-        # Determine position and precise breakout level
         position = "Inside Channel"
         breakout_level = None
-        if close > upper:
+        if high > upper:
             position = "Breakout Above"
             breakout_level = previous[self.upper_col]
-        elif close < lower:
+        elif low < lower:
             position = "Breakdown Below"
             breakout_level = previous[self.lower_col]
 
-        # ✅ DYNAMIC VOLATILITY STATE: Classify volatility based on percentile
         bw_percentile = last[self.bw_percentile_col]
         volatility_state = "Normal"
         if bw_percentile <= self.squeeze_percentile:
