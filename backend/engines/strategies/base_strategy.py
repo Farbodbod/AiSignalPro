@@ -1,4 +1,4 @@
-# strategies/base_strategy.py (v14.0 - The Universal Toolkit Edition)
+# strategies/base_strategy.py (v14.1 - SafeGet Toolkit Addition)
 
 from __future__ import annotations
 from abc import ABC, abstractmethod
@@ -12,7 +12,6 @@ logger = logging.getLogger(__name__)
 
 # --- Helper functions (unchanged) ---
 def get_indicator_config_key(name: str, params: Dict[str, Any]) -> str:
-    # ... (implementation unchanged)
     try:
         filtered_params = {k: v for k, v in params.items() if k not in ['enabled', 'dependencies', 'name']}
         if not filtered_params: return name
@@ -23,7 +22,6 @@ def get_indicator_config_key(name: str, params: Dict[str, Any]) -> str:
         return f"{name}_{param_str}" if param_str else name
 
 def deep_merge(dict1: Dict[str, Any], dict2: Dict[str, Any]) -> Dict[str, Any]:
-    # ... (implementation unchanged)
     result = deepcopy(dict1)
     for k, v in dict2.items():
         if k in result and isinstance(result[k], dict) and isinstance(v, dict): result[k] = deep_merge(result[k], v)
@@ -32,42 +30,33 @@ def deep_merge(dict1: Dict[str, Any], dict2: Dict[str, Any]) -> Dict[str, Any]:
 
 class BaseStrategy(ABC):
     """
-    World-Class Base Strategy Framework - (v14.0 - The Universal Toolkit Edition)
+    World-Class Base Strategy Framework - (v14.1 - SafeGet Toolkit Addition)
     ---------------------------------------------------------------------------------------------
-    This is a major feature enrichment release. Several powerful, reusable helper
-    methods previously developed within specific strategies have been centralized
-    into this base class, transforming it into a universal toolkit. This promotes
-    code reuse, enhances robustness, and accelerates future strategy development.
-
-    New Centralized Features:
-    - _is_valid_number: A robust utility for number validation.
-    - _is_trend_exhausted_dynamic: A powerful, configurable shield against trend exhaustion.
-    - _get_min_score_for_tf: A helper for applying different score thresholds to different timeframes.
-    - _validate_blueprint: A crucial safety check for all modern, blueprint-generating strategies.
+    This version enriches the Universal Toolkit by centralizing the '_safe_get'
+    helper method. This provides all strategies with a robust, inherited tool for
+    safely accessing nested dictionary keys, fixing a critical AttributeError in
+    strategies that were purified based on the incorrect assumption that this
+    method was already centralized.
     """
     strategy_name: str = "BaseStrategy"
     default_config: ClassVar[Dict[str, Any]] = {}
 
     def __init__(self, primary_analysis: Dict[str, Any], config: Dict[str, Any], main_config: Dict[str, Any], primary_timeframe: str, symbol: str, htf_analysis: Optional[Dict[str, Any]] = None):
-        # ... (implementation unchanged)
         self.analysis, self.config, self.main_config, self.htf_analysis = primary_analysis, deep_merge(self.default_config, config or {}), main_config, htf_analysis or {}
         self.primary_timeframe, self.symbol, self.price_data, self.df = primary_timeframe, symbol, self.analysis.get('price_data'), self.analysis.get('final_df')
         self.indicator_configs, self.log_details, self.name = self.config.get('indicator_configs', {}), {"criteria_results": [], "indicator_trace": [], "risk_trace": []}, self.config.get('name', self.strategy_name)
 
     def _log_criteria(self, criterion_name: str, status: Any, reason: str = ""):
-        # ... (implementation unchanged)
         is_ok = bool(status); focus_symbol = self.main_config.get("general", {}).get("logging_focus_symbol");
         if focus_symbol and self.symbol != focus_symbol: return
         self.log_details["criteria_results"].append({"criterion": criterion_name, "status": is_ok, "reason": reason})
         status_emoji = "▶️" if is_ok else "🌕"; logger.info(f"  {status_emoji} Criterion: {self.name} on {self.primary_timeframe} - '{criterion_name}': {is_ok}. Reason: {reason}")
         
     def _log_indicator_trace(self, indicator_name: str, value: Any, status: str = "OK", reason: str = ""):
-        # ... (implementation unchanged)
         self.log_details["indicator_trace"].append({"indicator": indicator_name, "value": str(value), "status": status, "reason": reason});
         logger.debug(f"    [Trace] Indicator: {indicator_name} -> Value: {value}, Status: {status}, Reason: {reason}")
 
     def _log_final_decision(self, signal: str, reason: str = ""):
-        # ... (implementation unchanged)
         self.log_details["final_signal"], self.log_details["final_reason"] = signal, reason
         focus_symbol = self.main_config.get("general", {}).get("logging_focus_symbol")
         is_focus_symbol = (self.symbol == focus_symbol)
@@ -82,7 +71,6 @@ class BaseStrategy(ABC):
     def check_signal(self) -> Optional[Dict[str, Any]]: pass
 
     def get_indicator(self, name_or_alias: str, analysis_source: Optional[Dict] = None) -> Optional[Dict[str, Any]]:
-        # ... (implementation unchanged)
         source = analysis_source if analysis_source is not None else self.analysis;
         if not source: return None
         indicator_map = source.get('_indicator_map', {}); indicator_data, unique_key = None, None
@@ -98,6 +86,13 @@ class BaseStrategy(ABC):
 
     # --- UNIVERSAL TOOLKIT HELPERS ---
     
+    def _safe_get(self, data: Dict, keys: List[str], default: Any = None) -> Any:
+        """Safely retrieves a nested value from a dictionary."""
+        for key in keys:
+            if not isinstance(data, dict): return default
+            data = data.get(key)
+        return data if data is not None else default
+
     def _is_valid_number(self, x: Any) -> bool:
         return x is not None and isinstance(x, (int, float))
 
@@ -120,7 +115,6 @@ class BaseStrategy(ABC):
             return int(score_config.get('high_tf', 10))
 
     def _is_outlier_candle(self, atr_multiplier: float = 5.0) -> bool:
-        # ... (implementation unchanged)
         if not self.price_data: return True 
         atr_data = self.get_indicator('atr')
         if not atr_data or 'values' not in atr_data or not self._is_valid_number((atr_data.get('values') or {}).get('atr')):
@@ -131,7 +125,6 @@ class BaseStrategy(ABC):
         return False
         
     def _get_market_regime(self, adx_threshold: float = 25.0) -> Tuple[str, float]:
-        # ... (implementation unchanged)
         adx_data = self.get_indicator('adx')
         if not adx_data or 'values' not in adx_data or not self._is_valid_number((adx_data.get('values') or {}).get('adx')):
             logger.warning(f"Could not determine market regime due to missing/invalid ADX."); return "UNKNOWN", 0.0
@@ -140,7 +133,6 @@ class BaseStrategy(ABC):
         else: return "RANGING", adx_val
     
     def _is_trend_exhausted(self, direction: str, buy_exhaustion_threshold: float = 80.0, sell_exhaustion_threshold: float = 20.0) -> bool:
-        # ... (implementation unchanged)
         rsi_data = self.get_indicator('rsi')
         if not rsi_data or 'values' not in rsi_data or not self._is_valid_number((rsi_data.get('values') or {}).get('rsi')):
             logger.warning(f"Exhaustion check skipped: RSI not available."); return False
@@ -167,7 +159,6 @@ class BaseStrategy(ABC):
         return is_exhausted
 
     def _get_candlestick_confirmation(self, direction: str, min_reliability: str = 'Medium') -> Optional[Dict[str, Any]]:
-        # ... (implementation unchanged)
         pattern_analysis = self.get_indicator('patterns');
         if not pattern_analysis or 'analysis' not in pattern_analysis: return None
         reliability_map = {'Low': 0, 'Medium': 1, 'Strong': 2}; min_reliability_score = reliability_map.get(min_reliability, 1)
@@ -178,7 +169,6 @@ class BaseStrategy(ABC):
         return None
 
     def _get_volume_confirmation(self) -> bool:
-        # ... (implementation unchanged)
         whale_analysis = self.get_indicator('whales');
         if not whale_analysis: return False
         min_spike_score, analysis = self.config.get('min_whale_spike_score', 1.5), whale_analysis.get('analysis') or {}
@@ -186,7 +176,6 @@ class BaseStrategy(ABC):
         return is_whale_activity and spike_score >= min_spike_score
 
     def _get_trend_confirmation(self, direction: str) -> bool:
-        # ... (implementation unchanged)
         htf_map = self.config.get('htf_map', {}); target_htf = htf_map.get(self.primary_timeframe)
         if not target_htf: return True
         htf_df = self.htf_analysis.get('final_df')
@@ -207,7 +196,6 @@ class BaseStrategy(ABC):
         self._log_indicator_trace(f"HTF_Score", current_score, reason=f"Required: {min_required_score}"); return current_score >= min_required_score
 
     def _calculate_sl_from_blueprint(self, entry_price: float, direction: str, sl_params: Dict[str, Any]) -> Optional[float]:
-        # ... (implementation unchanged and now complete with v13.0 logic)
         sl_type = sl_params.get('type')
         atr_data = self.get_indicator('atr')
         atr_value = (atr_data.get('values') or {}).get('atr') if atr_data else None
@@ -251,7 +239,6 @@ class BaseStrategy(ABC):
         return calculated_sl
 
     def _calculate_tp_from_blueprint(self, entry_price: float, stop_loss: float, direction: str, tp_logic: Dict[str, Any]) -> List[float]:
-        # ... (implementation unchanged)
         targets = []
         tp_type = tp_logic.get('type')
         risk_per_unit = abs(entry_price - stop_loss)
@@ -292,15 +279,17 @@ class BaseStrategy(ABC):
         return sorted(targets) if direction == 'BUY' else sorted(targets, reverse=True)
 
     def _finalize_risk_parameters(self, entry_price: float, stop_loss: float, targets: List[float], direction: str) -> Dict[str, Any]:
-        # ... (implementation unchanged)
         if not targets or entry_price == stop_loss: return {}
+        
         fees_pct = self.main_config.get("general", {}).get("assumed_fees_pct", 0.001)
         slippage_pct = self.main_config.get("general", {}).get("assumed_slippage_pct", 0.0005)
         risk_per_unit = abs(entry_price - stop_loss)
         total_risk_per_unit = risk_per_unit + (entry_price * slippage_pct) + (entry_price * fees_pct)
         if total_risk_per_unit < 1e-9: return {}
+        
         reward_per_unit = abs(targets[0] - entry_price) - (targets[0] * fees_pct)
         actual_rr = round(reward_per_unit / total_risk_per_unit, 2)
+        
         final_params = {
             "stop_loss": round(stop_loss, 5), 
             "targets": [round(t, 5) for t in targets], 
@@ -314,7 +303,7 @@ class BaseStrategy(ABC):
                                          sl_params: Optional[Dict[str, Any]] = None, 
                                          tp_logic: Optional[Dict[str, Any]] = None,
                                          **kwargs) -> Dict[str, Any]:
-        # ... (implementation unchanged)
+        
         final_sl, final_targets = None, []
         if sl_params and tp_logic:
             logger.debug(f"Using Blueprint Processor for risk calculation.")
@@ -338,4 +327,3 @@ class BaseStrategy(ABC):
             risk_dist = abs(entry_price - final_sl)
             final_targets = [entry_price + (risk_dist * r if direction.upper() == 'BUY' else -risk_dist * r) for r in reward_ratios]
         return self._finalize_risk_parameters(entry_price, final_sl, final_targets, direction)
-
