@@ -126,7 +126,7 @@ class KeltnerMomentumBreakout(BaseStrategy):
 
         # --- 3. Primary Trigger Condition ---
         keltner_analysis = (indicators['keltner_channel'].get('analysis') or {})
-        position_text = str(keltner_analysis.get('position',''))
+        position_text = str(keltner_analysis.get('position','')).lower()
         signal_direction = "BUY" if "breakout above" in position_text else "SELL" if "breakdown below" in position_text else None
         
         if not signal_direction:
