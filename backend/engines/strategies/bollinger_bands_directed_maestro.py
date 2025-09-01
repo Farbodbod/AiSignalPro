@@ -1,5 +1,3 @@
-# backend/engines/strategies/bollinger_bands_directed_maestro.py (v11.1 - Architecturally Pure)
-
 import logging
 from typing import Dict, Any, Optional, ClassVar, List
 from .base_strategy import BaseStrategy
@@ -9,15 +7,14 @@ logger = logging.getLogger(__name__)
 
 class BollingerBandsDirectedMaestro(BaseStrategy):
     """
-    BollingerBandsDirectedMaestro - (v11.1 - Architecturally Pure)
+    BollingerBandsDirectedMaestro - (v11.2 - Robustness Hardening)
     -------------------------------------------------------------------------
-    This is the definitive, Gold Master version of the Trinity Hunter. It has
-    been fully purified to align with the BaseStrategy v14.0+ architecture by:
+    This version includes a critical robustness hardening fix. It extends the
+    architectural purity of the strategy by:
     1.  Correcting the logger initialization to the standard '__name__'.
-    2.  Removing redundant local helper methods (_safe_get, _validate_blueprint)
-        and now relies on the centralized, inherited versions from the base class.
-    This represents the pinnacle of our architectural standards for robustness,
-    clarity, and code reuse.
+    2.  Removing redundant local helper methods (_safe_get, _validate_blueprint).
+    3.  Applying case-insensitive string comparison (.lower()) to the Squeeze
+        logic, eliminating a potential bug and ensuring system-wide consistency.
     """
     strategy_name: str = "BollingerBandsDirectedMaestro"
     
@@ -59,9 +56,6 @@ class BollingerBandsDirectedMaestro(BaseStrategy):
       "allow_mixed_mode": False
     }
 
-    # ✅ ARCHITECTURAL FIX: _safe_get and _validate_blueprint are now inherited from BaseStrategy v14.0
-    # No need for local implementations.
-
     def check_signal(self) -> Optional[Dict[str, Any]]:
         cfg = self.config
         if not self.price_data: return None
@@ -95,11 +89,15 @@ class BollingerBandsDirectedMaestro(BaseStrategy):
         if is_squeeze:
             trade_mode = "Squeeze Breakout"
             score, weights, min_score = 0, cfg['weights_squeeze'], cfg['min_squeeze_score']
-            trade_signal = self._safe_get(bollinger_analysis, ['trade_signal'], default='')
-            temp_direction = "BUY" if "Bullish" in trade_signal else "SELL" if "Bearish" in trade_signal else None
+            
+            # ✅ SURGICAL FIX v11.2: Normalize trade_signal to lowercase for robust matching.
+            trade_signal = self._safe_get(bollinger_analysis, ['trade_signal'], default='').lower()
+            temp_direction = "BUY" if "bullish" in trade_signal else "SELL" if "bearish" in trade_signal else None
             
             if temp_direction:
-                strength_ok = self._safe_get(bollinger_analysis, ['strength']) == 'Strong'
+                # ✅ SURGICAL FIX v11.2: Normalize strength value to lowercase for robust matching.
+                strength_value = self._safe_get(bollinger_analysis, ['strength'], default='').lower()
+                strength_ok = strength_value == 'strong'
                 self._log_criteria("Squeeze: Bollinger Breakout", strength_ok, "Breakout confirmed by BB strength.")
                 if strength_ok: score += weights['bollinger_breakout']
                 
