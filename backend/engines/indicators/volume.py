@@ -1,8 +1,8 @@
-# backend/engines/indicators/volume.py (v2.0 - The Volume Quantum Engine)
+# backend/engines/indicators/volume.py (v2.2 - Robustness & Purity Hotfix)
 import pandas as pd
 import numpy as np
 import logging
-from typing import Dict, Any
+from typing import Dict, Any, List
 
 from .base import BaseIndicator
 
@@ -10,25 +10,17 @@ logger = logging.getLogger(__name__)
 
 class VolumeIndicator(BaseIndicator):
     """
-    Volume Indicator - (v2.0 - The Volume Quantum Engine)
+    Volume Indicator - (v2.2 - Robustness & Purity Hotfix)
     ---------------------------------------------------------------------------
-    This quantum upgrade transforms the volume indicator into a multi-dimensional
-    analysis engine, fully aligned with the AiSignalPro's "smart module"
-    architecture.
-
-    Key Features:
-    1.  **Standardized Architecture:** Now uses the project's gold-standard
-        'default_config' pattern for maximum clarity and maintainability.
-    2.  **Z-Score Analysis:** Integrates standard Z-Score calculation, providing
-        a statistically robust measure of volume intensity for advanced strategies.
-    3.  **Dynamic Volume Regime Intelligence:** Implements percentile-based analysis
-        to classify the market's volume state into 'Squeeze', 'Normal', or
-        'Expansion', offering deep, predictive context.
-    4.  **Full Compatibility:** Includes a 'series' output for full integration
-        with momentum acceleration logic in consuming strategies.
+    This version includes two key improvements identified during a final audit:
+    1.  **Purity Hotfix:** The obsolete `dependencies` class attribute has been
+        removed, making the indicator 100% compliant with the BaseIndicator v4.0+
+        architecture.
+    2.  **Robustness Hotfix:** The critical 'z_score' value is now included in
+        BOTH the 'values' and 'analysis' dictionaries. This ensures maximum
+        backward and forward compatibility with all consuming strategies,
+        preventing potential data contract bugs.
     """
-    dependencies: list = []
-    
     default_config: Dict[str, Any] = {
         'period': 20,
         'long_period': 50,
@@ -60,24 +52,20 @@ class VolumeIndicator(BaseIndicator):
         self.volume_percentile_col = f'vol_pct{suffix}'
 
     def calculate(self) -> 'VolumeIndicator':
-        if 'volume' not in self.df.columns or len(self.df) < self.long_period or len(self.df) < self.regime_period:
+        if 'volume' not in self.df.columns or len(self.df) < max(self.long_period, self.regime_period):
             logger.warning(f"Not enough data or missing 'volume' column for VolumeIndicator on timeframe {self.timeframe or 'base'}.")
             return self
 
         volume = self.df['volume']
         
-        # Standard Calculations
         volume_ma = volume.rolling(window=self.period).mean()
         volume_ma_long = volume.rolling(window=self.long_period).mean()
-        volume_std = volume.rolling(window=self.period).std().replace(0, 1e-9) # Avoid division by zero
+        volume_std = volume.rolling(window=self.period).std().replace(0, 1e-9)
         
-        # ✅ QUANTUM ANALYSIS: Z-Score Calculation
         z_score = (volume - volume_ma) / volume_std
         
-        # ✅ DYNAMIC REGIME: Volume Percentile Calculation
         volume_percentile = volume.rolling(window=self.regime_period, min_periods=int(self.regime_period/2)).rank(pct=True) * 100
         
-        # Assign to DataFrame
         self.df[self.volume_ma_col] = volume_ma
         self.df[self.volume_ma_long_col] = volume_ma_long
         self.df[self.volume_std_col] = volume_std
@@ -99,14 +87,11 @@ class VolumeIndicator(BaseIndicator):
         
         last = valid_df.iloc[-1]
         
-        # --- 1. Basic Analysis ---
         volume_trend = "Increasing" if last[self.volume_ma_col] > last[self.volume_ma_long_col] else "Decreasing" if last[self.volume_ma_col] < last[self.volume_ma_long_col] else "Neutral"
         
-        # --- 2. Z-Score Based Climactic Check ---
         z_score = last[self.z_score_col]
         is_climactic = z_score > self.climactic_std_threshold
         
-        # --- 3. Dynamic Volume Regime Analysis ---
         volume_percentile = last[self.volume_percentile_col]
         volume_regime = "Normal"
         if volume_percentile <= self.squeeze_percentile:
@@ -114,7 +99,6 @@ class VolumeIndicator(BaseIndicator):
         elif volume_percentile >= self.expansion_percentile:
             volume_regime = "Expansion"
 
-        # --- 4. Assemble Final Output ---
         values_content = {
             "volume": float(last['volume']),
             "volume_ma": float(last[self.volume_ma_col]),
@@ -127,6 +111,7 @@ class VolumeIndicator(BaseIndicator):
             "is_climactic_volume": bool(is_climactic),
             "volume_trend": volume_trend,
             "volume_regime": volume_regime,
+            "z_score": round(z_score, 2) # ✅ ROBUSTNESS HOTFIX: Add z_score here as well
         }
         
         series_content = [float(v) for v in self.df['volume'].tail(self.series_lookback).tolist()]
