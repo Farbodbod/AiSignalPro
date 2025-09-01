@@ -1,4 +1,4 @@
-# backend/engines/indicators/cci.py (v6.0 - The Momentum Engine)
+# backend/engines/indicators/cci.py (v6.2 - Logic & Purity Hotfix)
 import pandas as pd
 import numpy as np
 import logging
@@ -10,31 +10,16 @@ logger = logging.getLogger(__name__)
 
 class CciIndicator(BaseIndicator):
     """
-    CCI Indicator - (v6.0 - The Momentum Engine)
+    CCI Indicator - (v6.2 - Logic & Purity Hotfix)
     --------------------------------------------------------------------------
-    This quantum upgrade transforms the CCI from a senior analyst into a true
-    Momentum Engine. Key architectural and analytical enhancements include:
-
-    1.  **Momentum Acceleration Analysis:** The core innovation. The indicator now
-        calculates the slope of the CCI over a short lookback period to determine
-        the true state of momentum (e.g., 'Accelerating Bullish', 
-        'Decelerating Bearish'), providing predictive insight, not just lagging data.
-
-    2.  **Refactored Event-Driven Output:** The flawed, self-overwriting text signal
-        is replaced by a clean, robust system of boolean flags (e.g., 
-        'is_bullish_cross', 'is_entering_overbought'). This provides strategies with
-        precise, non-conflicting triggers.
-
-    3.  **Dual-Lookback Intelligence:** It uses a long lookback (e.g., 200 bars)
-        for stable, adaptive threshold calculation (market character) and a short
-        lookback (e.g., 5 bars) for instantaneous momentum analysis (market velocity).
-
-    4.  **Unified & Compatible Output:** The output structure is streamlined by
-        consolidating all analysis into a single 'analysis' object and adding a
-        'series' key to provide recent values for dependent strategies.
+    This version includes two key improvements identified during a final audit:
+    1.  **Purity Hotfix:** The obsolete `dependencies` class attribute has been
+        removed, making the indicator 100% compliant with the BaseIndicator v4.0+
+        architecture.
+    2.  **Logic Hotfix:** The momentum acceleration logic has been refactored
+        to be simpler, more robust, and less ambiguous. It now focuses solely on
+        detecting significant acceleration, providing clearer signals to strategies.
     """
-    dependencies: list = []
-    
     default_config: Dict[str, Any] = {
         'period': 20,
         'constant': 0.015,
@@ -43,6 +28,7 @@ class CciIndicator(BaseIndicator):
         'adaptive_multiplier': 2.0,
         'adaptive_min_level': 100.0,
         'momentum_lookback': 5,
+        'momentum_slope_threshold': 0.75, # Threshold for significant acceleration
         'fixed_overbought': 100.0,
         'fixed_oversold': -100.0,
         'extreme_overbought': 200.0,
@@ -58,6 +44,7 @@ class CciIndicator(BaseIndicator):
         self.adaptive_multiplier = float(self.params.get('adaptive_multiplier', self.default_config['adaptive_multiplier']))
         self.adaptive_min_level = float(self.params.get('adaptive_min_level', self.default_config['adaptive_min_level']))
         self.momentum_lookback = int(self.params.get('momentum_lookback', self.default_config['momentum_lookback']))
+        self.momentum_slope_threshold = float(self.params.get('momentum_slope_threshold', self.default_config['momentum_slope_threshold']))
         self.fixed_overbought = float(self.params.get('overbought', self.default_config['fixed_overbought']))
         self.fixed_oversold = float(self.params.get('oversold', self.default_config['fixed_oversold']))
         self.extreme_overbought = float(self.params.get('extreme_overbought', self.default_config['extreme_overbought']))
@@ -78,7 +65,7 @@ class CciIndicator(BaseIndicator):
         ma_tp = tp.rolling(window=self.period).mean()
         mean_dev = tp.rolling(window=self.period).apply(lambda x: np.abs(x - x.mean()).mean(), raw=True)
         
-        safe_denominator = (self.constant * mean_dev).replace(0, 1e-9) # Avoid division by zero
+        safe_denominator = (self.constant * mean_dev).replace(0, 1e-9)
         cci_series = (tp - ma_tp) / safe_denominator
         
         self.df[self.cci_col] = cci_series
@@ -96,7 +83,6 @@ class CciIndicator(BaseIndicator):
         last_val = valid_cci.iloc[-1]
         prev_val = valid_cci.iloc[-2]
         
-        # --- 1. Threshold Calculation (Long-term lookback) ---
         if self.use_adaptive_thresholds and len(valid_cci) >= self.adaptive_lookback:
             cci_std = valid_cci.tail(self.adaptive_lookback).std()
             overbought_level = max(cci_std * self.adaptive_multiplier, self.adaptive_min_level)
@@ -107,7 +93,6 @@ class CciIndicator(BaseIndicator):
             oversold_level = self.fixed_oversold
             threshold_type = "Fixed"
 
-        # --- 2. Position and Event Flag Analysis (Clean & Non-Conflicting) ---
         position = "Neutral"
         if last_val > self.extreme_overbought: position = "Extreme Overbought"
         elif last_val < self.extreme_oversold: position = "Extreme Oversold"
@@ -120,14 +105,12 @@ class CciIndicator(BaseIndicator):
             "is_bearish_cross": prev_val >= overbought_level and last_val < overbought_level,
             "is_entering_overbought": prev_val < overbought_level and last_val >= overbought_level,
             "is_entering_oversold": prev_val > oversold_level and last_val <= oversold_level,
-            "is_in_extreme_buy": last_val > self.extreme_overbought,
-            "is_in_extreme_sell": last_val < self.extreme_oversold,
             "threshold_type": threshold_type,
             "overbought_level": round(overbought_level, 2),
             "oversold_level": round(oversold_level, 2)
         }
 
-        # --- 3. Momentum Acceleration Analysis (Short-term lookback) ---
+        # ✅ LOGIC HOTFIX v6.2: Simplified and more robust momentum state logic
         recent_series = valid_cci.tail(self.momentum_lookback).values
         if len(recent_series) == self.momentum_lookback:
             x = np.arange(len(recent_series))
@@ -135,17 +118,17 @@ class CciIndicator(BaseIndicator):
             
             analysis["momentum_slope"] = round(slope, 2)
             
-            if slope > 0.5: # Threshold for significant positive slope
-                analysis["momentum_state"] = "Accelerating Bullish" if last_val > prev_val else "Decelerating Bearish"
-            elif slope < -0.5: # Threshold for significant negative slope
-                analysis["momentum_state"] = "Accelerating Bearish" if last_val < prev_val else "Decelerating Bullish"
+            slope_threshold = self.momentum_slope_threshold
+            if slope > slope_threshold:
+                analysis["momentum_state"] = "Accelerating Bullish"
+            elif slope < -slope_threshold:
+                analysis["momentum_state"] = "Accelerating Bearish"
             else:
                 analysis["momentum_state"] = "Neutral"
         else:
             analysis["momentum_slope"] = None
             analysis["momentum_state"] = "Unknown"
 
-        # --- 4. Final Output Assembly ---
         values_content = {"cci": round(last_val, 2)}
         series_content = [round(v, 2) for v in valid_cci.tail(self.momentum_lookback).tolist()]
 
