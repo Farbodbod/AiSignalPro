@@ -6,13 +6,14 @@ import asyncio
 import inspect
 from typing import Dict, Any, Type, List, Optional, Tuple
 from collections import deque
+from copy import deepcopy
 from .indicators import *
 from .strategies import BaseStrategy
 
 logger = logging.getLogger(__name__)
 
+# --- Helper Functions ---
 def get_indicator_config_key(name: str, params: Dict[str, Any]) -> str:
-    # ... [This function is unchanged and correct] ...
     try:
         filtered_params = {k: v for k, v in params.items() if k not in ["enabled", "dependencies", "name"]}
         if not filtered_params: return name
@@ -23,16 +24,25 @@ def get_indicator_config_key(name: str, params: Dict[str, Any]) -> str:
         param_str = "_".join(f"{k}_{v}" for k, v in sorted(params.items()) if k not in ["enabled", "dependencies", "name"])
         return f"{name}_{param_str}" if param_str else name
 
+def deep_merge(dict1: Dict[str, Any], dict2: Dict[str, Any]) -> Dict[str, Any]:
+    """Recursively merges dict2 into dict1."""
+    result = deepcopy(dict1)
+    for k, v in dict2.items():
+        if k in result and isinstance(result[k], dict) and isinstance(v, dict):
+            result[k] = deep_merge(result[k], v)
+        else:
+            result[k] = v
+    return result
+
 class IndicatorAnalyzer:
     """
-    The Self-Aware Analysis Engine for AiSignalPro (v18.0 - The Parameter Inheritance Fix)
+    The Self-Aware Analysis Engine for AiSignalPro (v18.1 - The Deep Merge Restoration)
     ------------------------------------------------------------------------------------------
-    This version contains a critical architectural fix to the dependency resolution
-    logic. The engine now correctly merges strategy-specific indicator parameters
-    over the global defaults, fixing the "Parameter Inheritance Failure" bug. This
-    ensures that custom indicator requests from strategies are initialized with a
-    complete and correct set of parameters, guaranteeing system-wide accuracy
-    and robustness.
+    This version includes a critical, definitive fix for the dependency resolution
+    logic. The engine now uses a 'deep_merge' operation when combining global and
+    strategy-specific indicator parameters. This permanently fixes the "Parameter
+    Inheritance Failure" bug for nested parameters like 'dependencies', restoring
+    full functionality and ensuring all indicators are calculated correctly.
     """
     def __init__(self, df: pd.DataFrame, config: Dict[str, Any], strategies_config: Dict[str, Any], 
                  strategy_classes: List[Type[BaseStrategy]],
@@ -67,7 +77,7 @@ class IndicatorAnalyzer:
             
             for dep_name, dep_params in (params.get("dependencies") or {}).items():
                 full_dep_config = self.indicators_config.get(dep_name, {})
-                final_dep_params = {**full_dep_config, **dep_params}
+                final_dep_params = deep_merge(full_dep_config, dep_params) # Use deep_merge for dependencies
                 discover_nodes(dep_name, final_dep_params)
                 
                 dep_core_params = {k: v for k, v in final_dep_params.items() if k not in ["enabled", "dependencies", "name"]}
@@ -86,18 +96,15 @@ class IndicatorAnalyzer:
             if strat_params.get("enabled", False):
                 indicator_orders = {**strat_params.get("default_params", {}).get("indicator_configs", {}), **strat_params.get("indicator_configs", {})}
                 
-                # --- ARCHITECTURAL FIX v18.0: PARAMETER INHERITANCE ---
+                # --- DEFINITIVE FIX v18.1: USE DEEP MERGE FOR PARAMETER INHERITANCE ---
                 for alias, order in indicator_orders.items():
                     indicator_name = order["name"]
                     custom_params = order.get("params", {})
-                    
-                    # 1. Get the base parameters from the global config
                     base_params = self.indicators_config.get(indicator_name, {})
                     
-                    # 2. Merge the custom params over the base params
-                    final_params = {**base_params, **custom_params}
+                    # Use deep_merge to correctly handle nested parameters like 'dependencies'
+                    final_params = deep_merge(base_params, custom_params)
                     
-                    # 3. Discover the node with the complete, merged parameters
                     discover_nodes(indicator_name, final_params)
                 # --- END OF FIX ---
         
@@ -119,7 +126,9 @@ class IndicatorAnalyzer:
                 in_degree[neighbor] -= 1
                 if in_degree[neighbor] == 0: queue.append(neighbor)
         if len(sorted_order) != len(self._indicator_configs):
-            raise ValueError(f"Circular dependency in {self.symbol}@{self.timeframe}: {set(self._indicator_configs) - set(sorted_order)}")
+            failed_nodes = set(self._indicator_configs) - set(sorted_order)
+            logger.error(f"Circular dependency or unresolved node in {self.symbol}@{self.timeframe}: {failed_nodes}")
+            raise ValueError(f"Circular dependency detected in indicator graph.")
         return sorted_order
 
     async def _calculate_and_store(self, key: str, base_df: pd.DataFrame) -> None:
