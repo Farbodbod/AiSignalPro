@@ -7,45 +7,33 @@ logger = logging.getLogger(__name__)
 
 class IchimokuHybridPro(BaseStrategy):
     """
-    IchimokuHybridPro - (v7.0 - Dual-Engine Architecture)
+    IchimokuHybridPro - (v8.0 - Architectural Purity & Delegation)
     -------------------------------------------------------------------------
-    This major upgrade transforms the strategy into a dual-engine system,
-    capable of differentiating between momentum-based and structure-based
-    signals for higher tactical intelligence and signal accuracy.
+    This definitive version achieves architectural purity by delegating all
+    volume analysis responsibilities to the Volume indicator.
 
-    Key enhancements from v6.1 retained:
-    1.  Multi-Level Scoring (Strong/Medium TK Cross)
-    2.  Expanded Triggers (Cloud Breakout Structure)
-    3.  Dynamic Score Threshold (ADX-based)
-    4.  Intelligent HTF Logic (Override & Conflict Dampening)
-    5.  Hybrid Stop-Loss (Kumo/Kijun/ATR)
-    6.  Stepped R/R Ratio
-    7.  Z-Score Volume Analysis
-    8.  Robustness Patches from v6.1
-
-    🚀 New in v7.0:
-    9.  **Dual-Engine Scoring:** Introduces two specialized scoring profiles:
-        - **Momentum Engine:** For classic TK Cross signals, adapting to
-          Trending/Ranging market regimes.
-        - **Structure Engine:** A new, specialized engine for Cloud Breakout
-          signals, using its own weight profile ('weights_breakout').
-    10. **Intelligent Engine Selection:** The core logic now automatically
-        detects the signal trigger type and deploys the appropriate engine.
-    11. **Enhanced Configurability:** Added a separate minimum score threshold
-        for breakout signals for fine-grained tuning.
+    🚀 KEY EVOLUTIONS in v8.0:
+    1.  **Configuration Purity:** Removed indicator-specific parameters
+        ('volume_z_lookback', 'volume_z_threshold') from the strategy's
+        default_config, making config.json the single source of truth.
+    2.  **Responsibility Delegation:** The strategy no longer calculates if a
+        volume spike occurred. It now consumes the final boolean analysis
+        ('is_climactic_volume') directly from the Volume indicator, adhering
+        to the principle of Separation of Concerns.
+    
+    (All features from v7.x are preserved)
     """
     strategy_name: str = "IchimokuHybridPro"
     
     default_config: ClassVar[Dict[str, Any]] = {
         # General Settings
         "market_regime_adx": 21,
-        "min_rr_ratio": 1.8,  # Base R/R, becomes 2.0 for high-conviction signals
+        "min_rr_ratio": 1.8,
 
         # Stop-Loss & Risk Management
-        "sl_mode": "hybrid",  # Options: 'kumo', 'kijun', 'hybrid'
+        "sl_mode": "hybrid",
         
         # --- SCORING ENGINE PROFILES ---
-        # 1. Momentum Engine (TK Cross)
         "weights_trending": {
             "price_vs_kumo": 2, "tk_cross_strong": 3, "tk_cross_medium": 2,
             "future_kumo": 2, "chikou_free": 2, "chikou_near_free": 1,
@@ -56,15 +44,10 @@ class IchimokuHybridPro(BaseStrategy):
             "future_kumo": 1, "chikou_free": 1, "chikou_near_free": 1,
             "kumo_twist": 3, "volume_spike": 2
         },
-        # 2. Structure Engine (Cloud Breakout)
         "weights_breakout": {
-            "price_vs_kumo": 4,      # Primary confirmation: the breakout itself
-            "chikou_free": 3,        # Key confirmation: path is clear of past resistance/support
-            "future_kumo": 2,        # Future confirmation: cloud ahead supports the move
-            "volume_spike": 2,       # Strength confirmation: volume validates the breakout
-            "kumo_twist": 1,         # Lesser confirmation: a preceding twist is a bonus
-            "tk_cross_strong": 0,    # N/A for this engine
-            "tk_cross_medium": 0     # N/A for this engine
+            "price_vs_kumo": 4, "chikou_free": 3, "future_kumo": 2,
+            "volume_spike": 2, "kumo_twist": 1, "tk_cross_strong": 0,
+            "tk_cross_medium": 0
         },
 
         # Multi-Timeframe (HTF) Logic
@@ -77,11 +60,7 @@ class IchimokuHybridPro(BaseStrategy):
 
         # Dynamic Score Thresholds
         "min_total_score_base": 62.0,
-        "min_total_score_breakout_base": 65.0, # Slightly higher bar for structural signals
-
-        # Volume Analysis
-        "volume_z_lookback": 80,
-        "volume_z_threshold": 2.0,
+        "min_total_score_breakout_base": 65.0,
     }
 
     def _indicator_ok(self, d: Optional[Dict]) -> bool:
@@ -102,7 +81,7 @@ class IchimokuHybridPro(BaseStrategy):
             nonlocal score
             if condition:
                 points = weights.get(weight_key, 0)
-                if points > 0: # Only add score and confirmation if weight is non-zero
+                if points > 0:
                     score += points
                     confirmations.append(name)
                     self._log_criteria(f"IchiComponent: {name}", True, f"Condition met, adding {points} points.")
@@ -112,7 +91,7 @@ class IchimokuHybridPro(BaseStrategy):
         is_below_kumo = analysis.get('price_position') == "Below Kumo"
         if direction == "BUY":
             check("Price>Kumo", 'price_vs_kumo', is_above_kumo)
-        else: # SELL
+        else:
             check("Price<Kumo", 'price_vs_kumo', is_below_kumo)
 
         # 2. TK Cross Strength
@@ -141,16 +120,16 @@ class IchimokuHybridPro(BaseStrategy):
         check("Kumo_Twist_Aligned", 'kumo_twist',
               (kumo_twist == "Bullish Twist" and direction == "BUY") or \
               (kumo_twist == "Bearish Twist" and direction == "SELL"))
-
-        # 6. Volume Spike (Z-Score)
-        volume_data = self.get_indicator('volume', analysis_source=analysis_data) or {}
-        vol_analysis = volume_data.get('analysis') or {}
-        vol_values = volume_data.get('values') or {}
-        volume_z_score = vol_analysis.get('zscore') if vol_analysis.get('zscore') is not None else vol_values.get('zscore')
         
-        z_threshold = float(self.config.get('volume_z_threshold', 2.0))
-        if volume_z_score is not None:
-            check("Volume_Spike", 'volume_spike', volume_z_score >= z_threshold)
+        # --- ARCHITECTURAL PURITY UPGRADE v8.0 ---
+        # 6. Volume Spike (Delegated Responsibility)
+        # The strategy now consumes the final analysis from the Volume indicator,
+        # delegating the "how" of the calculation to the indicator itself.
+        volume_data = self.get_indicator('volume', analysis_source=analysis_data) or {}
+        vol_analysis = self._safe_get(volume_data, ['analysis'], {})
+        is_volume_spike = vol_analysis.get('is_climactic_volume', False)
+        check("Volume_Spike", 'volume_spike', is_volume_spike)
+        # --- END OF UPGRADE ---
             
         return score, confirmations
 
@@ -176,13 +155,11 @@ class IchimokuHybridPro(BaseStrategy):
         trigger_type: Optional[str] = None
         tk_cross = str(ichi_analysis.get('tk_cross', "")).lower()
         
-        # Priority 1: Momentum Trigger (TK Cross)
         if "bullish" in tk_cross:
             signal_direction, trigger_type = "BUY", "TK_CROSS"
         elif "bearish" in tk_cross:
             signal_direction, trigger_type = "SELL", "TK_CROSS"
         
-        # Priority 2: Structure Trigger (Cloud Breakout)
         if trigger_type is None:
             price_pos = ichi_analysis.get('price_position')
             senkou_a = ichi_values.get('senkou_a')
@@ -198,7 +175,6 @@ class IchimokuHybridPro(BaseStrategy):
         self._log_criteria("Primary Trigger", True, f"'{trigger_type}' detected. Signal direction: '{signal_direction}'.")
         
         # --- 2. Configure Active Engine & Dynamic Score Threshold ---
-        # ARCHITECTURAL UPGRADE v7.0: Selects the appropriate scoring engine and settings based on trigger type.
         active_weights: Dict[str, Any] = {}
         min_score_base: float = 0.0
         market_regime: str = "N/A"
@@ -214,11 +190,10 @@ class IchimokuHybridPro(BaseStrategy):
         
         elif trigger_type == 'CLOUD_BREAKOUT':
             self._log_criteria("Engine Activated", True, "Structure Engine (CLOUD_BREAKOUT)")
-            market_regime = "BREAKOUT" # Specific regime for this engine
+            market_regime = "BREAKOUT"
             active_weights = cfg.get('weights_breakout', {})
             min_score_base = float(cfg.get('min_total_score_breakout_base', 65.0))
 
-        # Dynamic Score Threshold Adjustment (applies to both engines)
         if adx_val < 18: min_score = min_score_base - 4.0
         elif adx_val < float(cfg.get('market_regime_adx', 21)): min_score = min_score_base - 2.0
         else: min_score = min_score_base
@@ -231,7 +206,6 @@ class IchimokuHybridPro(BaseStrategy):
         htf_enabled = bool(cfg.get('htf_confirmation_enabled')) and bool(self.htf_analysis)
         
         if htf_enabled:
-            # HTF uses the same weight profile as the primary timeframe for consistency
             htf_score, htf_confirms = self._score_ichimoku(signal_direction, self.htf_analysis, active_weights)
 
         # --- 4. Normalize and Combine Scores with Intelligent HTF Logic ---
@@ -239,7 +213,6 @@ class IchimokuHybridPro(BaseStrategy):
         norm_primary_score = round((primary_score / max_possible_score) * 100, 2) if max_possible_score > 0 else 0.0
         norm_htf_score = round((htf_score / max_possible_score) * 100, 2) if htf_enabled and max_possible_score > 0 else 0.0
         
-        # ... [HTF override and conflict logic remains unchanged] ...
         if norm_primary_score >= float(cfg.get('primary_override_threshold', 80.0)):
             htf_enabled = False
             self._log_criteria("HTF Logic", True, f"Primary score {norm_primary_score:.2f} is above override threshold. HTF ignored.")
@@ -268,7 +241,6 @@ class IchimokuHybridPro(BaseStrategy):
             return None
 
         # --- 5. Calculate Stop-Loss (Hybrid Logic) & R/R ---
-        # ... [This entire section remains unchanged as it's independent of the scoring engine] ...
         entry_price = self.price_data.get('close')
         if entry_price is None:
             self._log_final_decision("HOLD", "Could not determine entry price.")
@@ -286,16 +258,16 @@ class IchimokuHybridPro(BaseStrategy):
             if structural_sl and abs(entry_price - structural_sl) > 2.5 * atr_val:
                 if signal_direction == 'BUY':
                     stop_loss = max(kijun_sl or (entry_price - 2 * atr_val), entry_price - 2 * atr_val)
-                else: # SELL
+                else:
                     stop_loss = min(kijun_sl or (entry_price + 2 * atr_val), entry_price + 2 * atr_val)
                 self._log_criteria("Stop Loss", True, f"Hybrid SL: Structural SL too far, using ATR-based SL: {stop_loss}")
             else:
                 stop_loss = structural_sl
                 self._log_criteria("Stop Loss", True, f"Hybrid SL: Using structural SL: {stop_loss}")
-        else: # 'kumo' or 'kijun'
+        else:
             if sl_mode == 'kumo':
                 stop_loss = ichi_values.get('senkou_b') if signal_direction == 'BUY' else ichi_values.get('senkou_a')
-            else: # default to 'kijun'
+            else:
                 stop_loss = ichi_values.get('kijun')
 
         if stop_loss is None:
@@ -317,7 +289,7 @@ class IchimokuHybridPro(BaseStrategy):
         # --- 6. Final Confirmation ---
         confirmations = {
             "total_score": round(final_weighted_score, 2),
-            "trigger_type": trigger_type, # Added for enhanced metadata
+            "trigger_type": trigger_type,
             "market_regime": market_regime,
             "primary_score_details": f"{primary_score}/{max_possible_score} ({','.join(primary_confirms)})",
             "htf_score_details": f"{htf_score}/{max_possible_score} ({','.join(htf_confirms)})" if htf_enabled else "N/A (Overridden or Disabled)",
