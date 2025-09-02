@@ -1,5 +1,4 @@
-# engines/indicator_analyzer.py (v17.5 - The Final Architecture Patch)
-
+#backend/engines/indicator_analyzer.py
 import pandas as pd
 import logging
 import json
@@ -17,7 +16,7 @@ def get_indicator_config_key(name: str, params: Dict[str, Any]) -> str:
     try:
         filtered_params = {k: v for k, v in params.items() if k not in ["enabled", "dependencies", "name"]}
         if not filtered_params: return name
-        param_str = json.dumps(filtered_params, sort_keys=True, separators=(",", ":"))
+        param_str = json.dumps(filtered_params, sort_keys=True, separators=(',', ':'))
         return f"{name}_{param_str}"
     except TypeError as e:
         logger.error(f"Could not serialize params for {name}: {e}")
@@ -26,12 +25,14 @@ def get_indicator_config_key(name: str, params: Dict[str, Any]) -> str:
 
 class IndicatorAnalyzer:
     """
-    The Self-Aware Analysis Engine for AiSignalPro (v17.5 - The Final Architecture Patch)
+    The Self-Aware Analysis Engine for AiSignalPro (v18.0 - The Parameter Inheritance Fix)
     ------------------------------------------------------------------------------------------
-    This is the definitive, architecturally sound version. It contains the final
-    patch to the dependency resolution logic, making it fully compatible with the
-    flattened config.json structure. It also includes transparent logging for
-    failed calculations and analyses, permanently removing any blind spots.
+    This version contains a critical architectural fix to the dependency resolution
+    logic. The engine now correctly merges strategy-specific indicator parameters
+    over the global defaults, fixing the "Parameter Inheritance Failure" bug. This
+    ensures that custom indicator requests from strategies are initialized with a
+    complete and correct set of parameters, guaranteeing system-wide accuracy
+    and robustness.
     """
     def __init__(self, df: pd.DataFrame, config: Dict[str, Any], strategies_config: Dict[str, Any], 
                  strategy_classes: List[Type[BaseStrategy]],
@@ -41,32 +42,12 @@ class IndicatorAnalyzer:
         self.strategy_classes = strategy_classes
         self.timeframe, self.symbol, self.recalc_buffer = timeframe, symbol, 250
         self._indicator_classes: Dict[str, Type[BaseIndicator]] = { 
-            'rsi': RsiIndicator, 
-            'macd': MacdIndicator, 
-            'bollinger': BollingerIndicator, 
-            'ichimoku': IchimokuIndicator, 
-            'adx': AdxIndicator, 
-            'supertrend': SuperTrendIndicator, 
-            'obv': ObvIndicator, 
-            'stochastic': StochasticIndicator, 
-            'cci': CciIndicator, 
-            'mfi': MfiIndicator, 
-            'atr': AtrIndicator, 
-            'patterns': PatternIndicator, 
-            'divergence': DivergenceIndicator, 
-            'pivots': PivotPointIndicator, 
-            'structure': StructureIndicator, 
-            'whales': WhaleIndicator, 
-            'ema_cross': EMACrossIndicator, 
-            'vwap_bands': VwapBandsIndicator, 
-            'chandelier_exit': ChandelierExitIndicator, 
-            'donchian_channel': DonchianChannelIndicator, 
-            'fast_ma': FastMAIndicator, 
-            'williams_r': WilliamsRIndicator, 
-            'keltner_channel': KeltnerChannelIndicator, 
-            'zigzag': ZigzagIndicator, 
-            'fibonacci': FibonacciIndicator, 
-            'volume': VolumeIndicator,   # ✅ تنها تغییر اضافه‌شده
+            'rsi': RsiIndicator, 'macd': MacdIndicator, 'bollinger': BollingerIndicator, 'ichimoku': IchimokuIndicator, 'adx': AdxIndicator, 
+            'supertrend': SuperTrendIndicator, 'obv': ObvIndicator, 'stochastic': StochasticIndicator, 'cci': CciIndicator, 'mfi': MfiIndicator, 
+            'atr': AtrIndicator, 'patterns': PatternIndicator, 'divergence': DivergenceIndicator, 'pivots': PivotPointIndicator, 'structure': StructureIndicator, 
+            'whales': WhaleIndicator, 'ema_cross': EMACrossIndicator, 'vwap_bands': VwapBandsIndicator, 'chandelier_exit': ChandelierExitIndicator, 
+            'donchian_channel': DonchianChannelIndicator, 'fast_ma': FastMAIndicator, 'williams_r': WilliamsRIndicator, 'keltner_channel': KeltnerChannelIndicator, 
+            'zigzag': ZigzagIndicator, 'fibonacci': FibonacciIndicator, 'volume': VolumeIndicator,
         }
         self._indicator_configs: Dict[str, Dict[str, Any]] = {}
         self._indicator_instances: Dict[str, BaseIndicator] = {}
@@ -76,21 +57,16 @@ class IndicatorAnalyzer:
     def _resolve_dependencies(self) -> List[str]:
         adj, in_degree = {}, {}
         def discover_nodes(ind_name: str, params: Dict[str, Any]):
-            # The get_indicator_config_key expects a flat dict of actual parameters,
-            # so we create one here, excluding metadata.
             core_params = {k: v for k, v in params.items() if k not in ["enabled", "dependencies", "name"]}
             key = get_indicator_config_key(ind_name, core_params)
             
             if key in self._indicator_configs: return
             
-            # We store the FULL parameter block for later use in _calculate_and_store
             self._indicator_configs[key] = {'name': ind_name, 'params': params}
             adj[key], in_degree[key] = [], 0
             
             for dep_name, dep_params in (params.get("dependencies") or {}).items():
-                # We need to find the full config for this dependency from the main list
                 full_dep_config = self.indicators_config.get(dep_name, {})
-                # Merge the specific params from the dependency block over the main defaults
                 final_dep_params = {**full_dep_config, **dep_params}
                 discover_nodes(dep_name, final_dep_params)
                 
@@ -101,28 +77,41 @@ class IndicatorAnalyzer:
                 in_degree[key] += 1
         
         # --- Discovery Phase ---
-        # 1. Discover from main indicators config
+        # 1. Discover from main indicators config (Global Defaults)
         for name, params in self.indicators_config.items():
             if params.get("enabled", False): discover_nodes(name, params)
         
-        # 2. Discover from user-defined strategy configs in config.json (for aliases)
+        # 2. Discover from user-defined strategy configs (Custom Overrides)
         for strat_name, strat_params in self.strategies_config.items():
             if strat_params.get("enabled", False):
                 indicator_orders = {**strat_params.get("default_params", {}).get("indicator_configs", {}), **strat_params.get("indicator_configs", {})}
-                for alias, order in indicator_orders.items(): discover_nodes(order["name"], order.get("params", {}))
+                
+                # --- ARCHITECTURAL FIX v18.0: PARAMETER INHERITANCE ---
+                for alias, order in indicator_orders.items():
+                    indicator_name = order["name"]
+                    custom_params = order.get("params", {})
+                    
+                    # 1. Get the base parameters from the global config
+                    base_params = self.indicators_config.get(indicator_name, {})
+                    
+                    # 2. Merge the custom params over the base params
+                    final_params = {**base_params, **custom_params}
+                    
+                    # 3. Discover the node with the complete, merged parameters
+                    discover_nodes(indicator_name, final_params)
+                # --- END OF FIX ---
         
-        # 3. Discover from strategy class default_configs ("Master Cook" logic)
+        # 3. Discover from strategy class default_configs (Implicit Dependencies)
         for strat_class in self.strategy_classes:
             default_cfg = getattr(strat_class, 'default_config', {})
             if default_cfg.get('htf_confirmation_enabled'):
                 htf_rules = default_cfg.get('htf_confirmations', {})
                 for rule_name in htf_rules:
                     if rule_name != 'min_required_score':
-                        # Use the full parameter block from the main config
                         indicator_params_from_config = self.indicators_config.get(rule_name, {})
                         discover_nodes(rule_name, indicator_params_from_config)
         
-        # --- Sorting Phase ---
+        # --- Sorting Phase (Topological Sort) ---
         queue = deque([k for k, deg in in_degree.items() if deg == 0]); sorted_order: List[str] = []
         while queue:
             key = queue.popleft(); sorted_order.append(key)
