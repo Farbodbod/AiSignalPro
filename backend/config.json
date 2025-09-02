@@ -117,8 +117,6 @@
       "htf_conflict_dampen_weight": 0.15,
       "min_total_score_base": 62,
       "min_total_score_breakout_base": 68,
-      "volume_z_lookback": 80,
-      "volume_z_threshold": 2.0,
       "indicator_configs": {
         "volume": {
           "name": "volume",
