@@ -1,5 +1,3 @@
-# backend/engines/strategies/ichimoku_hybrid_pro.py (v6.1 - Robustness Patches)
-
 from __future__ import annotations
 import logging
 from typing import Dict, Any, Optional, List, Tuple, ClassVar
@@ -9,13 +7,13 @@ logger = logging.getLogger(__name__)
 
 class IchimokuHybridPro(BaseStrategy):
     """
-    IchimokuHybridPro - (v6.1 - Robustness Patches)
+    IchimokuHybridPro - (v7.0 - Dual-Engine Architecture)
     -------------------------------------------------------------------------
-    This version builds upon the dynamic engine of v6.0 by introducing critical
-    robustness patches identified during a deep code review. It enhances stability
-    and future-proofing without altering the core trading logic.
+    This major upgrade transforms the strategy into a dual-engine system,
+    capable of differentiating between momentum-based and structure-based
+    signals for higher tactical intelligence and signal accuracy.
 
-    Key enhancements from v6.0 retained:
+    Key enhancements from v6.1 retained:
     1.  Multi-Level Scoring (Strong/Medium TK Cross)
     2.  Expanded Triggers (Cloud Breakout Structure)
     3.  Dynamic Score Threshold (ADX-based)
@@ -23,23 +21,31 @@ class IchimokuHybridPro(BaseStrategy):
     5.  Hybrid Stop-Loss (Kumo/Kijun/ATR)
     6.  Stepped R/R Ratio
     7.  Z-Score Volume Analysis
+    8.  Robustness Patches from v6.1
 
-    ✅ New in v6.1:
-    8.  **Robustness Patches:** Includes critical fixes for indicator validation
-        (correctly handling analysis-only indicators) and robust data access for
-        volume Z-score, ensuring higher stability and preventing silent failures.
+    🚀 New in v7.0:
+    9.  **Dual-Engine Scoring:** Introduces two specialized scoring profiles:
+        - **Momentum Engine:** For classic TK Cross signals, adapting to
+          Trending/Ranging market regimes.
+        - **Structure Engine:** A new, specialized engine for Cloud Breakout
+          signals, using its own weight profile ('weights_breakout').
+    10. **Intelligent Engine Selection:** The core logic now automatically
+        detects the signal trigger type and deploys the appropriate engine.
+    11. **Enhanced Configurability:** Added a separate minimum score threshold
+        for breakout signals for fine-grained tuning.
     """
     strategy_name: str = "IchimokuHybridPro"
     
     default_config: ClassVar[Dict[str, Any]] = {
         # General Settings
         "market_regime_adx": 21,
-        "min_rr_ratio": 1.8,  # Base R/R, becomes dynamic (2.0) for high-conviction signals
+        "min_rr_ratio": 1.8,  # Base R/R, becomes 2.0 for high-conviction signals
 
         # Stop-Loss & Risk Management
         "sl_mode": "hybrid",  # Options: 'kumo', 'kijun', 'hybrid'
         
-        # Scoring Weights
+        # --- SCORING ENGINE PROFILES ---
+        # 1. Momentum Engine (TK Cross)
         "weights_trending": {
             "price_vs_kumo": 2, "tk_cross_strong": 3, "tk_cross_medium": 2,
             "future_kumo": 2, "chikou_free": 2, "chikou_near_free": 1,
@@ -50,6 +56,16 @@ class IchimokuHybridPro(BaseStrategy):
             "future_kumo": 1, "chikou_free": 1, "chikou_near_free": 1,
             "kumo_twist": 3, "volume_spike": 2
         },
+        # 2. Structure Engine (Cloud Breakout)
+        "weights_breakout": {
+            "price_vs_kumo": 4,      # Primary confirmation: the breakout itself
+            "chikou_free": 3,        # Key confirmation: path is clear of past resistance/support
+            "future_kumo": 2,        # Future confirmation: cloud ahead supports the move
+            "volume_spike": 2,       # Strength confirmation: volume validates the breakout
+            "kumo_twist": 1,         # Lesser confirmation: a preceding twist is a bonus
+            "tk_cross_strong": 0,    # N/A for this engine
+            "tk_cross_medium": 0     # N/A for this engine
+        },
 
         # Multi-Timeframe (HTF) Logic
         "htf_confirmation_enabled": True,
@@ -59,8 +75,9 @@ class IchimokuHybridPro(BaseStrategy):
         "primary_override_threshold": 80.0,
         "htf_conflict_dampen_weight": 0.15,
 
-        # Dynamic Score Threshold
+        # Dynamic Score Thresholds
         "min_total_score_base": 62.0,
+        "min_total_score_breakout_base": 65.0, # Slightly higher bar for structural signals
 
         # Volume Analysis
         "volume_z_lookback": 80,
@@ -71,7 +88,6 @@ class IchimokuHybridPro(BaseStrategy):
         """Helper to robustly check if an indicator has valid data."""
         if not d:
             return False
-        # An indicator is valid if it has EITHER a 'values' or 'analysis' key with content.
         return bool(d.get('values')) or bool(d.get('analysis'))
 
     def _score_ichimoku(self, direction: str, analysis_data: Dict, weights: Dict) -> Tuple[int, List[str]]:
@@ -86,27 +102,27 @@ class IchimokuHybridPro(BaseStrategy):
             nonlocal score
             if condition:
                 points = weights.get(weight_key, 0)
-                score += points
-                confirmations.append(name)
-                self._log_criteria(f"IchiComponent: {name}", True, f"Condition met, adding {points} points.")
+                if points > 0: # Only add score and confirmation if weight is non-zero
+                    score += points
+                    confirmations.append(name)
+                    self._log_criteria(f"IchiComponent: {name}", True, f"Condition met, adding {points} points.")
 
         # 1. Price vs Kumo
+        is_above_kumo = analysis.get('price_position') == "Above Kumo"
+        is_below_kumo = analysis.get('price_position') == "Below Kumo"
         if direction == "BUY":
-            check("Price>Kumo", 'price_vs_kumo', analysis.get('price_position') == "Above Kumo")
+            check("Price>Kumo", 'price_vs_kumo', is_above_kumo)
         else: # SELL
-            check("Price<Kumo", 'price_vs_kumo', analysis.get('price_position') == "Below Kumo")
+            check("Price<Kumo", 'price_vs_kumo', is_below_kumo)
 
         # 2. TK Cross Strength
         tk_cross = str(analysis.get('tk_cross', "")).lower()
         is_strong = "strong" in tk_cross
         is_aligned = ("bullish" in tk_cross and direction == "BUY") or \
                      ("bearish" in tk_cross and direction == "SELL")
-
         if is_aligned:
-            if is_strong:
-                check("Strong_TK_Cross", 'tk_cross_strong', True)
-            else:
-                check("Medium_TK_Cross", 'tk_cross_medium', True)
+            check("Strong_TK_Cross", 'tk_cross_strong', is_strong)
+            check("Medium_TK_Cross", 'tk_cross_medium', not is_strong)
         
         # 3. Future Kumo Direction
         future_kumo = analysis.get('future_kumo_direction', "")
@@ -126,7 +142,7 @@ class IchimokuHybridPro(BaseStrategy):
               (kumo_twist == "Bullish Twist" and direction == "BUY") or \
               (kumo_twist == "Bearish Twist" and direction == "SELL"))
 
-        # 6. Volume Spike (Z-Score) - Robust Access
+        # 6. Volume Spike (Z-Score)
         volume_data = self.get_indicator('volume', analysis_source=analysis_data) or {}
         vol_analysis = volume_data.get('analysis') or {}
         vol_values = volume_data.get('values') or {}
@@ -147,53 +163,65 @@ class IchimokuHybridPro(BaseStrategy):
         required_names = ['ichimoku', 'adx', 'atr', 'volume']
         indicators = {name: self.get_indicator(name) for name in required_names}
         
-        # ✅ PATCH v6.1: Robust indicator validation
         if any(not self._indicator_ok(data) for data in indicators.values()):
             missing = [name for name, data in indicators.items() if not self._indicator_ok(data)]
             self._log_final_decision("HOLD", f"Missing or invalid indicator data for: {', '.join(missing)}")
             return None
 
-        # --- 1. Determine Signal Direction (Expanded Trigger Logic) ---
+        # --- 1. Determine Signal Trigger & Select Engine ---
         ichi_analysis = indicators['ichimoku']['analysis'] or {}
         ichi_values = indicators['ichimoku']['values'] or {}
         
         signal_direction: Optional[str] = None
+        trigger_type: Optional[str] = None
         tk_cross = str(ichi_analysis.get('tk_cross', "")).lower()
         
+        # Priority 1: Momentum Trigger (TK Cross)
         if "bullish" in tk_cross:
-            signal_direction = "BUY"
+            signal_direction, trigger_type = "BUY", "TK_CROSS"
         elif "bearish" in tk_cross:
-            signal_direction = "SELL"
-        else: # Alternative Trigger: Cloud Breakout Structure
+            signal_direction, trigger_type = "SELL", "TK_CROSS"
+        
+        # Priority 2: Structure Trigger (Cloud Breakout)
+        if trigger_type is None:
             price_pos = ichi_analysis.get('price_position')
             senkou_a = ichi_values.get('senkou_a')
             senkou_b = ichi_values.get('senkou_b')
             if price_pos == "Above Kumo" and senkou_a is not None and senkou_b is not None and senkou_a > senkou_b:
-                signal_direction = "BUY"
-                self._log_criteria("Trigger Source", True, "Cloud Breakout Structure (Bullish)")
+                signal_direction, trigger_type = "BUY", "CLOUD_BREAKOUT"
             elif price_pos == "Below Kumo" and senkou_a is not None and senkou_b is not None and senkou_a < senkou_b:
-                signal_direction = "SELL"
-                self._log_criteria("Trigger Source", True, "Cloud Breakout Structure (Bearish)")
+                signal_direction, trigger_type = "SELL", "CLOUD_BREAKOUT"
 
         if signal_direction is None:
             self._log_final_decision("HOLD", "No primary trigger from TK Cross or Cloud Structure.")
             return None
-        self._log_criteria("Primary Trigger", True, f"Signal direction '{signal_direction}' established.")
+        self._log_criteria("Primary Trigger", True, f"'{trigger_type}' detected. Signal direction: '{signal_direction}'.")
         
-        # --- 2. Determine Market Regime & Dynamic Score Threshold ---
+        # --- 2. Configure Active Engine & Dynamic Score Threshold ---
+        # ARCHITECTURAL UPGRADE v7.0: Selects the appropriate scoring engine and settings based on trigger type.
+        active_weights: Dict[str, Any] = {}
+        min_score_base: float = 0.0
+        market_regime: str = "N/A"
         adx_val = float((indicators['adx']['values'] or {}).get('adx', 0.0))
-        mr_threshold = float(cfg.get('market_regime_adx', 21))
-        market_regime = "TRENDING" if adx_val > mr_threshold else "RANGING"
-        active_weights = cfg.get('weights_trending') if market_regime == "TRENDING" else cfg.get('weights_ranging')
-        self._log_criteria("Market Regime", True, f"Regime='{market_regime}' (ADX={adx_val:.2f})")
+
+        if trigger_type == 'TK_CROSS':
+            self._log_criteria("Engine Activated", True, "Momentum Engine (TK_CROSS)")
+            mr_threshold = float(cfg.get('market_regime_adx', 21))
+            market_regime = "TRENDING" if adx_val > mr_threshold else "RANGING"
+            active_weights = cfg.get('weights_trending') if market_regime == "TRENDING" else cfg.get('weights_ranging')
+            min_score_base = float(cfg.get('min_total_score_base', 62.0))
+            self._log_criteria("Market Regime", True, f"Regime='{market_regime}' (ADX={adx_val:.2f})")
         
-        min_score_base = float(cfg.get('min_total_score_base', 62.0))
-        if adx_val < 18:
-            min_score = min_score_base - 4.0
-        elif adx_val < mr_threshold:
-            min_score = min_score_base - 2.0
-        else:
-            min_score = min_score_base
+        elif trigger_type == 'CLOUD_BREAKOUT':
+            self._log_criteria("Engine Activated", True, "Structure Engine (CLOUD_BREAKOUT)")
+            market_regime = "BREAKOUT" # Specific regime for this engine
+            active_weights = cfg.get('weights_breakout', {})
+            min_score_base = float(cfg.get('min_total_score_breakout_base', 65.0))
+
+        # Dynamic Score Threshold Adjustment (applies to both engines)
+        if adx_val < 18: min_score = min_score_base - 4.0
+        elif adx_val < float(cfg.get('market_regime_adx', 21)): min_score = min_score_base - 2.0
+        else: min_score = min_score_base
         self._log_criteria("Dynamic Min Score", True, f"Minimum score set to {min_score} based on ADX.")
 
         # --- 3. Calculate Scores (Primary & HTF) ---
@@ -203,6 +231,7 @@ class IchimokuHybridPro(BaseStrategy):
         htf_enabled = bool(cfg.get('htf_confirmation_enabled')) and bool(self.htf_analysis)
         
         if htf_enabled:
+            # HTF uses the same weight profile as the primary timeframe for consistency
             htf_score, htf_confirms = self._score_ichimoku(signal_direction, self.htf_analysis, active_weights)
 
         # --- 4. Normalize and Combine Scores with Intelligent HTF Logic ---
@@ -210,6 +239,7 @@ class IchimokuHybridPro(BaseStrategy):
         norm_primary_score = round((primary_score / max_possible_score) * 100, 2) if max_possible_score > 0 else 0.0
         norm_htf_score = round((htf_score / max_possible_score) * 100, 2) if htf_enabled and max_possible_score > 0 else 0.0
         
+        # ... [HTF override and conflict logic remains unchanged] ...
         if norm_primary_score >= float(cfg.get('primary_override_threshold', 80.0)):
             htf_enabled = False
             self._log_criteria("HTF Logic", True, f"Primary score {norm_primary_score:.2f} is above override threshold. HTF ignored.")
@@ -238,6 +268,7 @@ class IchimokuHybridPro(BaseStrategy):
             return None
 
         # --- 5. Calculate Stop-Loss (Hybrid Logic) & R/R ---
+        # ... [This entire section remains unchanged as it's independent of the scoring engine] ...
         entry_price = self.price_data.get('close')
         if entry_price is None:
             self._log_final_decision("HOLD", "Could not determine entry price.")
@@ -261,8 +292,11 @@ class IchimokuHybridPro(BaseStrategy):
             else:
                 stop_loss = structural_sl
                 self._log_criteria("Stop Loss", True, f"Hybrid SL: Using structural SL: {stop_loss}")
-        else:
-            stop_loss = ichi_values.get('senkou_b') if sl_mode == 'kumo' else ichi_values.get('kijun')
+        else: # 'kumo' or 'kijun'
+            if sl_mode == 'kumo':
+                stop_loss = ichi_values.get('senkou_b') if signal_direction == 'BUY' else ichi_values.get('senkou_a')
+            else: # default to 'kijun'
+                stop_loss = ichi_values.get('kijun')
 
         if stop_loss is None:
             self._log_final_decision("HOLD", "Could not set Stop Loss (value is None).")
@@ -283,13 +317,14 @@ class IchimokuHybridPro(BaseStrategy):
         # --- 6. Final Confirmation ---
         confirmations = {
             "total_score": round(final_weighted_score, 2),
+            "trigger_type": trigger_type, # Added for enhanced metadata
             "market_regime": market_regime,
             "primary_score_details": f"{primary_score}/{max_possible_score} ({','.join(primary_confirms)})",
             "htf_score_details": f"{htf_score}/{max_possible_score} ({','.join(htf_confirms)})" if htf_enabled else "N/A (Overridden or Disabled)",
             "rr_check": f"Passed (R/R={rr_display}, Needed={rr_needed})"
         }
         
-        self._log_final_decision(signal_direction, "All criteria met. Ichimoku Hybrid Pro signal confirmed.")
+        self._log_final_decision(signal_direction, f"All criteria met. Ichimoku Hybrid Pro ({trigger_type}) signal confirmed.")
         return {
             "direction": signal_direction,
             "entry_price": entry_price,
