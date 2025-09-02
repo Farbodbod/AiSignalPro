@@ -106,12 +106,12 @@
       "sl_mode": "hybrid",
       
       "weights_trending": { "price_vs_kumo": 2, "tk_cross_strong": 4, "tk_cross_medium": 3, "future_kumo": 2, "chikou_free": 2, "chikou_near_free": 1, "kumo_twist": 1, "volume_spike": 1 },
-      "weights_ranging": { "price_vs_kumo": 1, "tk_cross_strong": 2, "tk_cross_medium": 2, "future_kumo": 1, "chikou_free": 1, "chikou_near_free": 1, "kumo_twist": 3, "volume_spike": 2 },
+      "weights_ranging": { "price_vs_kumo": 1, "tk_cross_strong": 2, "tk_cross_medium": 2, "future_kumo": 1, "chikou_free": 1, "chikou_near_free": 1, "kumo_twist": 4, "volume_spike": 3 },
       "weights_breakout": {
-          "price_vs_kumo": 4,
+          "price_vs_kumo": 5,
           "chikou_free": 3,
           "future_kumo": 2,
-          "volume_spike": 2,
+          "volume_spike": 3,
           "kumo_twist": 1,
           "tk_cross_strong": 0,
           "tk_cross_medium": 0
@@ -124,8 +124,8 @@
       "primary_override_threshold": 80.0,
       "htf_conflict_dampen_weight": 0.15,
       
-      "min_total_score_base": 58,
-      "min_total_score_breakout_base": 62.0,
+      "min_total_score_base": 62,
+      "min_total_score_breakout_base": 68,
       
       "volume_z_lookback": 80,
       "volume_z_threshold": 2.0
