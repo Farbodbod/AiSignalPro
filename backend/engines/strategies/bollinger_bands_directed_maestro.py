@@ -1,4 +1,4 @@
-# backend/engines/strategies/bollinger_bands_directed_maestro.py (v12.1 - Critical SL Logic Hotfix)
+# backend/engines/strategies/bollinger_bands_directed_maestro.py (v13.0 - Dynamic RSI Integration)
 
 import logging
 from typing import Dict, Any, Optional, ClassVar, List
@@ -8,20 +8,36 @@ logger = logging.getLogger(__name__)
 
 class BollingerBandsDirectedMaestro(BaseStrategy):
     """
-    BollingerBandsDirectedMaestro - (v12.1 - Critical SL Logic Hotfix)
+    BollingerBandsDirectedMaestro - (v13.0 - Dynamic RSI Integration)
     -------------------------------------------------------------------------
-    This version contains a critical hotfix that restores the dynamic stop-loss
-    calculation logic which was accidentally replaced with a placeholder in v12.0.
-    The TypeError ('float' and 'ellipsis') is now permanently resolved.
-    All architectural and strategic evolutions from v12.0 are preserved.
+    This version enhances the Mean Reversion engine by integrating the dynamic,
+    percentile-based RSI exhaustion shield from the BaseStrategy. This replaces
+    the static 30/70 RSI levels with an adaptive system that attunes itself
+    to the specific volatility character of each market, increasing the
+    strategy's intelligence and adaptability in ranging conditions.
+
+    🚀 KEY EVOLUTIONS in v13.0:
+    1.  **Dynamic RSI Logic:** The Ranging Front now uses the advanced
+        `_is_trend_exhausted_dynamic` helper for more intelligent and adaptive
+        entry signals.
+    2.  **Enhanced Configurability:** New parameters have been added to the
+        default_config to give full control over the new dynamic RSI logic.
+    3.  **Backward Compatibility:** The new feature is switchable; if disabled,
+        the strategy gracefully falls back to the classic static 30/70 levels.
     """
     strategy_name: str = "BollingerBandsDirectedMaestro"
     
     default_config: ClassVar[Dict[str, Any]] = {
       "enabled": True, "direction": 0,
+      
+      # --- Regime Detection ---
       "max_adx_for_ranging": 22.0, "min_adx_for_trending": 23.0,
+      
+      # --- Risk Management ---
       "sl_atr_buffer_multipliers": {"squeeze": 0.6, "ranging": 1.1, "trending": 0.7},
       "max_sl_multiplier_cap": 2.5, "vol_ratio_cap": 0.1,
+      
+      # --- Squeeze Engine Calibration ---
       "min_squeeze_score": 4,
       "weights_squeeze": {
           "bollinger_breakout": {"strong": 3, "medium": 2},
@@ -30,12 +46,21 @@ class BollingerBandsDirectedMaestro(BaseStrategy):
           "volume_spike_confirmation": 2,
           "htf_alignment": 2
       },
+      
+      # --- Ranging Engine Calibration ---
       "min_ranging_score": 7,
       "ranging_proximity_atr_mult": 0.25,
       "weights_ranging": {
           "rsi_reversal": 3, "divergence_confirmation": 3, "volume_fade": 2,
           "candlestick": {"weak": 1, "medium": 2, "strong": 4}
       },
+      # Ranging Engine - Dynamic RSI Configuration
+      "ranging_rsi_dynamic_enabled": True,
+      "ranging_rsi_lookback": 100,
+      "ranging_rsi_buy_percentile": 15,
+      "ranging_rsi_sell_percentile": 85,
+
+      # --- Trending Engine Calibration ---
       "min_trending_score": 8,
       "trending_rsi_zones": {"buy_min": 45, "buy_max": 65, "sell_min": 35, "sell_max": 55},
       "weights_trending": {
@@ -48,6 +73,7 @@ class BollingerBandsDirectedMaestro(BaseStrategy):
             "strong": [3.0, 5.0, 7.0], "normal": [2.5, 4.0, 6.0], "weak": [1.8, 3.0, 4.0]
           }
       },
+
       "htf_confirmation_enabled": True,
       "htf_map": { "5m": "15m", "15m": "1h", "1h": "4h", "4h": "1d" },
       "htf_confirmations": { "min_required_score": 1, "adx": {"weight": 1, "min_strength": 22}},
@@ -128,12 +154,10 @@ class BollingerBandsDirectedMaestro(BaseStrategy):
             
             final_multiplier = self._calculate_dynamic_sl_multiplier('squeeze', current_price, atr_value)
             
-            blueprint = {
-                "direction": temp_direction, "entry_price": current_price, "trade_mode": trade_mode,
+            blueprint = { "direction": temp_direction, "entry_price": current_price, "trade_mode": trade_mode,
                 "sl_logic": {"type": "band", "band_name": "middle_band", "buffer_atr_multiplier": final_multiplier},
                 "tp_logic": {"type": "atr_multiple", "multiples": [2.0, 3.5, 5.0]},
-                "confirmations": {"final_score": score}
-            }
+                "confirmations": {"final_score": score} }
             if self._validate_blueprint(blueprint):
                 self._log_final_decision(temp_direction, f"{trade_mode} triggered (Score: {score})"); return blueprint
 
@@ -152,9 +176,24 @@ class BollingerBandsDirectedMaestro(BaseStrategy):
         
         if temp_direction and cfg.get('direction', 0) in [0, 1 if temp_direction == "BUY" else -1]:
             score, weights, min_score = 0, cfg['weights_ranging'], cfg['min_ranging_score']
-            rsi_val = self._safe_get(indicators, ['rsi', 'values', 'rsi'])
-            if rsi_val and ((temp_direction == "BUY" and rsi_val < 30) or (temp_direction == "SELL" and rsi_val > 70)):
-                score += weights.get('rsi_reversal', 3)
+            
+            # --- DYNAMIC RSI LOGIC UPGRADE v13.0 ---
+            rsi_ok = False
+            if cfg.get('ranging_rsi_dynamic_enabled', True):
+                rsi_ok = self._is_trend_exhausted_dynamic(
+                    direction=temp_direction,
+                    rsi_lookback=cfg.get('ranging_rsi_lookback', 100),
+                    rsi_buy_percentile=cfg.get('ranging_rsi_buy_percentile', 15),
+                    rsi_sell_percentile=cfg.get('ranging_rsi_sell_percentile', 85)
+                )
+                # _is_trend_exhausted_dynamic logs its own failure reason
+            else: # Fallback to static logic
+                rsi_val = self._safe_get(indicators, ['rsi', 'values', 'rsi'])
+                rsi_ok = rsi_val and ((temp_direction == "BUY" and rsi_val < 30) or (temp_direction == "SELL" and rsi_val > 70))
+                self._log_criteria("Ranging: RSI Reversal (Static)", rsi_ok, f"RSI={rsi_val:.2f} vs 30/70")
+            
+            if rsi_ok: score += weights.get('rsi_reversal', 3)
+            # --- END OF UPGRADE ---
             
             divergence_analysis = self._safe_get(indicators, ['divergence', 'analysis'], {})
             if (temp_direction == "BUY" and divergence_analysis.get('has_bullish_divergence')) or (temp_direction == "SELL" and divergence_analysis.get('has_bearish_divergence')):
