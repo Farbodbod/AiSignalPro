@@ -178,13 +178,13 @@
       "min_trending_score": 7,
       "weights_trending": {
         "htf_alignment": 4, "rsi_cooldown": 3,
-        "adx_acceleration_confirmation": 2, "adx_strength": 1
+        "adx_acceleration_confirmation": 2, "adx_strength": 3
       },
       "trending_tp_logic": { "type": "atr_multiple", "multiples": [2.5, 4.0, 6.0] },
       "htf_confirmation_enabled": true,
       "htf_map": { "5m": "15m", "15m": "1h", "1h": "4h", "4h": "1d" },
       "htf_confirmations": {
-        "min_required_score": 1,
+        "min_required_score": 2,
         "adx": { "weight": 1, "min_strength": 22 },
         "supertrend": { "weight": 1 }
       },
