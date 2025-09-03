@@ -236,7 +236,7 @@
       "trending_tp_logic": { "type": "atr_multiple_by_trend_strength", "adx_thresholds": { "strong": 35, "normal": 25 }, "multiples_map": { "strong": [3.5, 5.5, 7.5], "normal": [2.8, 4.5, 6.5], "weak": [2.0, 3.5, 5.0] } },
       "htf_confirmation_enabled": true,
       "htf_map": { "5m": "15m", "15m": "1h", "1h": "4h", "4h": "1d" },
-      "htf_confirmations": { "min_required_score": 1, "adx": { "weight": 1, "min_strength": 25 } },
+      "htf_confirmations": { "min_required_score": 1, "adx": { "weight": 1, "min_strength": 25 }, "supertrend": { "weight": 1 } },
       "indicator_configs": { "adx": { "name": "adx", "series_lookback": 5 }, "divergence": { "name": "divergence" } }
     },
     "TrendRiderPro": {
