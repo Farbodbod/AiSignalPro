@@ -76,7 +76,7 @@ class BollingerBandsDirectedMaestro(BaseStrategy):
 
       "htf_confirmation_enabled": True,
       "htf_map": { "5m": "15m", "15m": "1h", "1h": "4h", "4h": "1d" },
-      "htf_confirmations": { "min_required_score": 1, "adx": {"weight": 1, "min_strength": 22}},
+      "htf_confirmations": { "min_required_score": 2, "adx": {"weight": 1, "min_strength": 22},"supertrend": {"weight": 1}},
       "allow_mixed_mode": False
     }
 
