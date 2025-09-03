@@ -52,10 +52,10 @@
     "KeltnerMomentumBreakout", "BollingerBandsDirectedMaestro", "VwapMeanReversion", "EmaCrossoverStrategy"
   ],
   "indicators": {
-    "adx": { "enabled": true, "period": 14 },
+    "adx": { "enabled": true, "period": 14, "series_lookback": 5 },
     "atr": { "enabled": true, "period": 14 },
     "bollinger": { "enabled": true, "period": 20, "std_dev": 2.0, "squeeze_stats_period": 240, "squeeze_std_multiplier": 1.5 },
-    "cci": { "enabled": true, "period": 20 },
+    "cci": { "enabled": true, "period": 20, "use_adaptive_thresholds": true, "adaptive_lookback": 200, "momentum_lookback": 5 },
     "chandelier_exit": { "enabled": true, "atr_multiplier": 3.0, "dependencies": { "atr": { "period": 22 } } },
     "divergence": { "enabled": true, "dependencies": { "rsi": { "period": 14 }, "zigzag": { "deviation": 3.0 } } },
     "donchian_channel": { "enabled": true, "period": 20 },
@@ -63,7 +63,7 @@
     "fast_ma": { "enabled": true, "period": 200, "ma_type": "DEMA" },
     "fibonacci": { "enabled": true, "dependencies": { "zigzag": { "deviation": 3.0 } } },
     "ichimoku": { "enabled": true },
-    "keltner_channel": { "enabled": true, "ema_period": 20, "atr_multiplier": 2.0, "dependencies": { "atr": { "period": 10 } } },
+    "keltner_channel": { "enabled": true, "ema_period": 20, "atr_multiplier": 2.0, "volatility_period": 200, "squeeze_percentile": 20, "expansion_percentile": 80, "dependencies": { "atr": { "period": 10 } } },
     "macd": { "enabled": true, "fast_period": 12, "slow_period": 26, "signal_period": 9 },
     "mfi": { "enabled": true, "period": 14 },
     "obv": { "enabled": true },
@@ -127,23 +127,98 @@
     },
     "IchimokuHybridPro": {
       "enabled": true,
-      "market_regime_adx": 24,
-      "min_rr_ratio": 2.0,
+      "operation_mode": "Regime-Aware",
+      "strict_mode_requires_htf": true,
+      "adaptive_htf_conflict_penalty": -10,
+      "adaptive_late_entry_penalty": -5,
+      "signal_grading_thresholds": {
+        "strong": 80.0,
+        "normal": 60.0
+      },
+      "min_total_score_base": 58.0,
+      "min_total_score_breakout_base": 60.0,
+      "primary_override_threshold": 74.0,
+      "min_rr_ratio": 1.6,
+      "market_regime_adx": 21,
       "sl_mode": "hybrid",
-      "weights_trending": { "price_vs_kumo": 3, "tk_cross_strong": 4, "tk_cross_medium": 2, "future_kumo": 2, "chikou_free": 2, "chikou_near_free": 1, "kumo_twist": 1, "volume_spike": 2 },
-      "weights_ranging": { "price_vs_kumo": 2, "tk_cross_strong": 3, "tk_cross_medium": 2, "future_kumo": 1, "chikou_free": 2, "chikou_near_free": 1, "kumo_twist": 3, "volume_spike": 3 },
-      "weights_breakout": { "price_vs_kumo": 5, "chikou_free": 3, "future_kumo": 3, "volume_spike": 3, "kumo_twist": 2, "tk_cross_strong": 1, "tk_cross_medium": 1 },
+      "sl_hybrid_max_atr_mult": 2.0,
+      "volume_z_relax_threshold": 1.5,
+      "cooldown_bars": 3,
+      "outlier_candle_shield": true,
+      "outlier_atr_mult": 3.5,
+      "late_entry_atr_threshold": 1.2,
+      "weights_trending": {
+        "price_vs_kumo": 2,
+        "tk_cross_strong": 3,
+        "tk_cross_medium": 2,
+        "future_kumo": 1,
+        "chikou_free": 2,
+        "kumo_twist": 1,
+        "volume_spike": 2,
+        "volatility_filter": -5
+      },
+      "weights_ranging": {
+        "price_vs_kumo": 1,
+        "tk_cross_strong": 2,
+        "tk_cross_medium": 2,
+        "future_kumo": 1,
+        "chikou_free": 1,
+        "kumo_twist": 3,
+        "volume_spike": 2,
+        "volatility_filter": -5
+      },
+      "weights_breakout": {
+        "price_vs_kumo": 4,
+        "chikou_free": 3,
+        "future_kumo": 1,
+        "volume_spike": 3,
+        "kumo_twist": 1
+      },
       "htf_confirmation_enabled": true,
-      "htf_map": { "5m": "15m", "15m": "1h", "1h": "4h", "4h": "1d" },
-      "score_weight_primary": 0.7,
-      "score_weight_htf": 0.3,
-      "primary_override_threshold": 85.0,
-      "htf_conflict_dampen_weight": 0.1,
+      "htf_map": {
+        "5m": "15m",
+        "15m": "1h",
+        "1h": "4h",
+        "4h": "1d"
+      },
+      "score_weight_primary": 0.75,
+      "score_weight_htf": 0.25,
+      "htf_conflict_dampen_weight": 0.15,
       "htf_breakout_context_filter_enabled": true,
-      "htf_breakout_context_levels": ["kumo", "kijun"],
-      "min_total_score_base": 62,
-      "min_total_score_breakout_base": 64,
-      "indicator_configs": { "volume": { "name": "volume", "period": 80, "long_period": 50, "climactic_std_threshold": 2.0, "regime_period": 200 } }
+      "htf_breakout_context_levels": [
+        "kumo",
+        "kijun"
+      ],
+      "indicator_configs": {
+        "ichimoku_base": {
+          "name": "ichimoku"
+        },
+        "adx_regime": {
+          "name": "adx",
+          "period": 14
+        },
+        "atr_risk": {
+          "name": "atr",
+          "period": 14
+        },
+        "volume_confirm": {
+          "name": "volume",
+          "period": 20,
+          "long_period": 50,
+          "climactic_std_threshold": 2.5,
+          "regime_period": 200
+        },
+        "keltner_filter": {
+          "name": "keltner_channel",
+          "ema_period": 20,
+          "atr_multiplier": 2.0,
+          "dependencies": {
+            "atr": {
+              "period": 10
+            }
+          }
+        }
+      }
     },
     "EmaCrossoverStrategy": {
       "enabled": true,
@@ -210,7 +285,34 @@
       "htf_confirmation_enabled": true,
       "htf_map": { "5m": "15m", "15m": "1h", "1h": "4h", "4h": "1d" },
       "htf_confirmations": { "min_required_score": 1, "adx": { "weight": 1, "min_strength": 25 }, "supertrend": { "weight": 1 } },
-      "indicator_configs": { "keltner_channel": { "name": "keltner_channel", "params": { "ema_period": 20, "atr_multiplier": 2.0, "volatility_period": 200, "squeeze_percentile": 20, "expansion_percentile": 80, "dependencies": { "atr": { "period": 10 } } } }, "cci": { "name": "cci", "params": { "period": 20, "use_adaptive_thresholds": true, "adaptive_lookback": 200, "momentum_lookback": 5 } }, "volume": { "name": "volume", "params": { "period": 20, "long_period": 50, "regime_period": 200 } } }
+      "indicator_configs": {
+        "keltner_channel": {
+          "name": "keltner_channel",
+          "ema_period": 20,
+          "atr_multiplier": 2.0,
+          "volatility_period": 200,
+          "squeeze_percentile": 20,
+          "expansion_percentile": 80,
+          "dependencies": {
+            "atr": {
+              "period": 10
+            }
+          }
+        },
+        "cci": {
+          "name": "cci",
+          "period": 20,
+          "use_adaptive_thresholds": true,
+          "adaptive_lookback": 200,
+          "momentum_lookback": 5
+        },
+        "volume": {
+          "name": "volume",
+          "period": 20,
+          "long_period": 50,
+          "regime_period": 200
+        }
+      }
     },
     "BollingerBandsDirectedMaestro": {
       "enabled": true,
@@ -237,7 +339,15 @@
       "htf_confirmation_enabled": true,
       "htf_map": { "5m": "15m", "15m": "1h", "1h": "4h", "4h": "1d" },
       "htf_confirmations": { "min_required_score": 1, "adx": { "weight": 1, "min_strength": 25 }, "supertrend": { "weight": 1 } },
-      "indicator_configs": { "adx": { "name": "adx", "series_lookback": 5 }, "divergence": { "name": "divergence" } }
+      "indicator_configs": {
+        "adx": {
+          "name": "adx",
+          "series_lookback": 5
+        },
+        "divergence": {
+          "name": "divergence"
+        }
+      }
     },
     "TrendRiderPro": {
       "enabled": true,
