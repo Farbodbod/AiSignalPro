@@ -89,11 +89,11 @@
       "weights": { "htf_alignment": 4, "adx_dmi": 4, "squeeze_release": 3, "supertrend_cross": 2, "active_session": 1 },
       "session_filter_enabled": false,
       "active_hours_utc": [[8, 16], [13, 21]],
-      "min_adx_strength": 25.0,
+      "min_adx_strength": 24.0,
       "risk_per_trade_percent": 0.01,
       "htf_confirmation_enabled": true,
       "htf_map": { "5m": "15m", "15m": "1h", "1h": "4h", "4h": "1d" },
-      "htf_confirmations": { "min_required_score": 2, "adx": { "weight": 1, "min_strength": 25 }, "supertrend": { "weight": 1 } }
+      "htf_confirmations": { "min_required_score": 1, "adx": { "weight": 1, "min_strength": 25 }, "supertrend": { "weight": 1 } }
     },
     "DivergenceSniperPro": {
       "enabled": true,
@@ -112,11 +112,11 @@
       "weights": { "squeeze_release": 4, "volume_catalyst": 4, "momentum_thrust": 3, "htf_alignment": 2 },
       "htf_confirmation_enabled": true,
       "htf_map": { "5m": "15m", "15m": "1h", "1h": "4h", "4h": "1d" },
-      "htf_confirmations": { "min_required_score": 2, "adx": { "weight": 1, "min_strength": 30 }, "supertrend": { "weight": 1 } }
+      "htf_confirmations": { "min_required_score": 2, "adx": { "weight": 1, "min_strength": 25 }, "supertrend": { "weight": 1 } }
     },
     "ConfluenceSniper": {
       "enabled": true,
-      "min_confluence_score": 5,
+      "min_confluence_score": 4,
       "fib_levels_to_watch": ["61.8%", "78.6%"],
       "confluence_proximity_percent": 0.5,
       "weights": { "dual_oscillator": 3, "single_oscillator": 1, "candlestick": 2, "climactic_volume": 3 },
@@ -240,7 +240,7 @@
     "EmaCrossoverStrategy": {
       "enabled": true,
       "divergence_veto_enabled": true,
-      "min_confirmation_score": 7,
+      "min_confirmation_score": 6,
       "weights": { "master_trend": 3, "macd": 1, "htf_alignment": 3, "adx_strength": 2, "volume": 2, "candlestick": 1 },
       "master_trend_filter_enabled": true,
       "macd_confirmation_enabled": true,
@@ -272,13 +272,13 @@
       "pullback_fib_enabled": true,
       "fib_golden_zone_min": 50.0,
       "fib_golden_zone_max": 61.8,
-      "trigger_logic": "AND",
+      "trigger_logic": "OR",
       "use_hidden_divergence": true,
       "use_candlestick_patterns": true,
       "sl_atr_multiplier": 1.5,
       "min_rr_ratio": 2.0,
       "htf_map": { "5m": "15m", "15m": "1h", "1h": "4h", "4h": "1d" },
-      "htf_confirmations": { "min_required_score": 2, "adx": { "weight": 1, "min_strength": 22 }, "supertrend": { "weight": 1 } }
+      "htf_confirmations": { "min_required_score": 1, "adx": { "weight": 1, "min_strength": 25 }, "supertrend": { "weight": 1 } }
     },
     "KeltnerMomentumBreakout": {
       "enabled": true,
@@ -370,12 +370,12 @@
       "enabled": true,
       "market_regime_filter_enabled": true,
       "required_regime": "TRENDING",
-      "regime_adx_threshold": 24.0,
+      "regime_adx_threshold": 21.0,
       "default_params": { "entry_trigger_type": "supertrend", "min_adx_strength": 24.0, "st_multiplier": 3.0, "ch_atr_multiplier": 3.0, "tactical_tp_rr_ratio": 2.0, "min_risk_pct": 0.1 },
-      "timeframe_overrides": { "5m": { "min_adx_strength": 25.0 }, "1d": { "min_adx_strength": 28.0, "tactical_tp_rr_ratio": 2.5 } },
+      "timeframe_overrides": { "5m": { "min_adx_strength": 21.0 }, "1d": { "min_adx_strength": 28.0, "tactical_tp_rr_ratio": 2.5 } },
       "htf_confirmation_enabled": true,
       "htf_map": { "5m": "15m", "15m": "1h", "1h": "4h", "4h": "1d" },
-      "htf_confirmations": { "min_required_score": 2, "adx": { "weight": 1, "min_strength": 25 }, "supertrend": { "weight": 1 } }
+      "htf_confirmations": { "min_required_score": 1, "adx": { "weight": 1, "min_strength": 25 }, "supertrend": { "weight": 1 } }
     },
     "VolumeCatalystPro": {
       "enabled": true,
@@ -386,7 +386,7 @@
       "min_rr_ratio": 2.0,
       "htf_confirmation_enabled": true,
       "htf_map": { "5m": "15m", "15m": "1h", "1h": "4h", "4h": "1d" },
-      "htf_confirmations": { "min_required_score": 2, "adx": { "weight": 1, "min_strength": 25 }, "supertrend": { "weight": 1 } }
+      "htf_confirmations": { "min_required_score": 1, "adx": { "weight": 1, "min_strength": 25 }, "supertrend": { "weight": 1 } }
     },
     "RangeHunterPro": {
       "enabled": true,
@@ -410,7 +410,7 @@
       "atr_sl_multiplier": 1.5,
       "htf_confirmation_enabled": true,
       "htf_map": { "5m": "15m", "15m": "1h", "1h": "4h", "4h": "1d" },
-      "htf_confirmations": { "min_required_score": 2, "adx": { "weight": 1, "min_strength": 25 } }
+      "htf_confirmations": { "min_required_score": 1, "adx": { "weight": 1, "min_strength": 25 } }
     },
     "VwapMeanReversion": {
       "enabled": true,
