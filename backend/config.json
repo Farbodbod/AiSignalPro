@@ -128,8 +128,24 @@
     "IchimokuHybridPro": {
       "enabled": true,
       "operation_mode": "Regime-Aware",
-      "strict_mode_requires_htf": true,
-      "htf_min_score": 20.0,
+      "htf_quality_scoring": {
+        "enabled": true,
+        "weights_htf": {
+          "price_vs_kumo": 4,
+          "chikou_free": 3,
+          "future_kumo_aligned": 2,
+          "kumo_twist": 1,
+          "volume_spike": 1,
+          "tk_cross_strong": 0,
+          "tk_cross_medium": 0
+        },
+        "min_score_levels": {
+          "weak": 25.0,
+          "normal": 40.0,
+          "strong": 60.0
+        },
+        "strict_mode_requires_quality": "normal"
+      },
       "penalty_pct_htf_conflict": 15.0,
       "penalty_pct_late_entry": 10.0,
       "signal_grading_thresholds": {
