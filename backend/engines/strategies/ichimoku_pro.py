@@ -1,4 +1,4 @@
-# backend/engines/strategies/ichimoku_pro.py (v13.1 - The Surgeon's Cut)
+# backend/engines/strategies/ichimoku_pro.py (v15.0 - Specialized HTF Engine)
 
 from __future__ import annotations
 import logging
@@ -9,24 +9,42 @@ from .base_strategy import BaseStrategy
 
 logger = logging.getLogger(__name__)
 
+# IchimokuHybridPro - (v15.0 - Specialized HTF Engine)
+# -------------------------------------------------------------------------
+# This version represents a major architectural evolution, implementing a
+# dedicated and specialized scoring engine for Higher Timeframe (HTF) analysis.
+# This decouples PTF timing from HTF context evaluation, allowing for a much
+# more intelligent, nuanced, and precisely calibrated multi-timeframe logic.
+
 class IchimokuHybridPro(BaseStrategy):
-    """
-    IchimokuHybridPro - (v13.1 - The Surgeon's Cut)
-    -------------------------------------------------------------------------
-    This version applies a precise and surgical fix to a critical f-string
-    syntax issue in the narrative engine. The logic has been meticulously
-    refactored for absolute syntax safety, eliminating all known IDE
-    highlighting bugs, making this the truly definitive and production-ready
-    version. All core functionality remains identical to v13.0.
-    """
     strategy_name: str = "IchimokuHybridPro"
     
-    # --- [Default Config is identical to v12.x, no changes needed] ---
     default_config: ClassVar[Dict[str, Any]] = {
       "operation_mode": "Regime-Aware", 
-      "htf_min_score": 20.0,
+      
+      # ✅ v15.0: NEW SPECIALIZED HTF SCORING ENGINE CONFIGURATION
+      "htf_quality_scoring": {
+        "enabled": True,
+        "weights_htf": {
+          "price_vs_kumo": 4,
+          "chikou_free": 3,
+          "future_kumo_aligned": 2,
+          "kumo_twist": 1,
+          "volume_spike": 1,
+          "tk_cross_strong": 0,
+          "tk_cross_medium": 0
+        },
+        "min_score_levels": {
+          "weak": 25.0,
+          "normal": 40.0,
+          "strong": 60.0
+        },
+        "strict_mode_requires_quality": "normal" # Options: "weak", "normal", "strong"
+      },
+      
       "penalty_pct_htf_conflict": 15.0,
       "penalty_pct_late_entry": 10.0,
+      
       "signal_grading_thresholds": { "strong": 80.0, "normal": 60.0 },
       "min_total_score_base": 58.0,
       "min_total_score_breakout_base": 60.0,
@@ -34,13 +52,16 @@ class IchimokuHybridPro(BaseStrategy):
       "min_rr_ratio": 1.6,
       "sl_hybrid_max_atr_mult": 2.0,
       "volume_z_relax_threshold": 1.5,
+      
       "cooldown_bars": 3,
       "outlier_candle_shield": True,
       "outlier_atr_mult": 3.5,
       "late_entry_atr_threshold": 1.2,
+      
       "weights_trending": { "price_vs_kumo": 2, "tk_cross_strong": 3, "tk_cross_medium": 2, "future_kumo": 1, "chikou_free": 2, "kumo_twist": 1, "volume_spike": 2, "volatility_filter": -5 },
       "weights_ranging": { "price_vs_kumo": 1, "tk_cross_strong": 2, "tk_cross_medium": 2, "future_kumo": 1, "chikou_free": 1, "kumo_twist": 3, "volume_spike": 2, "volatility_filter": -5 },
       "weights_breakout": { "price_vs_kumo": 4, "chikou_free": 3, "future_kumo": 1, "volume_spike": 3, "kumo_twist": 1 },
+      
       "market_regime_adx": 21, "sl_mode": "hybrid",
       "htf_confirmation_enabled": True, "htf_map": { "5m": "15m", "15m": "1h", "1h": "4h", "4h": "1d" },
       "score_weight_primary": 0.75, "score_weight_htf": 0.25,
@@ -59,37 +80,38 @@ class IchimokuHybridPro(BaseStrategy):
         if score >= thresholds.get('normal', 60.0): return "Normal"
         return "Weak"
     
-    def _generate_signal_narrative(self, direction: str, grade: str, mode: str, base_score: float, penalties: List[Dict], final_score: float, htf_details: str) -> str:
+    def _generate_signal_narrative(self, direction: str, grade: str, mode: str, base_score: float, penalties: List[Dict], final_score: float, htf_details: str, htf_grade: str) -> str:
         base = f"{direction} signal ({mode} Mode, {grade} grade)"
         score_str = f"Base Score: {base_score:.2f}"
         
         if penalties:
-            # This logic is broken into steps to be 100% syntax-safe
             penalty_parts = [f"-{p['value_pct']:.2f}% ({p['reason']})" for p in penalties]
             penalties_str = "Penalties: " + " , ".join(penalty_parts)
         else:
             penalties_str = ""
             
-        htf_str = f"HTF Details: {htf_details}" if htf_details != "N/A" else ""
+        htf_str = f"HTF Quality: {htf_grade} ({htf_details})" if htf_details != "N/A" else ""
         final_str = f"Final: {final_score:.2f}"
-        
         parts = [base, score_str, htf_str, penalties_str, final_str]
         return ". ".join(filter(None, parts))
 
     def _score_and_normalize(self, direction: str, analysis_data: Dict, weights: Dict) -> Tuple[float, List[str], List[Dict]]:
         positive_score, confirmations, penalties = 0, [], []
+        
         positive_weights = {k: v for k, v in weights.items() if v > 0}
         penalty_weights = {k: v for k, v in weights.items() if v < 0}
         max_positive_score = sum(positive_weights.values())
+
         ichi_data = self.get_indicator('ichimoku', analysis_source=analysis_data)
         if not self._indicator_ok(ichi_data): return 0.0, [], []
+        
         analysis = ichi_data.get('analysis', {})
         def check(name: str, weight_key: str, condition: bool):
             nonlocal positive_score, confirmations
             if condition and weight_key in positive_weights:
                 positive_score += positive_weights[weight_key]
                 confirmations.append(name)
-        # Positive Scoring...
+        
         is_above_kumo = analysis.get('price_position') == "Above Kumo"; is_below_kumo = analysis.get('price_position') == "Below Kumo"
         if direction == "BUY": check("Price>Kumo", 'price_vs_kumo', is_above_kumo)
         else: check("Price<Kumo", 'price_vs_kumo', is_below_kumo)
@@ -102,14 +124,16 @@ class IchimokuHybridPro(BaseStrategy):
         volume_data = self.get_indicator('volume', analysis_source=analysis_data)
         is_climactic = self._safe_get(volume_data, ['analysis', 'is_climactic_volume'], False); zscore = self._safe_get(volume_data, ['values', 'z_score'])
         is_z_spike = self._is_valid_number(zscore) and zscore >= self.config.get('volume_z_relax_threshold', 1.5); check("Volume_Spike", 'volume_spike', is_climactic or is_z_spike)
-        # Unified Penalty Calculation...
+        
         for key, raw_points in penalty_weights.items():
             condition = False
             if key == 'volatility_filter':
                 condition = str(self._safe_get(self.get_indicator('keltner_channel', analysis_source=analysis_data), ['analysis', 'volatility_state'], '')).lower() in ('squeeze', 'compression', 'low')
+            
             if condition:
                 pct = round((abs(raw_points) / max_positive_score) * 100, 2) if max_positive_score > 0 else abs(raw_points)
                 penalties.append({'reason': key.replace('_', ' ').title(), 'value_pct': pct})
+        
         normalized_score = round((positive_score / max_positive_score) * 100, 2) if max_positive_score > 0 else 0.0
         return normalized_score, confirmations, penalties
 
@@ -151,21 +175,25 @@ class IchimokuHybridPro(BaseStrategy):
         weights_map = {"TRENDING": 'weights_trending', "RANGING": 'weights_ranging', "BREAKOUT": 'weights_breakout'}
         active_weights = cfg.get(weights_map[market_regime], {})
         norm_primary_score, primary_confirms, intrinsic_penalties = self._score_and_normalize(signal_direction, self.analysis, active_weights)
-        base_score = norm_primary_score; htf_details = "N/A"
+        base_score = norm_primary_score
         
+        # --- ✅ v15.0: HTF EVALUATION USING SPECIALIZED ENGINE ---
+        htf_details, htf_quality_grade = "N/A", "N/A"
         adaptive_penalties = []
-        htf_ok = True
         if cfg.get('htf_confirmation_enabled', True) and self.htf_analysis:
-            htf_ok, htf_details, norm_htf_score, htf_penalties = self._evaluate_htf(trigger_type, signal_direction, active_weights)
+            is_htf_ok, htf_details, norm_htf_score, htf_penalties, htf_quality_grade = self._evaluate_htf(trigger_type, signal_direction)
             intrinsic_penalties.extend(htf_penalties)
-            self._log_criteria("HTF Confirmation", htf_ok, htf_details)
-            if not htf_ok and effective_mode == 'Strict': self._log_final_decision("HOLD", f"Strict Mode blocked by HTF failure."); return None
-            if trigger_type == 'TK_CROSS' and base_score < cfg.get('high_quality_score_threshold', 74.0):
-                 w_p, w_h = (1.0 - cfg.get('htf_conflict_dampen_weight', 0.15), cfg.get('htf_conflict_dampen_weight', 0.15)) if not htf_ok else (cfg.get('score_weight_primary', 0.75), cfg.get('score_weight_htf', 0.25))
-                 base_score = (norm_primary_score * w_p) + (norm_htf_score * w_h)
-            if not htf_ok and effective_mode == 'Adaptive':
-                adaptive_penalties.append({'reason': 'HTF Conflict', 'value_pct': cfg.get('penalty_pct_htf_conflict', 15.0)})
+            self._log_criteria("HTF Confirmation", is_htf_ok, f"Quality Grade: {htf_quality_grade}. Details: {htf_details}")
 
+            if not is_htf_ok:
+                if effective_mode == 'Strict': self._log_final_decision("HOLD", f"Strict Mode blocked by HTF failure (Grade: {htf_quality_grade})."); return None
+                elif effective_mode == 'Adaptive':
+                    adaptive_penalties.append({'reason': 'HTF Conflict', 'value_pct': cfg.get('penalty_pct_htf_conflict', 15.0)})
+
+            if trigger_type == 'TK_CROSS' and base_score < cfg.get('high_quality_score_threshold', 74.0):
+                 w_p, w_h = (1.0 - cfg.get('htf_conflict_dampen_weight', 0.15), cfg.get('htf_conflict_dampen_weight', 0.15)) if not is_htf_ok else (cfg.get('score_weight_primary', 0.75), cfg.get('score_weight_htf', 0.25))
+                 base_score = (norm_primary_score * w_p) + (norm_htf_score * w_h)
+        
         entry_price = self.price_data.get('close'); atr_val = self._safe_get(indicators, ['atr', 'values', 'atr'])
         
         is_late_entry = False
@@ -202,25 +230,46 @@ class IchimokuHybridPro(BaseStrategy):
 
         self.last_signal_bar = current_bar
         signal_grade = self._grade_signal(final_score)
-        narrative = self._generate_signal_narrative(direction, signal_grade, effective_mode, base_score, total_penalties, final_score, htf_details)
-        confirmations = {"total_score": round(final_score, 2), "signal_grade": signal_grade, "narrative": narrative, "htf_details": htf_details}
+        narrative = self._generate_signal_narrative(signal_direction, signal_grade, effective_mode, base_score, total_penalties, final_score, htf_details, htf_quality_grade)
+        confirmations = {"total_score": round(final_score, 2), "signal_grade": signal_grade, "narrative": narrative, "htf_details": htf_details, "htf_quality_grade": htf_quality_grade}
         self._log_final_decision(signal_direction, narrative)
         return {"direction": signal_direction, "entry_price": entry_price, **risk_params, "confirmations": confirmations}
 
-    def _evaluate_htf(self, trigger_type: str, direction: str, weights: Dict) -> Tuple[bool, str, float, List[Dict]]:
+    # ✅ v15.0: FULL REFACTOR OF HTF EVALUATION
+    def _evaluate_htf(self, trigger_type: str, direction: str) -> Tuple[bool, str, float, List[Dict], str]:
+        htf_cfg = self.config.get('htf_quality_scoring', {})
+        if not htf_cfg.get('enabled', True):
+            return True, "Disabled", 0.0, [], "N/A"
+
         if trigger_type == 'CLOUD_BREAKOUT':
-            htf_ok = self._check_htf_breakout_context(direction)
-            details = f"Context Check: {'Pass' if htf_ok else 'Fail'}"
-            return htf_ok, details, 0.0, []
-        else: # TK_CROSS
-            norm_htf_score, htf_confirms, htf_penalties = self._score_and_normalize(direction, self.htf_analysis, weights)
-            details = f"Score: {norm_htf_score:.2f}, Confirms: {','.join(htf_confirms)}, Penalties: {len(htf_penalties)}"
-            htf_ichi = self.get_indicator('ichimoku', analysis_source=self.htf_analysis)
-            htf_tk = str(self._safe_get(htf_ichi, ['analysis', 'tk_cross'], '')).lower()
-            htf_dir = "BUY" if "bullish" in htf_tk else "SELL" if "bearish" in htf_tk else None
-            htf_direction_ok = not (htf_dir and htf_dir != direction)
-            htf_score_ok = norm_htf_score >= self.config.get('htf_min_score', 20.0)
-            return htf_direction_ok and htf_score_ok, details, norm_htf_score, htf_penalties
+            is_aligned = self._check_htf_breakout_context(direction)
+            details = f"Context Check: {'Aligned' if is_aligned else 'Not Aligned'}"
+            grade = "Normal" if is_aligned else "Fail"
+            return is_aligned, details, 0.0, [], grade
+        
+        # --- Logic for TK_CROSS ---
+        htf_weights = htf_cfg.get('weights_htf', {})
+        norm_htf_score, htf_confirms, htf_penalties = self._score_and_normalize(direction, self.htf_analysis, htf_weights)
+        details = f"Score: {norm_htf_score:.2f}, Confirms: {','.join(htf_confirms)}"
+
+        htf_ichi = self.get_indicator('ichimoku', analysis_source=self.htf_analysis)
+        htf_tk = str(self._safe_get(htf_ichi, ['analysis', 'tk_cross'], '')).lower()
+        htf_dir = "BUY" if "bullish" in htf_tk else "SELL" if "bearish" in htf_tk else None
+        is_direction_aligned = not (htf_dir and htf_dir != direction)
+
+        levels = htf_cfg.get('min_score_levels', {})
+        grade = "Fail"
+        if norm_htf_score >= levels.get('strong', 60.0): grade = "Strong"
+        elif norm_htf_score >= levels.get('normal', 40.0): grade = "Normal"
+        elif norm_htf_score >= levels.get('weak', 25.0): grade = "Weak"
+        
+        required_quality = htf_cfg.get('strict_mode_requires_quality', 'normal')
+        quality_map = {"Fail": 0, "Weak": 1, "Normal": 2, "Strong": 3}
+        is_quality_ok = quality_map.get(grade, 0) >= quality_map.get(required_quality, 2)
+        
+        is_htf_ok = is_direction_aligned and is_quality_ok
+        
+        return is_htf_ok, details, norm_htf_score, htf_penalties, grade
 
     def _calculate_stop_loss(self, direction: str, ichi_vals: Dict, price: float, atr: float, cfg: Dict) -> Optional[float]:
         if not self._is_valid_number(price) or not self._is_valid_number(atr): return None
