@@ -74,7 +74,7 @@ class IchimokuHybridPro(BaseStrategy):
         base = f"{direction} signal ({mode} Mode, {grade} grade)"
         score_str = f"Base Score: {base_score:.2f}"
         # ✅ v12.1 POLISH: Corrected f-string syntax & improved readability
-        penalties_str = f"Penalties: {' , '.join([f'-{p['value_pct']:.2f}% ({p['reason']})' for p in penalties])}" if penalties else ""
+        penalties_str = f"Penalties: {' , '.join([f"-{p['value_pct']:.2f}% ({p['reason']})" for p in penalties])}" if penalties else ""
         final_str = f"Final: {final_score:.2f}"
         parts = [base, score_str, penalties_str, final_str]
         return ". ".join(filter(None, parts))
