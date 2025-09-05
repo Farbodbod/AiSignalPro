@@ -1,4 +1,4 @@
-# backend/engines/indicators/rsi.py (v8.1.0 - Explicit Contract Edition)
+# backend/engines/indicators/rsi.py (v8.0 - The Smart Signal Edition)
 import pandas as pd
 import numpy as np
 import logging
@@ -10,13 +10,13 @@ logger = logging.getLogger(__name__)
 
 class RsiIndicator(BaseIndicator):
     """
-    RSI Indicator - (v8.1.0 - Explicit Contract Edition)
+    RSI Indicator - (v8.0 - The Smart Signal Edition)
     -------------------------------------------------------------------------------------
-    This version implements the "Explicit Contract" principle. The indicator now
-    reports the name of its primary data column ('main_col') within the analysis
-    output's '_meta' key. This allows consuming frameworks like BaseStrategy to
-    directly and reliably access the historical data series without guessing,
-    creating a robust, error-proof integration.
+    This definitive, world-class version evolves the indicator from a simple
+    calculator to a smart signaler. It now includes crossover detection logic
+    and provides historical context (rsi_prev). Its output structure is hardened
+    to be fully "Sentinel Compliant", ensuring flawless integration with all
+    advanced strategies in the AiSignalPro ecosystem.
     """
     dependencies: list = []
 
@@ -95,9 +95,6 @@ class RsiIndicator(BaseIndicator):
             "rsi_prev": round(prev_rsi, 2), # ✅ NEW: Provide previous value for strategies
             "signal_line": round(last_signal, 2)
         }
-        
-        # ✅ افزودن قرارداد صریح: اندیکاتور نام ستون اصلی خود را گزارش می‌دهد
-        analysis_content['_meta'] = {'main_col': self.rsi_col}
             
         return {
             "status": "OK",
