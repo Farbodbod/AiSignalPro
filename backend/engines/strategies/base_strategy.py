@@ -252,7 +252,7 @@ class BaseStrategy(ABC):
                 return []
 
             if tp_type == 'atr_multiple':
-                multiples = tp_logic.get('multiples', [1.7, 3.0, 5.0])
+                multiples = tp_logic.get('multiples', [1.8, 3.0, 5.0])
                 for m in multiples: targets.append(entry_price + (atr_value * m if direction == 'BUY' else -atr_value * m))
             else: # atr_multiple_by_trend_strength
                 self._log_indicator_trace("TP_Logic", tp_type, reason="Activating ADX-Adaptive Targeting Engine.")
@@ -327,7 +327,7 @@ class BaseStrategy(ABC):
         if not final_targets:
             adaptive_cfg = self.config.get('adaptive_targeting', {})
             if adaptive_cfg.get('enabled', False):
-                multiples = adaptive_cfg.get('atr_multiples', [1.7, 3.0, 5.0])
+                multiples = adaptive_cfg.get('atr_multiples', [1.8, 3.0, 5.0])
                 atr_data = self.get_indicator('atr')
                 atr_value = self._safe_get(atr_data, ['values', 'atr'])
                 if self._is_valid_number(atr_value):
@@ -335,12 +335,12 @@ class BaseStrategy(ABC):
                     self._log_indicator_trace("TP Targets", final_targets, reason="Generated using Adaptive Targeting Engine (ATR multiples).")
                 else:
                     logger.warning(f"{self.name}: Adaptive Targeting enabled but ATR is unavailable. Falling back to R/R targets.")
-                    reward_ratios = self.config.get('reward_tp_ratios', [1.7, 3.0, 5.0])
+                    reward_ratios = self.config.get('reward_tp_ratios', [1.8, 3.0, 5.0])
                     risk_dist = abs(entry_price - final_sl)
                     final_targets = [entry_price + (risk_dist * r if direction.upper() == 'BUY' else -risk_dist * r) for r in reward_ratios]
                     self._log_indicator_trace("TP Targets", final_targets, reason="Fallback to fixed R/R targets (ATR unavailable).")
             else:
-                reward_ratios = self.config.get('reward_tp_ratios', [1.7, 3.0, 5.0])
+                reward_ratios = self.config.get('reward_tp_ratios', [1.8, 3.0, 5.0])
                 risk_dist = abs(entry_price - final_sl)
                 final_targets = [entry_price + (risk_dist * r if direction.upper() == 'BUY' else -risk_dist * r) for r in reward_ratios]
                 self._log_indicator_trace("TP Targets", final_targets, reason="Generated using fallback fixed R/R targets.")
