@@ -158,16 +158,16 @@
       "htf_quality_scoring": {
         "enabled": true,
         "weights_htf": {
-          "price_vs_kumo": 4,
-          "chikou_free": 3,
+          "price_vs_kumo": 5,
+          "chikou_free": 4,
           "future_kumo_aligned": 2,
           "kumo_twist": 1,
           "volume_spike": 1
         },
         "min_score_levels": {
-          "weak": 25.0,
-          "normal": 40.0,
-          "strong": 60.0
+          "weak": 38.0,
+          "normal": 46.0,
+          "strong": 61.0
         },
         "strict_mode_requires_quality": "normal"
       },
@@ -347,8 +347,8 @@
       "direction": 0,
       "max_adx_for_ranging": 21.0,
       "min_adx_for_trending": 24.0,
-      "sl_atr_buffer_multipliers": { "squeeze": 0.7, "ranging": 1.1, "trending": 0.8 },
-      "max_sl_multiplier_cap": 2.2,
+      "sl_atr_buffer_multipliers": { "squeeze": 0.7, "ranging": 0.9, "trending": 0.8 },
+      "max_sl_multiplier_cap": 2.5,
       "vol_ratio_cap": 0.12,
       "allow_mixed_mode": false,
       "min_squeeze_score": 5,
