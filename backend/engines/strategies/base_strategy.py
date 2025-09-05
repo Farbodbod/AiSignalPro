@@ -49,7 +49,7 @@ class BaseStrategy(ABC):
         is_ok = bool(status); focus_symbol = self.main_config.get("general", {}).get("logging_focus_symbol");
         if focus_symbol and self.symbol != focus_symbol: return
         self.log_details["criteria_results"].append({"criterion": criterion_name, "status": is_ok, "reason": reason})
-        status_emoji = "🔵" if is_ok else "🌕"; logger.info(f"  {status_emoji} Criterion: {self.name} on {self.primary_timeframe} - '{criterion_name}': {is_ok}. Reason: {reason}")
+        status_emoji = "▶️" if is_ok else "⛔"; logger.info(f"  {status_emoji} Criterion: {self.name} on {self.primary_timeframe} - '{criterion_name}': {is_ok}. Reason: {reason}")
         
     def _log_indicator_trace(self, indicator_name: str, value: Any, status: str = "OK", reason: str = ""):
         self.log_details["indicator_trace"].append({"indicator": indicator_name, "value": str(value), "status": status, "reason": reason});
@@ -154,7 +154,7 @@ class BaseStrategy(ABC):
         rsi_data = self.get_indicator('rsi');
         if not rsi_data or not self._safe_get(rsi_data, ['values']) or self.df is None: return False
         
-        # ✅ v18.3.0 INTEGRATION FIX: Case-insensitive search for the RSI column.
+        # ✅ v18.3.0 FINAL FIX: Case-insensitive search for the RSI column.
         rsi_col = next((col for col in self.df.columns if col.lower().startswith('rsi_')), None)
         
         if not rsi_col or rsi_col not in self.df.columns:
