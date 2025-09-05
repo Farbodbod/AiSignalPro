@@ -1,4 +1,4 @@
-# backend/engines/strategies/ichimoku_pro.py (v15.0 - Specialized HTF Engine)
+# backend/engines/strategies/ichimoku_pro.py (v17.0 - True Hybrid Engine)
 
 from __future__ import annotations
 import logging
@@ -9,18 +9,29 @@ from .base_strategy import BaseStrategy
 
 logger = logging.getLogger(__name__)
 
-# IchimokuHybridPro - (v15.0 - Specialized HTF Engine)
+# IchimokuHybridPro - (v17.0 - True Hybrid Engine)
 # -------------------------------------------------------------------------
-# This version represents a major architectural evolution, implementing a
-# dedicated and specialized scoring engine for Higher Timeframe (HTF) analysis.
-# This decouples PTF timing from HTF context evaluation, allowing for a much
-# more intelligent, nuanced, and precisely calibrated multi-timeframe logic.
+# This version adds a new "Leading Timing Engine" to a true parallel
+# evaluation system. It acts as a final filter to confirm the momentum
+# of TK Cross and Cloud Breakout signals, adding a new layer of precision.
 
 class IchimokuHybridPro(BaseStrategy):
     strategy_name: str = "IchimokuHybridPro"
     
     default_config: ClassVar[Dict[str, Any]] = {
       "operation_mode": "Regime-Aware", 
+      
+      "leading_timing_engine": {
+        "enabled": True,
+        "apply_to_tk_cross": True,
+        "apply_to_breakout": False,
+        "indicator": "rsi_dynamic",
+        "weight": 2,
+        "rsi_lookback": 100,
+        "rsi_buy_percentile": 20,
+        "rsi_sell_percentile": 80,
+        "min_reliability": "Medium"
+      },
       
       # ✅ v15.0: NEW SPECIALIZED HTF SCORING ENGINE CONFIGURATION
       "htf_quality_scoring": {
@@ -58,8 +69,8 @@ class IchimokuHybridPro(BaseStrategy):
       "outlier_atr_mult": 3.5,
       "late_entry_atr_threshold": 1.2,
       
-      "weights_trending": { "price_vs_kumo": 2, "tk_cross_strong": 3, "tk_cross_medium": 2, "future_kumo": 1, "chikou_free": 2, "kumo_twist": 1, "volume_spike": 2, "volatility_filter": -5 },
-      "weights_ranging": { "price_vs_kumo": 1, "tk_cross_strong": 2, "tk_cross_medium": 2, "future_kumo": 1, "chikou_free": 1, "kumo_twist": 3, "volume_spike": 2, "volatility_filter": -5 },
+      "weights_trending": { "price_vs_kumo": 2, "tk_cross_strong": 3, "tk_cross_medium": 2, "future_kumo": 1, "chikou_free": 2, "kumo_twist": 1, "volume_spike": 2, "volatility_filter": -5, "leading_timing_confirm": 2 },
+      "weights_ranging": { "price_vs_kumo": 1, "tk_cross_strong": 2, "tk_cross_medium": 2, "future_kumo": 1, "chikou_free": 1, "kumo_twist": 3, "volume_spike": 2, "volatility_filter": -5, "leading_timing_confirm": 2 },
       "weights_breakout": { "price_vs_kumo": 4, "chikou_free": 3, "future_kumo": 1, "volume_spike": 3, "kumo_twist": 1 },
       
       "market_regime_adx": 21, "sl_mode": "hybrid",
@@ -95,7 +106,7 @@ class IchimokuHybridPro(BaseStrategy):
         parts = [base, score_str, htf_str, penalties_str, final_str]
         return ". ".join(filter(None, parts))
 
-    def _score_and_normalize(self, direction: str, analysis_data: Dict, weights: Dict) -> Tuple[float, List[str], List[Dict]]:
+    def _score_and_normalize(self, direction: str, analysis_data: Dict, weights: Dict, trigger_type: str) -> Tuple[float, List[str], List[Dict]]:
         positive_score, confirmations, penalties = 0, [], []
         
         positive_weights = {k: v for k, v in weights.items() if v > 0}
@@ -125,6 +136,35 @@ class IchimokuHybridPro(BaseStrategy):
         is_climactic = self._safe_get(volume_data, ['analysis', 'is_climactic_volume'], False); zscore = self._safe_get(volume_data, ['values', 'z_score'])
         is_z_spike = self._is_valid_number(zscore) and zscore >= self.config.get('volume_z_relax_threshold', 1.5); check("Volume_Spike", 'volume_spike', is_climactic or is_z_spike)
         
+        # ✅ NEW: Add Leading Timing Engine confirmation
+        timing_cfg = self.config.get('leading_timing_engine', {})
+        if timing_cfg.get('enabled', False) and timing_cfg.get('apply_to_tk_cross' if trigger_type == 'TK_CROSS' else 'apply_to_breakout', False):
+            is_timing_ok = False
+            timing_indicator = timing_cfg.get('indicator', 'rsi_dynamic')
+            
+            if timing_indicator == 'rsi_dynamic':
+                is_timing_ok = not self._is_trend_exhausted_dynamic(
+                    direction=direction,
+                    rsi_lookback=timing_cfg.get('rsi_lookback', 100),
+                    rsi_buy_percentile=timing_cfg.get('rsi_buy_percentile', 20),
+                    rsi_sell_percentile=timing_cfg.get('rsi_sell_percentile', 80)
+                )
+                if not is_timing_ok: self._log_criteria("Timing Engine", False, "RSI check failed (Trend exhaustion).")
+
+            elif timing_indicator == 'candlestick':
+                pattern_result = self._get_candlestick_confirmation(
+                    direction=direction,
+                    min_reliability=timing_cfg.get('min_reliability', 'Medium')
+                )
+                is_timing_ok = pattern_result is not None
+                if not is_timing_ok: self._log_criteria("Timing Engine", False, "Candlestick pattern check failed.")
+                else: self._log_criteria("Timing Engine", True, f"Candlestick pattern '{pattern_result.get('pattern_name')}' found.")
+
+            if is_timing_ok:
+                timing_weight = positive_weights.get('leading_timing_confirm', 0)
+                positive_score += timing_weight
+                confirmations.append("Timing_Confirmed")
+                
         for key, raw_points in penalty_weights.items():
             condition = False
             if key == 'volatility_filter':
@@ -145,36 +185,77 @@ class IchimokuHybridPro(BaseStrategy):
         current_bar = len(df) - 1
         if (current_bar - getattr(self, "last_signal_bar", -10**9)) < cfg.get('cooldown_bars', 3): return None
         
-        required = ['ichimoku', 'adx', 'atr', 'volume', 'keltner_channel']
+        # ✅ NEW: Add new required indicators for the Timing Engine
+        required = ['ichimoku', 'adx', 'atr', 'volume', 'keltner_channel', 'rsi', 'patterns']
         indicators = {name: self.get_indicator(name) for name in required}
         if any(not self._indicator_ok(data) for data in indicators.values()): self._log_final_decision("HOLD", f"Missing indicators."); return None
         if cfg.get('outlier_candle_shield', True) and self._is_outlier_candle(atr_multiplier=cfg.get('outlier_atr_mult', 3.5)): self._log_final_decision("HOLD", "Outlier candle."); return None
 
         ichi_analysis = self._safe_get(indicators, ['ichimoku', 'analysis'], {}); ichi_values = self._safe_get(indicators, ['ichimoku', 'values'], {})
         price_pos, tk_cross = ichi_analysis.get('price_position'), str(ichi_analysis.get('tk_cross', "")).lower()
-        signal_direction, trigger_type = (("BUY", "TK_CROSS") if "bullish" in tk_cross else ("SELL", "TK_CROSS")) if tk_cross else (None, None)
-        if not trigger_type:
-            s_a, s_b = ichi_values.get('senkou_a'), ichi_values.get('senkou_b')
-            if price_pos == "Above Kumo" and self._is_valid_number(s_a) and self._is_valid_number(s_b) and s_a > s_b: signal_direction, trigger_type = "BUY", "CLOUD_BREAKOUT"
-            elif price_pos == "Below Kumo" and self._is_valid_number(s_a) and self._is_valid_number(s_b) and s_a < s_b: signal_direction, trigger_type = "SELL", "CLOUD_BREAKOUT"
+        
+        # ✅ جایگزینی با منطق موازی
+        best_score = -1.0
+        signal_direction, trigger_type, market_regime, norm_primary_score = None, None, None, None
+        
+        weights_map = {"TRENDING": 'weights_trending', "RANGING": 'weights_ranging', "BREAKOUT": 'weights_breakout'}
+        
+        # --- شاخه ۱: بررسی سیگنال TK_CROSS به صورت کامل ---
+        tk_cross_direction = None
+        if "bullish" in tk_cross:
+            tk_cross_direction = "BUY"
+        elif "bearish" in tk_cross:
+            tk_cross_direction = "SELL"
+        
+        if tk_cross_direction:
+            adx_val = self._safe_get(indicators, ['adx', 'values', 'adx'], 0.0)
+            tk_cross_regime = "TRENDING" if adx_val > cfg.get('market_regime_adx', 21) else "RANGING"
+            if price_pos == "Inside Kumo": tk_cross_regime = "RANGING"
+            tk_cross_weights = cfg.get(weights_map[tk_cross_regime], {})
+            # ✅ PASSING THE TRIGGER TYPE
+            tk_cross_score, _, _ = self._score_and_normalize(tk_cross_direction, self.analysis, tk_cross_weights, "TK_CROSS")
+            
+            best_score = tk_cross_score
+            signal_direction = tk_cross_direction
+            trigger_type = "TK_CROSS"
+            market_regime = tk_cross_regime
+            norm_primary_score = tk_cross_score
+            
+        # --- شاخه ۲: بررسی سیگنال CLOUD_BREAKOUT به صورت کامل ---
+        breakout_direction = None
+        s_a, s_b = ichi_values.get('senkou_a'), ichi_values.get('senkou_b')
+        if price_pos == "Above Kumo" and self._is_valid_number(s_a) and self._is_valid_number(s_b) and s_a > s_b:
+            breakout_direction = "BUY"
+        elif price_pos == "Below Kumo" and self._is_valid_number(s_a) and self._is_valid_number(s_b) and s_a < s_b:
+            breakout_direction = "SELL"
+            
+        if breakout_direction:
+            breakout_regime = "BREAKOUT"
+            breakout_weights = cfg.get(weights_map[breakout_regime], {})
+            # ✅ PASSING THE TRIGGER TYPE
+            breakout_score, _, _ = self._score_and_normalize(breakout_direction, self.analysis, breakout_weights, "CLOUD_BREAKOUT")
+
+            if breakout_score > best_score:
+                best_score = breakout_score
+                signal_direction = breakout_direction
+                trigger_type = "CLOUD_BREAKOUT"
+                market_regime = breakout_regime
+                norm_primary_score = breakout_score
         
         trigger_found = bool(signal_direction)
         self._log_criteria("Primary Trigger", trigger_found, f"Trigger found: {trigger_type}" if trigger_found else "No trigger found.")
         if not trigger_found: return None
         
         adx_val = self._safe_get(indicators, ['adx', 'values', 'adx'], 0.0)
-        market_regime = "BREAKOUT";
-        if trigger_type == 'TK_CROSS': market_regime = "TRENDING" if adx_val > cfg.get('market_regime_adx', 21) else "RANGING"
-        if price_pos == "Inside Kumo": market_regime = "RANGING"
         self._log_criteria("Market Regime", True, f"Trigger '{trigger_type}' -> Regime set to '{market_regime}' (ADX: {adx_val:.2f})")
 
         operation_mode = cfg.get('operation_mode', 'Regime-Aware')
         effective_mode = 'Strict' if operation_mode == 'Regime-Aware' and market_regime == 'TRENDING' else 'Adaptive' if operation_mode == 'Regime-Aware' else operation_mode
         self._log_criteria("Mode Engine", True, f"OpMode: {operation_mode} -> Effective: {effective_mode}")
         
-        weights_map = {"TRENDING": 'weights_trending', "RANGING": 'weights_ranging', "BREAKOUT": 'weights_breakout'}
         active_weights = cfg.get(weights_map[market_regime], {})
-        norm_primary_score, primary_confirms, intrinsic_penalties = self._score_and_normalize(signal_direction, self.analysis, active_weights)
+        # ✅ CALLING SCORE AND NORMALIZE WITH THE TRIGGER_TYPE
+        norm_primary_score, primary_confirms, intrinsic_penalties = self._score_and_normalize(signal_direction, self.analysis, active_weights, trigger_type)
         base_score = norm_primary_score
         
         # --- ✅ v15.0: HTF EVALUATION USING SPECIALIZED ENGINE ---
@@ -249,7 +330,8 @@ class IchimokuHybridPro(BaseStrategy):
         
         # --- Logic for TK_CROSS ---
         htf_weights = htf_cfg.get('weights_htf', {})
-        norm_htf_score, htf_confirms, htf_penalties = self._score_and_normalize(direction, self.htf_analysis, htf_weights)
+        # ✅ PASSING THE TRIGGER TYPE
+        norm_htf_score, htf_confirms, htf_penalties = self._score_and_normalize(direction, self.htf_analysis, htf_weights, trigger_type)
         details = f"Score: {norm_htf_score:.2f}, Confirms: {','.join(htf_confirms)}"
 
         htf_ichi = self.get_indicator('ichimoku', analysis_source=self.htf_analysis)
