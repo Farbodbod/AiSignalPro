@@ -1,4 +1,4 @@
-# strategies/base_strategy.py (v18.2.1 - Logging Restoration)
+# strategies/base_strategy.py (v18.3.0 - Integration Hardening)
 
 from __future__ import annotations
 from abc import ABC, abstractmethod
@@ -30,12 +30,12 @@ def deep_merge(dict1: Dict[str, Any], dict2: Dict[str, Any]) -> Dict[str, Any]:
 
 class BaseStrategy(ABC):
     """
-    World-Class Base Strategy Framework - (v18.2.1 - Logging Restoration)
+    World-Class Base Strategy Framework - (v18.3.0 - Integration Hardening)
     ---------------------------------------------------------------------------------------------
-    This version restores a minor but useful log trace in the `_calculate_smart_risk_management`
-    method's final fallback case. This ensures that even when the system resorts to
-    fixed R/R targets, the decision is explicitly logged for complete traceability.
-    All other fixes from v18.2.0 are preserved.
+    This version applies a critical integration fix to `_is_trend_exhausted_dynamic`.
+    The column lookup logic is now case-insensitive, resolving the mismatch between
+    the strategy framework and indicator naming conventions (e.g., finding 'RSI_14'
+    when looking for 'rsi_'). This ensures flawless component interoperability.
     """
     strategy_name: str = "BaseStrategy"
     default_config: ClassVar[Dict[str, Any]] = {}
@@ -49,7 +49,7 @@ class BaseStrategy(ABC):
         is_ok = bool(status); focus_symbol = self.main_config.get("general", {}).get("logging_focus_symbol");
         if focus_symbol and self.symbol != focus_symbol: return
         self.log_details["criteria_results"].append({"criterion": criterion_name, "status": is_ok, "reason": reason})
-        status_emoji = "▶️" if is_ok else "⛔"; logger.info(f"  {status_emoji} Criterion: {self.name} on {self.primary_timeframe} - '{criterion_name}': {is_ok}. Reason: {reason}")
+        status_emoji = "🔵" if is_ok else "🌕"; logger.info(f"  {status_emoji} Criterion: {self.name} on {self.primary_timeframe} - '{criterion_name}': {is_ok}. Reason: {reason}")
         
     def _log_indicator_trace(self, indicator_name: str, value: Any, status: str = "OK", reason: str = ""):
         self.log_details["indicator_trace"].append({"indicator": indicator_name, "value": str(value), "status": status, "reason": reason});
@@ -154,10 +154,11 @@ class BaseStrategy(ABC):
         rsi_data = self.get_indicator('rsi');
         if not rsi_data or not self._safe_get(rsi_data, ['values']) or self.df is None: return False
         
-        rsi_col = next((col for col in self.df.columns if col.startswith('rsi_')), None)
+        # ✅ v18.3.0 INTEGRATION FIX: Case-insensitive search for the RSI column.
+        rsi_col = next((col for col in self.df.columns if col.lower().startswith('rsi_')), None)
         
         if not rsi_col or rsi_col not in self.df.columns:
-            logger.warning(f"Could not find any RSI column starting with 'rsi_' in DataFrame for dynamic exhaustion check.")
+            logger.warning(f"Could not find any RSI column starting with 'rsi_' (case-insensitive) in DataFrame for dynamic exhaustion check.")
             return False
 
         rsi_series = self.df[rsi_col].dropna();
