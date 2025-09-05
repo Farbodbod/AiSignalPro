@@ -245,6 +245,7 @@
           "dependencies": {
             "atr": {
               "period": 10
+          }
         },
         "rsi_timing": {
           "name": "rsi",
