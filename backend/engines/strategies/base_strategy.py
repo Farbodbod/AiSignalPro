@@ -1,4 +1,4 @@
-# strategies/base_strategy.py (v21.0.0 - Architectural Simplification)
+# strategies/base_strategy.py (v21.1.0 - Legacy Feature Reinstatement)
 
 from __future__ import annotations
 from abc import ABC, abstractmethod
@@ -30,15 +30,13 @@ def deep_merge(dict1: Dict[str, Any], dict2: Dict[str, Any]) -> Dict[str, Any]:
 
 class BaseStrategy(ABC):
     """
-    World-Class Base Strategy Framework - (v21.0.0 - Architectural Simplification)
+    World-Class Base Strategy Framework - (v21.1.0 - Legacy Feature Reinstatement)
     ---------------------------------------------------------------------------------------------
-    This version embodies the "Back to Basics" principle outlined in the final
-    roadmap. The complex and problematic `_is_trend_exhausted_dynamic` method,
-    which created fragile DataFrame dependencies, has been completely removed.
-    This sanitizes the base class and promotes the use of the robust and
-    stateless `_is_trend_exhausted` helper, which relies on direct indicator
-    values. This change enforces a more stable and predictable architecture
-    across all strategies.
+    This version reintroduces the `_is_trend_exhausted_dynamic` method exactly as it
+    existed in v18.0.0, as per a specific directive. All other architectural
+    improvements and robustness features from v21.0.0 are fully retained. The
+    primary `_is_trend_exhausted` method remains the recommended approach for
+    new development.
     """
     strategy_name: str = "BaseStrategy"
     default_config: ClassVar[Dict[str, Any]] = {}
@@ -52,7 +50,7 @@ class BaseStrategy(ABC):
         is_ok = bool(status); focus_symbol = self.main_config.get("general", {}).get("logging_focus_symbol");
         if focus_symbol and self.symbol != focus_symbol: return
         self.log_details["criteria_results"].append({"criterion": criterion_name, "status": is_ok, "reason": reason})
-        status_emoji = "▶️" if is_ok else "⛔"; logger.info(f"  {status_emoji} Criterion: {self.name} on {self.primary_timeframe} - '{criterion_name}': {is_ok}. Reason: {reason}")
+        status_emoji = "🔵" if is_ok else "🌕"; logger.info(f"  {status_emoji} Criterion: {self.name} on {self.primary_timeframe} - '{criterion_name}': {is_ok}. Reason: {reason}")
         
     def _log_indicator_trace(self, indicator_name: str, value: Any, status: str = "OK", reason: str = ""):
         self.log_details["indicator_trace"].append({"indicator": indicator_name, "value": str(value), "status": status, "reason": reason});
@@ -152,6 +150,22 @@ class BaseStrategy(ABC):
         elif direction == "SELL" and rsi_value <= sell_exhaustion_threshold: is_exhausted = True; reason = f"Trend Exhaustion! RSI ({rsi_value:.2f}) < {sell_exhaustion_threshold}."
         if is_exhausted: self._log_criteria("Trend Exhaustion Shield", False, reason); return True
         return False
+    
+    def _is_trend_exhausted_dynamic(self, direction: str, rsi_lookback: int, rsi_buy_percentile: int, rsi_sell_percentile: int) -> bool:
+        rsi_data = self.get_indicator('rsi');
+        if not rsi_data or not rsi_data.get('values') or self.df is None: return False
+        rsi_col = next((col for col in self.df.columns if col.startswith('RSI_')), None)
+        if not rsi_col or rsi_col not in self.df.columns: return False
+        rsi_series = self.df[rsi_col].dropna();
+        if len(rsi_series) < rsi_lookback: return False
+        window = rsi_series.tail(rsi_lookback)
+        high_threshold = window.quantile(rsi_buy_percentile / 100.0)
+        low_threshold = window.quantile(rsi_sell_percentile / 100.0)
+        current_rsi = rsi_series.iloc[-1]
+        is_exhausted = (direction == "BUY" and current_rsi >= high_threshold) or (direction == "SELL" and current_rsi <= low_threshold)
+        if is_exhausted:
+            self._log_criteria("Adaptive Exhaustion Shield", False, f"RSI {current_rsi:.2f} hit dynamic threshold (L:{low_threshold:.2f}/H:{high_threshold:.2f})")
+        return is_exhausted
         
     def _get_candlestick_confirmation(self, direction: str, min_reliability: str = 'Medium') -> Optional[Dict[str, Any]]:
         pattern_analysis = self.get_indicator('patterns');
