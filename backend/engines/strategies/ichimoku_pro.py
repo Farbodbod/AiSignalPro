@@ -1,4 +1,4 @@
-#backend/engines/strategies/ichimoku_pro.py
+# backend/engines/strategies/ichimoku_pro.py
 
 from __future__ import annotations
 import logging
@@ -9,51 +9,57 @@ from .base_strategy import BaseStrategy
 
 logger = logging.getLogger(__name__)
 
-# IchimokuHybridPro - (v18.0.0 - Advanced Intelligence Upgrade)
+# IchimokuHybridPro - (v19.0.0 - Stable Core Refactor)
 # -------------------------------------------------------------------------
-# This version introduces a major evolution in strategic intelligence, integrating
-# three new powerful engines based on the v18.0 roadmap for the AiSignalPro project.
+# This version represents a fundamental architectural overhaul based on the final
+# roadmap. The strategy has been refactored to eliminate fragile dependencies
+# and align with the most robust patterns used in the AiSignalPro project.
 #
-# 🚀 NEW FEATURES:
-# 1.  **Exhaustion Shield:** Prevents late entries into saturated trends by using
-#     a dynamic RSI percentile filter, blocking signals in overbought/oversold zones.
-# 2.  **Kumo Reversal Engine:** Actively hunts for high-probability reversal
-#     opportunities based on candlestick rejections from the Kumo cloud edges.
-# 3.  **Adaptive Targeting Support:** Configuration added to support the new
-#     ATR-based adaptive take-profit engine from BaseStrategy for more realistic targets.
+# 🚀 KEY EVOLUTIONS in v19.0.0:
+# 1.  **Architectural Overhaul:** Replaced the fragile, percentile-based RSI
+#     logic with a robust, stateless system using direct RSI value checks,
+#     aligning with the project's most successful strategies.
+# 2.  **Simplified Configuration:** Merged `exhaustion_shield` and
+#     `leading_timing_engine` into a single, intuitive and powerful
+#     `timing_and_exhaustion_filter` configuration block.
+# 3.  **Enhanced Stability:** Eliminated the dependency on the historical
+#     DataFrame for core logic, permanently resolving associated architectural
+#     issues and ensuring predictable, reliable behavior.
 #
-# This version maintains 100% backward compatibility with the architecture and
-# continues to use the compliant logging framework from BaseStrategy v15.1.
+# This version is fully compatible with BaseStrategy v21.0.0+.
 
 class IchimokuHybridPro(BaseStrategy):
     strategy_name: str = "IchimokuHybridPro"
     
     default_config: ClassVar[Dict[str, Any]] = {
       "operation_mode": "Regime-Aware",
-      # --- PHASE 1: Exhaustion Shield ---
-      "exhaustion_shield": {
+
+      # --- NEW: Simplified and Unified Timing/Exhaustion Engine ---
+      "timing_and_exhaustion_filter": {
         "enabled": True,
-        "indicator": "rsi_dynamic",
-        "rsi_lookback": 100,
-        "rsi_overbought_percentile": 90,
-        "rsi_oversold_percentile": 10
+        "apply_to_tk_cross": True,
+        "apply_to_breakout": False,
+        
+        "use_timing_confirm": True,
+        "timing_rsi_buy_min": 50.0,
+        "timing_rsi_sell_max": 50.0,
+        
+        "use_exhaustion_shield": True,
+        "exhaustion_rsi_overbought": 80.0,
+        "exhaustion_rsi_oversold": 20.0
       },
-      # --- PHASE 2: Kumo Reversal Engine ---
+
+      # --- Kumo Reversal & Adaptive Targeting Engines (Unchanged) ---
       "kumo_reversal_engine": {
         "enabled": True,
         "min_reliability": "Medium"
       },
-      # --- PHASE 3: Adaptive Targeting Engine ---
       "adaptive_targeting": {
         "enabled": True,
         "atr_multiples": [1.5, 3.0, 5.0]
       },
-      "leading_timing_engine": {
-        "enabled": True, "apply_to_tk_cross": True, "apply_to_breakout": False,
-        "indicator": "rsi_dynamic", "weight": 2,
-        "rsi_lookback": 100, "rsi_buy_percentile": 20, "rsi_sell_percentile": 80,
-        "min_reliability": "Medium"
-      },
+      
+      # --- Scoring, Penalties & Other Parameters (Largely Unchanged) ---
       "htf_quality_scoring": {
         "enabled": True,
         "weights_htf": { "price_vs_kumo": 4, "chikou_free": 3, "future_kumo_aligned": 2, "kumo_twist": 1, "volume_spike": 1, "tk_cross_strong": 0, "tk_cross_medium": 0 },
@@ -149,8 +155,12 @@ class IchimokuHybridPro(BaseStrategy):
         def check(name: str, weight_key: str, condition: bool):
             nonlocal positive_score, confirmations
             if condition and weight_key in positive_weights:
+                self._log_criteria(f"ScoreComponent: {name}", True, f"Condition met, adding {positive_weights[weight_key]} points.")
                 positive_score += positive_weights[weight_key]
                 confirmations.append(name)
+            elif weight_key in positive_weights:
+                 self._log_criteria(f"ScoreComponent: {name}", False, "Condition not met.")
+
         
         # --- Standard Ichimoku Checks ---
         is_above_kumo = analysis.get('price_position') == "Above Kumo"; is_below_kumo = analysis.get('price_position') == "Below Kumo"
@@ -171,24 +181,30 @@ class IchimokuHybridPro(BaseStrategy):
         is_z_spike = self._is_valid_number(zscore) and zscore >= self.config.get('volume_z_relax_threshold', 1.5)
         check("Volume_Spike", 'volume_spike', is_climactic or is_z_spike)
         
-        # --- PHASE 2: Kumo Reversal Engine Scoring ---
-        # This check is only relevant for the new trigger type. The condition is implicitly true
-        # because the trigger itself is finding the candlestick pattern.
+        # --- Kumo Reversal Engine Scoring ---
         if trigger_type == 'KUMO_REVERSAL':
             check("Kumo Rejection Candle", 'kumo_rejection_candle', True)
 
-        # --- Leading Timing Engine Check ---
-        timing_cfg = self.config.get('leading_timing_engine', {})
-        if timing_cfg.get('enabled', False) and timing_cfg.get('apply_to_tk_cross' if trigger_type == 'TK_CROSS' else 'apply_to_breakout', False):
+        # --- REFACTORED: Timing Confirmation Engine (Stateless) ---
+        filter_cfg = self.config.get('timing_and_exhaustion_filter', {})
+        apply_timing = 'apply_to_tk_cross' if trigger_type == 'TK_CROSS' else 'apply_to_breakout'
+        if filter_cfg.get('enabled', True) and filter_cfg.get('use_timing_confirm', True) and filter_cfg.get(apply_timing, False):
             is_timing_ok = False
-            timing_indicator = timing_cfg.get('indicator', 'rsi_dynamic')
-            if timing_indicator == 'rsi_dynamic':
-                is_timing_ok = not self._is_trend_exhausted_dynamic(direction=direction, rsi_lookback=timing_cfg.get('rsi_lookback', 100), rsi_buy_percentile=timing_cfg.get('rsi_buy_percentile', 20), rsi_sell_percentile=timing_cfg.get('rsi_sell_percentile', 80))
-            elif timing_indicator == 'candlestick':
-                pattern = self._get_candlestick_confirmation(direction=direction, min_reliability=timing_cfg.get('min_reliability', 'Medium'))
-                is_timing_ok = pattern is not None
-            if is_timing_ok:
-                check("Timing_Confirmed", "leading_timing_confirm", True)
+            rsi_data = self.get_indicator('rsi', analysis_source=analysis_data)
+            rsi_value = self._safe_get(rsi_data, ['values', 'rsi'])
+            if self._is_valid_number(rsi_value):
+                if direction == "BUY":
+                    buy_min = filter_cfg.get('timing_rsi_buy_min', 50.0)
+                    is_timing_ok = rsi_value >= buy_min
+                    self._log_criteria("Timing Confirm (BUY)", is_timing_ok, f"RSI={rsi_value:.2f} vs Min={buy_min}")
+                else: # SELL
+                    sell_max = filter_cfg.get('timing_rsi_sell_max', 50.0)
+                    is_timing_ok = rsi_value <= sell_max
+                    self._log_criteria("Timing Confirm (SELL)", is_timing_ok, f"RSI={rsi_value:.2f} vs Max={sell_max}")
+            else:
+                self._log_criteria("Timing Confirm", False, "RSI value is not available.")
+            
+            check("Timing_Confirmed", "leading_timing_confirm", is_timing_ok)
 
         # --- Penalty Calculation ---
         for key, raw_points in penalty_weights.items():
@@ -264,7 +280,7 @@ class IchimokuHybridPro(BaseStrategy):
             if breakout_score > best_score:
                 best_score = breakout_score; signal_direction = breakout_direction; trigger_type = "CLOUD_BREAKOUT"; market_regime = breakout_regime; base_score = breakout_score; primary_confirms = b_confirms; intrinsic_penalties = b_penalties
         
-        # --- PHASE 2: Trigger 3: Kumo Reversal Engine ---
+        # --- Trigger 3: Kumo Reversal Engine ---
         reversal_cfg = cfg.get('kumo_reversal_engine', {})
         if reversal_cfg.get('enabled', False) and price_pos == "Inside Kumo":
             for direction_to_check in ["BUY", "SELL"]:
@@ -283,22 +299,20 @@ class IchimokuHybridPro(BaseStrategy):
         
         self._log_criteria("Primary Trigger", True, f"Trigger found: {trigger_type} for {signal_direction} with base score {base_score:.2f}")
 
-        # --- PHASE 1: Exhaustion Shield ---
-        exhaustion_cfg = cfg.get('exhaustion_shield', {})
-        if exhaustion_cfg.get('enabled', False):
-            is_exhausted = self._is_trend_exhausted_dynamic(
+        # --- REFACTORED: Exhaustion Shield (Stateless) ---
+        filter_cfg = cfg.get('timing_and_exhaustion_filter', {})
+        if filter_cfg.get('enabled', True) and filter_cfg.get('use_exhaustion_shield', True):
+            is_exhausted = self._is_trend_exhausted(
                 direction=signal_direction,
-                rsi_lookback=exhaustion_cfg.get('rsi_lookback', 100),
-                # For BUY signal, check if RSI is in OVERBOUGHT percentile.
-                # For SELL signal, check if RSI is in OVERSOLD percentile.
-                # The base method maps buy_percentile to high threshold, sell_percentile to low threshold.
-                rsi_buy_percentile=exhaustion_cfg.get('rsi_overbought_percentile', 90),
-                rsi_sell_percentile=exhaustion_cfg.get('rsi_oversold_percentile', 10)
+                buy_exhaustion_threshold=filter_cfg.get('exhaustion_rsi_overbought', 80.0),
+                sell_exhaustion_threshold=filter_cfg.get('exhaustion_rsi_oversold', 20.0)
             )
             if is_exhausted:
-                # The _is_trend_exhausted_dynamic method logs its own criterion failure.
+                # _is_trend_exhausted logs its own failure, we just need to halt.
                 self._log_final_decision("HOLD", "Trend Exhaustion Shield activated.")
                 return None
+            self._log_criteria("Exhaustion Shield", True, "Trend is not exhausted.")
+
         
         # --- Main Signal Processing Pipeline (Unchanged Logic) ---
         adx_val = self._safe_get(indicators, ['adx', 'values', 'adx'], 0.0)
@@ -471,13 +485,14 @@ class IchimokuHybridPro(BaseStrategy):
             self._log_criteria("Risk Management", False, "Cannot calculate risk parameters without SL.")
             return {}
 
-        # The logic for this block will be expanded in BaseStrategy v18.0
-        # The strategy itself doesn't need changes, only the config to enable it.
         if not final_targets:
             adaptive_cfg = self.config.get('adaptive_targeting', {})
-            # This is a placeholder for where the BaseStrategy logic will hook in.
-            # The current BaseStrategy v15.1 has a different fallback.
-            reward_ratios = self.config.get('reward_tp_ratios', [1.5, 3.0, 5.0]) # Fallback for older BaseStrategy versions
+            if adaptive_cfg.get('enabled', False):
+                # This logic is now handled by BaseStrategy v21+, we just need to enable it
+                pass # The call to _finalize_risk_parameters will eventually go through super()
+            
+            # Fallback for older BaseStrategy versions or when adaptive is disabled
+            reward_ratios = self.config.get('reward_tp_ratios', [1.5, 3.0, 5.0]) 
             risk_dist = abs(entry_price - final_sl)
             final_targets = [entry_price + (risk_dist * r if direction.upper() == 'BUY' else -r * risk_dist) for r in reward_ratios]
             self._log_indicator_trace("TP Targets", final_targets, reason="Falling back to fixed R/R targets due to no structural levels.")
