@@ -1,4 +1,4 @@
-# strategies/base_strategy.py (v18.3.0 - Integration Hardening)
+# strategies/base_strategy.py (v20.0.0 - Explicit Contract Framework)
 
 from __future__ import annotations
 from abc import ABC, abstractmethod
@@ -30,12 +30,14 @@ def deep_merge(dict1: Dict[str, Any], dict2: Dict[str, Any]) -> Dict[str, Any]:
 
 class BaseStrategy(ABC):
     """
-    World-Class Base Strategy Framework - (v18.3.0 - Integration Hardening)
+    World-Class Base Strategy Framework - (v20.0.0 - Explicit Contract Framework)
     ---------------------------------------------------------------------------------------------
-    This version applies a critical integration fix to `_is_trend_exhausted_dynamic`.
-    The column lookup logic is now case-insensitive, resolving the mismatch between
-    the strategy framework and indicator naming conventions (e.g., finding 'RSI_14'
-    when looking for 'rsi_'). This ensures flawless component interoperability.
+    This version marks a major architectural evolution by implementing the "Explicit
+    Contract" principle. The `_is_trend_exhausted_dynamic` method no longer guesses
+    the RSI column name. Instead, it directly reads the column name from the metadata
+    (`_meta.main_col`) provided by the indicator itself. This creates a robust,
+    decoupled, and error-proof communication channel, solving the integration
+    issue permanently.
     """
     strategy_name: str = "BaseStrategy"
     default_config: ClassVar[Dict[str, Any]] = {}
@@ -154,11 +156,11 @@ class BaseStrategy(ABC):
         rsi_data = self.get_indicator('rsi');
         if not rsi_data or not self._safe_get(rsi_data, ['values']) or self.df is None: return False
         
-        # ✅ v18.3.0 FINAL FIX: Case-insensitive search for the RSI column.
-        rsi_col = next((col for col in self.df.columns if col.lower().startswith('rsi_')), None)
+        # ✅ v20.0.0 FINAL FIX: Get the column name directly from the indicator's explicit contract.
+        rsi_col = self._safe_get(rsi_data, ['analysis', '_meta', 'main_col'])
         
         if not rsi_col or rsi_col not in self.df.columns:
-            logger.warning(f"Could not find any RSI column starting with 'rsi_' (case-insensitive) in DataFrame for dynamic exhaustion check.")
+            logger.warning(f"Could not find RSI column '{rsi_col}' in DataFrame. Ensure indicator reports its 'main_col' in analysis._meta.")
             return False
 
         rsi_series = self.df[rsi_col].dropna();
