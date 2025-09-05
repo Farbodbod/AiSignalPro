@@ -128,12 +128,16 @@
     "IchimokuHybridPro": {
       "enabled": true,
       "operation_mode": "Regime-Aware",
-      "exhaustion_shield": {
+      "timing_and_exhaustion_filter": {
         "enabled": true,
-        "indicator": "rsi_dynamic",
-        "rsi_lookback": 100,
-        "rsi_overbought_percentile": 90,
-        "rsi_oversold_percentile": 10
+        "apply_to_tk_cross": true,
+        "apply_to_breakout": false,
+        "use_timing_confirm": true,
+        "timing_rsi_buy_min": 50.0,
+        "timing_rsi_sell_max": 50.0,
+        "use_exhaustion_shield": true,
+        "exhaustion_rsi_overbought": 80.0,
+        "exhaustion_rsi_oversold": 20.0
       },
       "kumo_reversal_engine": {
         "enabled": true,
@@ -142,17 +146,6 @@
       "adaptive_targeting": {
         "enabled": true,
         "atr_multiples": [1.5, 3.0, 5.0]
-      },
-      "leading_timing_engine": {
-        "enabled": true,
-        "apply_to_tk_cross": true,
-        "apply_to_breakout": false,
-        "indicator": "rsi_dynamic",
-        "weight": 2,
-        "rsi_lookback": 100,
-        "rsi_buy_percentile": 20,
-        "rsi_sell_percentile": 80,
-        "min_reliability": "Medium"
       },
       "htf_quality_scoring": {
         "enabled": true,
@@ -243,8 +236,8 @@
         "ichimoku_base": { "name": "ichimoku" },
         "adx_regime": { "name": "adx", "period": 14 },
         "atr_risk": { "name": "atr", "period": 14 },
-        "volume_confirm": { "name": "volume", "period": 20, "long_period": 50, "climactic_std_threshold": 2.5, "regime_period": 200 },
-        "keltner_filter": { "name": "keltner_channel", "ema_period": 20, "atr_multiplier": 2.0, "dependencies": { "atr": { "period": 10 } } },
+        "volume_confirm": { "name": "volume" },
+        "keltner_filter": { "name": "keltner_channel" },
         "rsi_timing": { "name": "rsi", "period": 14 },
         "patterns_confirm": { "name": "patterns" }
       }
