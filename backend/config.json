@@ -128,16 +128,24 @@
     "IchimokuHybridPro": {
       "enabled": true,
       "operation_mode": "Regime-Aware",
-      "timing_and_exhaustion_filter": {
+      "timing_and_exhaustion_engine": {
         "enabled": true,
-        "apply_to_tk_cross": true,
-        "apply_to_breakout": false,
-        "use_timing_confirm": true,
-        "timing_rsi_buy_min": 50.0,
-        "timing_rsi_sell_max": 50.0,
-        "use_exhaustion_shield": true,
-        "exhaustion_rsi_overbought": 80.0,
-        "exhaustion_rsi_oversold": 20.0
+        "timing_confirm_enabled": true,
+        "timing_mode": "dynamic",
+        "timing_apply_to_tk_cross": true,
+        "timing_apply_to_breakout": false,
+        "timing_static_rsi_buy_min": 50.0,
+        "timing_static_rsi_sell_max": 50.0,
+        "timing_dynamic_rsi_lookback": 100,
+        "timing_dynamic_rsi_buy_percentile": 20,
+        "timing_dynamic_rsi_sell_percentile": 80,
+        "exhaustion_shield_enabled": true,
+        "exhaustion_mode": "dynamic",
+        "exhaustion_static_overbought": 80.0,
+        "exhaustion_static_oversold": 20.0,
+        "exhaustion_dynamic_rsi_lookback": 100,
+        "exhaustion_dynamic_overbought_percentile": 90,
+        "exhaustion_dynamic_oversold_percentile": 10
       },
       "kumo_reversal_engine": {
         "enabled": true,
@@ -154,9 +162,7 @@
           "chikou_free": 3,
           "future_kumo_aligned": 2,
           "kumo_twist": 1,
-          "volume_spike": 1,
-          "tk_cross_strong": 0,
-          "tk_cross_medium": 0
+          "volume_spike": 1
         },
         "min_score_levels": {
           "weak": 25.0,
