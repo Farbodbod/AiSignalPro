@@ -9,15 +9,14 @@ from .base_strategy import BaseStrategy
 
 logger = logging.getLogger(__name__)
 
-# IchimokuHybridPro - (v17.8 - Final Release, Flawless Logging)
+# IchimokuHybridPro - (v17.8.1 - Final Release, Compliant Logging)
 # -------------------------------------------------------------------------
 # This version represents the definitive, final release of the IchimokuHybridPro
-# strategy for the AiSignalPro project. It is fully compliant with the
-# BaseStrategy logging framework, ensuring a consistent and auditable trace
-# of all decision-making processes. All logic, features, and optimizations
-# from previous versions have been preserved and refined. This is a complete,
-# flawless, and production-ready implementation with a streamlined, executive-level
-# logging output.
+# strategy for the AiSignalPro project. The logging has been aligned perfectly
+# with the BaseStrategy v15.1 framework, using `_log_criteria` and `_log_final_decision`
+# for a clear, step-by-step executive trace, fully compliant with project standards.
+# All logic, features, and optimizations are preserved. This is a complete,
+# flawless, and production-ready implementation.
 
 class IchimokuHybridPro(BaseStrategy):
     strategy_name: str = "IchimokuHybridPro"
@@ -84,19 +83,18 @@ class IchimokuHybridPro(BaseStrategy):
         return ". ".join(filter(None, parts))
 
     def _check_htf_breakout_context(self, direction: str) -> bool:
-        logger.debug("Starting HTF breakout context filter.")
         if not self.htf_analysis:
-            logger.debug("HTF analysis not available, passing by default.")
+            self._log_indicator_trace("HTF_Context_Check", "N/A", status="SKIPPED", reason="HTF analysis not available.")
             return True
         htf_ichi_data = self.get_indicator('ichimoku', analysis_source=self.htf_analysis)
         if not self._indicator_ok(htf_ichi_data):
-            logger.debug("HTF Ichimoku data not valid, passing by default.")
+            self._log_indicator_trace("HTF_Context_Check", "N/A", status="SKIPPED", reason="HTF Ichimoku data not valid.")
             return True
         htf_analysis = self._safe_get(htf_ichi_data, ['analysis'], {})
         htf_values = self._safe_get(htf_ichi_data, ['values'], {})
         htf_price = self._safe_get(self.htf_analysis, ['price_data', 'close'])
         if not self._is_valid_number(htf_price):
-            logger.debug("HTF price invalid, passing by default.")
+            self._log_indicator_trace("HTF_Context_Check", "N/A", status="SKIPPED", reason="HTF price invalid.")
             return True
 
         context_ok = False
@@ -171,7 +169,6 @@ class IchimokuHybridPro(BaseStrategy):
     def check_signal(self) -> Optional[Dict[str, Any]]:
         cfg = self.config
         
-        logger.debug(f"Starting signal evaluation for {self.strategy_name} on {self.symbol} {self.primary_timeframe}.")
         if not self.price_data:
             self._log_final_decision("HOLD", "Missing price data.")
             return None
@@ -182,7 +179,8 @@ class IchimokuHybridPro(BaseStrategy):
         current_bar = len(df) - 1
         cooldown_ok = (current_bar - getattr(self, "last_signal_bar", -10**9)) >= cfg.get('cooldown_bars', 3)
         if not cooldown_ok:
-            logger.debug(f"Cooldown Period Check: Cooldown bars since last signal: {current_bar - getattr(self, 'last_signal_bar', -10**9)}. Returning HOLD.")
+            reason = f"Cooldown Period Active. Bars since last signal: {current_bar - getattr(self, 'last_signal_bar', -10**9)}."
+            self._log_final_decision("HOLD", reason)
             return None
         
         required = ['ichimoku', 'adx', 'atr', 'volume', 'keltner_channel', 'rsi', 'patterns']
@@ -193,6 +191,8 @@ class IchimokuHybridPro(BaseStrategy):
             return None
         
         if cfg.get('outlier_candle_shield', True) and self._is_outlier_candle(atr_multiplier=cfg.get('outlier_atr_mult', 3.5)):
+            # The _is_outlier_candle method logs its own failure criterion.
+            self._log_final_decision("HOLD", "Signal blocked by Outlier Candle Shield.")
             return None
 
         ichi_analysis = self._safe_get(indicators, ['ichimoku', 'analysis'], {}); ichi_values = self._safe_get(indicators, ['ichimoku', 'values'], {})
@@ -203,7 +203,6 @@ class IchimokuHybridPro(BaseStrategy):
         
         weights_map = {"TRENDING": 'weights_trending', "RANGING": 'weights_ranging', "BREAKOUT": 'weights_breakout'}
         
-        logger.debug("Evaluating TK Cross trigger.")
         tk_cross_direction = "BUY" if "bullish" in tk_cross else "SELL" if "bearish" in tk_cross else None
         if tk_cross_direction:
             adx_val_tk = self._safe_get(indicators, ['adx', 'values', 'adx'], 0.0)
@@ -215,7 +214,6 @@ class IchimokuHybridPro(BaseStrategy):
             if tk_cross_score > best_score:
                 best_score = tk_cross_score; signal_direction = tk_cross_direction; trigger_type = "TK_CROSS"; market_regime = tk_cross_regime; base_score = tk_cross_score; primary_confirms = tk_confirms; intrinsic_penalties = tk_penalties
             
-        logger.debug("Evaluating Cloud Breakout trigger.")
         s_a, s_b = ichi_values.get('senkou_a'), ichi_values.get('senkou_b')
         breakout_direction = "BUY" if price_pos == "Above Kumo" and self._is_valid_number(s_a) and self._is_valid_number(s_b) and s_a > s_b else \
                              "SELL" if price_pos == "Below Kumo" and self._is_valid_number(s_a) and self._is_valid_number(s_b) and s_a < s_b else None
@@ -230,7 +228,7 @@ class IchimokuHybridPro(BaseStrategy):
             self._log_final_decision("HOLD", "No actionable trigger found (TK Cross or Cloud Breakout).")
             return None
         
-        self._log_criteria("Primary Trigger", True, f"Trigger found: {trigger_type}")
+        self._log_criteria("Primary Trigger", True, f"Trigger found: {trigger_type} for {signal_direction} with base score {base_score:.2f}")
 
         adx_val = self._safe_get(indicators, ['adx', 'values', 'adx'], 0.0)
         operation_mode = cfg.get('operation_mode', 'Regime-Aware')
@@ -284,7 +282,7 @@ class IchimokuHybridPro(BaseStrategy):
 
         stop_loss = self._calculate_stop_loss(signal_direction, ichi_values, entry_price, atr_val, cfg)
         if not stop_loss:
-            self._log_final_decision("HOLD", "Could not set SL.")
+            self._log_final_decision("HOLD", "Could not set a valid SL.")
             return None
         
         rr_needed = 2.0 if final_score >= cfg.get('high_quality_score_threshold', 74.0) else cfg.get('min_rr_ratio', 1.6)
@@ -306,10 +304,10 @@ class IchimokuHybridPro(BaseStrategy):
         return {"direction": signal_direction, "entry_price": entry_price, **risk_params, "confirmations": confirmations}
 
     def _evaluate_htf(self, trigger_type: str, direction: str) -> Tuple[bool, str, float, List[Dict], str]:
-        self._log_criteria("HTF Evaluation", True, f"Starting evaluation for trigger '{trigger_type}'.")
+        self._log_criteria("Path Check: HTF Evaluation", True, f"Starting HTF evaluation for trigger '{trigger_type}'.")
         htf_cfg = self.config.get('htf_quality_scoring', {})
         if not htf_cfg.get('enabled', True):
-            self._log_criteria("HTF Evaluation", True, "HTF scoring disabled.")
+            self._log_criteria("HTF Evaluation", True, "HTF scoring disabled by config.")
             return True, "Disabled", 0.0, [], "N/A"
         
         if trigger_type == 'CLOUD_BREAKOUT' and self.config.get('htf_breakout_context_filter_enabled', True):
@@ -344,7 +342,7 @@ class IchimokuHybridPro(BaseStrategy):
         return is_htf_ok, details, norm_htf_score, htf_penalties, grade
 
     def _calculate_stop_loss(self, direction: str, ichi_vals: Dict, price: float, atr: float, cfg: Dict) -> Optional[float]:
-        self._log_criteria("SL Calculation", True, f"Starting SL calculation with mode '{cfg.get('sl_mode', 'hybrid')}'.")
+        self._log_criteria("Path Check: SL Calculation", True, f"Starting SL calculation with mode '{cfg.get('sl_mode', 'hybrid')}'.")
         if not self._is_valid_number(price) or not self._is_valid_number(atr):
             self._log_criteria("SL Calculation", False, "Invalid price or ATR data.")
             return None
@@ -357,25 +355,25 @@ class IchimokuHybridPro(BaseStrategy):
                 max_dist = cfg.get('sl_hybrid_max_atr_mult', 2.0) * atr
                 if abs(price - structural_sl) > max_dist:
                     calculated_sl = price - max_dist if direction == 'BUY' else price + max_dist
-                    self._log_criteria("SL Calculation", True, f"Hybrid SL: Structural level too far, capping at {max_dist:.2f}*ATR.")
+                    self._log_criteria("SL Calculation", True, f"Hybrid SL: Structural level too far, capping at {max_dist:.5f} ({cfg.get('sl_hybrid_max_atr_mult', 2.0)}*ATR).")
                 else:
                     calculated_sl = structural_sl
-                    self._log_criteria("SL Calculation", True, f"Hybrid SL: Using structural level at {structural_sl:.2f}.")
+                    self._log_criteria("SL Calculation", True, f"Hybrid SL: Using structural level at {structural_sl:.5f}.")
             else:
                 calculated_sl = (price - (2.0 * atr) if direction == 'BUY' else price + (2.0 * atr))
                 self._log_criteria("SL Calculation", True, "Hybrid SL: Structural level not valid, falling back to 2.0*ATR.")
         elif sl_mode == 'kumo':
             calculated_sl = ichi_vals.get('senkou_b' if direction == 'BUY' else 'senkou_a')
-            self._log_criteria("SL Calculation", True, "Using Kumo SL.")
+            self._log_criteria("SL Calculation", True, f"Using Kumo SL at {calculated_sl:.5f}.")
         elif sl_mode == 'kijun':
             calculated_sl = ichi_vals.get('kijun')
-            self._log_criteria("SL Calculation", True, "Using Kijun SL.")
+            self._log_criteria("SL Calculation", True, f"Using Kijun SL at {calculated_sl:.5f}.")
         else:
             self._log_criteria("SL Calculation", False, f"Unknown SL mode: {sl_mode}.")
             return None
         
         if calculated_sl is not None and ((direction == 'BUY' and calculated_sl >= price) or (direction == 'SELL' and calculated_sl <= price)):
-            self._log_criteria("SL Validation", False, "Calculated SL is inverted, blocking signal.")
+            self._log_criteria("SL Validation", False, f"Calculated SL {calculated_sl:.5f} is inverted against price {price:.5f}, blocking signal.")
             return None
             
         self._log_indicator_trace("Final Stop Loss", calculated_sl, reason=f"Calculated SL for {direction} signal.")
