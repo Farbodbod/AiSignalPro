@@ -1,4 +1,4 @@
-# strategies/base_strategy.py (v20.0.0 - Explicit Contract Framework)
+# strategies/base_strategy.py (v21.0.0 - Architectural Simplification)
 
 from __future__ import annotations
 from abc import ABC, abstractmethod
@@ -30,14 +30,15 @@ def deep_merge(dict1: Dict[str, Any], dict2: Dict[str, Any]) -> Dict[str, Any]:
 
 class BaseStrategy(ABC):
     """
-    World-Class Base Strategy Framework - (v20.0.0 - Explicit Contract Framework)
+    World-Class Base Strategy Framework - (v21.0.0 - Architectural Simplification)
     ---------------------------------------------------------------------------------------------
-    This version marks a major architectural evolution by implementing the "Explicit
-    Contract" principle. The `_is_trend_exhausted_dynamic` method no longer guesses
-    the RSI column name. Instead, it directly reads the column name from the metadata
-    (`_meta.main_col`) provided by the indicator itself. This creates a robust,
-    decoupled, and error-proof communication channel, solving the integration
-    issue permanently.
+    This version embodies the "Back to Basics" principle outlined in the final
+    roadmap. The complex and problematic `_is_trend_exhausted_dynamic` method,
+    which created fragile DataFrame dependencies, has been completely removed.
+    This sanitizes the base class and promotes the use of the robust and
+    stateless `_is_trend_exhausted` helper, which relies on direct indicator
+    values. This change enforces a more stable and predictable architecture
+    across all strategies.
     """
     strategy_name: str = "BaseStrategy"
     default_config: ClassVar[Dict[str, Any]] = {}
@@ -152,28 +153,6 @@ class BaseStrategy(ABC):
         if is_exhausted: self._log_criteria("Trend Exhaustion Shield", False, reason); return True
         return False
         
-    def _is_trend_exhausted_dynamic(self, direction: str, rsi_lookback: int, rsi_buy_percentile: int, rsi_sell_percentile: int) -> bool:
-        rsi_data = self.get_indicator('rsi');
-        if not rsi_data or not self._safe_get(rsi_data, ['values']) or self.df is None: return False
-        
-        # ✅ v20.0.0 FINAL FIX: Get the column name directly from the indicator's explicit contract.
-        rsi_col = self._safe_get(rsi_data, ['analysis', '_meta', 'main_col'])
-        
-        if not rsi_col or rsi_col not in self.df.columns:
-            logger.warning(f"Could not find RSI column '{rsi_col}' in DataFrame. Ensure indicator reports its 'main_col' in analysis._meta.")
-            return False
-
-        rsi_series = self.df[rsi_col].dropna();
-        if len(rsi_series) < rsi_lookback: return False
-        window = rsi_series.tail(rsi_lookback)
-        high_threshold = window.quantile(rsi_buy_percentile / 100.0)
-        low_threshold = window.quantile(rsi_sell_percentile / 100.0)
-        current_rsi = rsi_series.iloc[-1]
-        is_exhausted = (direction == "BUY" and current_rsi >= high_threshold) or (direction == "SELL" and current_rsi <= low_threshold)
-        if is_exhausted:
-            self._log_criteria("Adaptive Exhaustion Shield", False, f"RSI {current_rsi:.2f} hit dynamic threshold (L:{low_threshold:.2f}/H:{high_threshold:.2f})")
-        return is_exhausted
-
     def _get_candlestick_confirmation(self, direction: str, min_reliability: str = 'Medium') -> Optional[Dict[str, Any]]:
         pattern_analysis = self.get_indicator('patterns');
         if not pattern_analysis or 'analysis' not in pattern_analysis: return None
