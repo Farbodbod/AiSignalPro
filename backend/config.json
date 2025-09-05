@@ -128,6 +128,17 @@
     "IchimokuHybridPro": {
       "enabled": true,
       "operation_mode": "Regime-Aware",
+      "leading_timing_engine": {
+        "enabled": true,
+        "apply_to_tk_cross": true,
+        "apply_to_breakout": false,
+        "indicator": "rsi_dynamic",
+        "weight": 2,
+        "rsi_lookback": 100,
+        "rsi_buy_percentile": 20,
+        "rsi_sell_percentile": 80,
+        "min_reliability": "Medium"
+      },
       "htf_quality_scoring": {
         "enabled": true,
         "weights_htf": {
@@ -172,7 +183,8 @@
         "chikou_free": 2,
         "kumo_twist": 1,
         "volume_spike": 2,
-        "volatility_filter": -5
+        "volatility_filter": -5,
+        "leading_timing_confirm": 2
       },
       "weights_ranging": {
         "price_vs_kumo": 1,
@@ -182,7 +194,8 @@
         "chikou_free": 1,
         "kumo_twist": 3,
         "volume_spike": 2,
-        "volatility_filter": -5
+        "volatility_filter": -5,
+        "leading_timing_confirm": 2
       },
       "weights_breakout": {
         "price_vs_kumo": 4,
