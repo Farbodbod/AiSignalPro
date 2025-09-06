@@ -118,7 +118,7 @@
       "enabled": true,
       "min_confluence_score": 5,
       "fib_levels_to_watch": ["38.2%", "50.0%", "61.8%", "78.6%"],
-      "confluence_proximity_percent": 0.8,
+      "confluence_proximity_percent": 0.7,
       "weights": { "dual_oscillator": 3, "single_oscillator": 1, "candlestick_strong": 3, "candlestick_medium": 2, "climactic_volume": 3 },
       "volatility_regimes": { "low_atr_pct_threshold": 1.5, "low_vol_sl_multiplier": 1.2, "high_vol_sl_multiplier": 1.5 },
       "adaptive_targeting": {"enabled": true, "atr_multiples": [1.5, 2.5, 4.0]},
@@ -325,7 +325,7 @@
     "PivotConfluenceSniper": {
       "enabled": true,
       "default_params": { "pivot_levels_to_check": ["R2", "R1", "P", "S1", "S2"], "confluence_proximity_percent": 0.4, "stoch_oversold": 25.0, "stoch_overbought": 75.0, "cci_oversold": -100.0, "cci_overbought": 100.0, "atr_sl_multiplier": 1.3, "min_rr_ratio": 1.5, "oscillator_logic": "OR" },
-      "timeframe_overrides": { "5m": { "confluence_proximity_percent": 0.2, "atr_sl_multiplier": 1.5 }, "1d": { "confluence_proximity_percent": 0.5, "min_rr_ratio": 2.0 } },
+      "timeframe_overrides": { "5m": { "confluence_proximity_percent": 0.2, "atr_sl_multiplier": 1.5 }, "1d": { "confluence_proximity_percent": 1.0, "min_rr_ratio": 2.0 } },
       "htf_confirmation_enabled": true,
       "htf_map": { "5m": "15m", "15m": "1h", "1h": "4h", "4h": "1d" },
       "htf_confirmations": { "min_required_score": 1, "adx": { "weight": 1, "min_strength": 23 } }
