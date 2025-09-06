@@ -318,8 +318,7 @@
         "volume_confirm": { "name": "whales" },
         "patterns_confirm": { "name": "patterns" },
         "divergence_veto": { "name": "divergence" },
-        "stochastic_confirm": { "name": "stochastic" },
-        "htf_supertrend": { "name": "supertrend" }
+        "stochastic_confirm": { "name": "stochastic" }
       }
     },
     "PivotConfluenceSniper": {
