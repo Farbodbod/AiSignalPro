@@ -312,14 +312,7 @@
         "ema_cross_primary": { "name": "ema_cross" },
         "atr_risk": { "name": "atr" },
         "adx_regime_strength": { "name": "adx" },
-        "rsi_exhaustion": { "name": "rsi" },
-        "master_trend_ma": { "name": "fast_ma" },
-        "macd_confirm": { "name": "macd" },
-        "volume_confirm": { "name": "whales" },
-        "patterns_confirm": { "name": "patterns" },
-        "divergence_veto": { "name": "divergence" },
-        "stochastic_confirm": { "name": "stochastic" },
-        "htf_supertrend": { "name": "supertrend" }
+        "rsi_exhaustion": { "name": "rsi" }
       }
     },
     "PivotConfluenceSniper": {
