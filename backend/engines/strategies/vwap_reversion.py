@@ -20,12 +20,12 @@ class VwapMeanReversion(BaseStrategy):
     """
     strategy_name: str = "VwapMeanReversion"
     default_config: ClassVar[Dict[str, Any]] = {
-        "max_adx_for_reversion": 25.0,
-        "min_rr_ratio": 2.0,
-        "oscillator_logic": "AND",
+        "max_adx_for_reversion": 22.0,
+        "min_rr_ratio": 1.5,
+        "oscillator_logic": "OR",
         "use_rsi": True, "rsi_oversold": 30.0, "rsi_overbought": 70.0,
         "use_williams_r": True, "williams_r_oversold": -80.0, "williams_r_overbought": -20.0,
-        "atr_sl_multiplier": 1.5,
+        "atr_sl_multiplier": 1.2,
         "require_candle_confirmation": True,
         "htf_confirmation_enabled": True,
         "htf_map": { "5m": "15m", "15m": "1h", "1h": "4h", "4h": "1d" },
