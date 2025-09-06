@@ -117,9 +117,9 @@
     "ConfluenceSniper": {
       "enabled": true,
       "min_confluence_score": 4,
-      "fib_levels_to_watch": ["61.8%", "78.6%"],
+      "fib_levels_to_watch": ["38.2%", "50.0%", "61.8%", "78.6%"],
       "confluence_proximity_percent": 0.5,
-      "weights": { "dual_oscillator": 3, "single_oscillator": 1, "candlestick": 2, "climactic_volume": 3 },
+      "weights": { "dual_oscillator": 3, "single_oscillator": 1, "candlestick_strong": 3, "candlestick_medium": 2, "climactic_volume": 3 },
       "volatility_regimes": { "low_atr_pct_threshold": 1.5, "low_vol_sl_multiplier": 1.2, "high_vol_sl_multiplier": 1.5 },
       "htf_confirmation_enabled": true,
       "htf_map": { "5m": "15m", "15m": "1h", "1h": "4h", "4h": "1d" },
