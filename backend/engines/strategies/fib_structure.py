@@ -19,12 +19,11 @@ class ConfluenceSniper(BaseStrategy):
     strategy_name: str = "ConfluenceSniper"
     
     default_config: ClassVar[Dict[str, Any]] = {
-        "fib_levels_to_watch": ["38.2%", "50.0%", "61.8%", "78.6%"],
-        "confluence_proximity_percent": 0.5,
+        "fib_levels_to_watch": ["61.8%", "78.6%"],
+        "confluence_proximity_percent": 0.3,
         "min_confluence_score": 5,
-        "weights": { "dual_oscillator": 2, "single_oscillator": 1, "candlestick_strong": 3, "candlestick_medium": 2, "climactic_volume": 3 },
+        "weights": { "dual_oscillator": 3, "single_oscillator": 1, "candlestick": 2, "climactic_volume": 3 },
         "volatility_regimes": { "low_atr_pct_threshold": 1.5, "low_vol_sl_multiplier": 1.2, "high_vol_sl_multiplier": 1.8 },
-        "adaptive_targeting": {"enabled": True,"atr_multiples": [1.5, 2.5, 4.0] },
         "htf_confirmation_enabled": True,
         "htf_map": { "5m": "15m", "15m": "1h", "1h": "4h", "4h": "1d" },
         "htf_confirmations": { "min_required_score": 1, "adx": {"weight": 1, "min_strength": 25} }
@@ -35,21 +34,7 @@ class ConfluenceSniper(BaseStrategy):
         rsi_confirm, stoch_confirm = self._get_oscillator_confirmation(direction, rsi_data, stoch_data)
         if rsi_confirm and stoch_confirm: score += weights.get('dual_oscillator', 3); confirmations.append("Dual Oscillator")
         elif rsi_confirm or stoch_confirm: score += weights.get('single_oscillator', 1); confirmations.append("Single Oscillator")
-        # --- Upgraded Candlestick Logic (Oracle-X v2) ---
-        # First, find any pattern with at least 'Medium' reliability
-        confirming_pattern = self._get_candlestick_confirmation(direction, min_reliability='Medium')
-        if confirming_pattern:
-        # Safely get the reliability, default to empty string if not found, and capitalize it
-        reliability = (confirming_pattern.get('reliability') or '').capitalize()
-        pattern_name = confirming_pattern.get('name', 'Unknown Pattern')
-        # Check if the reliability is 'Strong' and add the corresponding weight
-        if reliability == 'Strong':
-        score += weights.get('candlestick_strong', 3)
-        confirmations.append(f"Strong Candlestick ({pattern_name})")
-        # Else, check if it's 'Medium' and add its weight
-        elif reliability == 'Medium':
-        score += weights.get('candlestick_medium', 2)
-        confirmations.append(f"Medium Candlestick ({pattern_name})")
+        if self._get_candlestick_confirmation(direction, min_reliability='Strong'): score += weights.get('candlestick', 2); confirmations.append("Strong Candlestick")
         if (whales_data.get('analysis') or {}).get('is_climactic_volume', False): score += weights.get('climactic_volume', 3); confirmations.append("Climactic Volume")
         return score, confirmations
 
@@ -167,4 +152,3 @@ class ConfluenceSniper(BaseStrategy):
         self._log_final_decision(direction, "All criteria met. Confluence Sniper signal confirmed.")
         
         return { "direction": direction, "entry_price": entry_price, **risk_params, "confirmations": confirmations }
-
