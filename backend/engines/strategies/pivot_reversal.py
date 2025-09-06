@@ -38,7 +38,7 @@ class PivotConfluenceSniper(BaseStrategy):
         "htf_map": { "5m": "15m", "15m": "1h", "1h": "4h", "4h": "1d" },
         "htf_confirmations": {
             "min_required_score": 1,
-            "adx": {"weight": 1, "min_strength": 25}
+            "adx": {"weight": 1, "min_strength": 23}
         }
     }
 
