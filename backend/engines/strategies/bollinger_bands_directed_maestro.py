@@ -156,7 +156,7 @@ class BollingerBandsDirectedMaestro(BaseStrategy):
             
             blueprint = { "direction": temp_direction, "entry_price": current_price, "trade_mode": trade_mode,
                 "sl_logic": {"type": "band", "band_name": "middle_band", "buffer_atr_multiplier": final_multiplier},
-                "tp_logic": {"type": "atr_multiple", "multiples": [2.0, 3.5, 5.0]},
+                "tp_logic": {"type": "atr_multiple", "multiples": [1.5, 2.5, 3.5]},
                 "confirmations": {"final_score": score} }
             if self._validate_blueprint(blueprint):
                 self._log_final_decision(temp_direction, f"{trade_mode} triggered (Score: {score})"); return blueprint
