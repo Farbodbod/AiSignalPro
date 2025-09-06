@@ -491,13 +491,13 @@
       "williams_r_oversold": -80.0,
       "williams_r_overbought": -20.0,
       "require_candle_confirmation": true,
-      "min_stretch_atr": 0.8,
+      "min_stretch_atr": 1.2,
       "min_sl_pct": 0.1,
       "atr_sl_multiplier": 1.0,
       "min_rr_ratio": 1.5,
       "htf_confirmation_enabled": true,
       "htf_map": { "5m": "15m", "15m": "1h", "1h": "4h", "4h": "1d" },
-      "htf_confirmations": { "min_required_score": 1, "adx": { "weight": 1, "min_strength": 23 } }
+      "htf_confirmations": { "min_required_score": 1, "adx": { "weight": 1, "min_strength": 25 } }
     }
   }
 }
