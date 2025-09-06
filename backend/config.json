@@ -339,7 +339,7 @@
       "pullback_fib_enabled": true,
       "fib_golden_zone_min": 50.0,
       "fib_golden_zone_max": 61.8,
-      "trigger_logic": "OR",
+      "trigger_logic": "AND",
       "use_hidden_divergence": true,
       "use_candlestick_patterns": true,
       "sl_atr_multiplier": 1.5,
