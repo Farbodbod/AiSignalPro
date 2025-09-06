@@ -253,7 +253,7 @@
       "market_regime_filter": {
         "enabled": true,
         "required_regime": "TRENDING",
-        "adx_threshold": 21.0
+        "adx_threshold": 24.0
       },
       "divergence_veto_enabled": true,
       "exhaustion_shield": {
@@ -261,14 +261,14 @@
         "rsi_overbought": 80.0,
         "rsi_oversold": 20.0
       },
-      "min_confirmation_score": 8,
+      "min_confirmation_score": 10,
       "weights": {
-        "master_trend": 3,
+        "master_trend": 4,
         "macd": 2,
-        "stochastic_cross": 3,
+        "stochastic_cross": 2,
         "htf_alignment": 2,
-        "adx_strength": 1,
-        "volume": 1,
+        "adx_strength": 3,
+        "volume": 2,
         "candlestick": 1
       },
       "stochastic_confirm": {
@@ -279,17 +279,17 @@
       "macd_confirmation_enabled": true,
       "volume_confirmation_enabled": true,
       "adx_confirmation_enabled": true,
-      "min_adx_strength": 21.0,
+      "min_adx_strength": 24.0,
       "candlestick_confirmation_enabled": true,
       "master_trend_ma_indicator": "fast_ma",
       "volatility_regimes": {
         "low_atr_pct_threshold": 1.5,
-        "low_vol_sl_multiplier": 1.5,
-        "high_vol_sl_multiplier": 2.0
+        "low_vol_sl_multiplier": 1.8,
+        "high_vol_sl_multiplier": 2.5
       },
       "adaptive_targeting": {
         "enabled": true,
-        "atr_multiples": [4.0, 4.5, 5.0]
+        "atr_multiples": [2.0, 3.0, 4.0]
       },
       "htf_confirmation_enabled": true,
       "htf_map": {
@@ -302,7 +302,7 @@
         "min_required_score": 1,
         "adx": {
           "weight": 1,
-          "min_strength": 23
+          "min_strength": 24
         },
         "supertrend": {
           "weight": 1
