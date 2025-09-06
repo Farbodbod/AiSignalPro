@@ -307,12 +307,6 @@
         "supertrend": {
           "weight": 1
         }
-      },
-      "indicator_configs": {
-        "ema_cross_primary": { "name": "ema_cross" },
-        "atr_risk": { "name": "atr" },
-        "adx_regime_strength": { "name": "adx" },
-        "rsi_exhaustion": { "name": "rsi" }
       }
     },
     "PivotConfluenceSniper": {
