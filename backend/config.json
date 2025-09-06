@@ -136,16 +136,16 @@
         "timing_apply_to_breakout": false,
         "timing_static_rsi_buy_min": 50.0,
         "timing_static_rsi_sell_max": 50.0,
-        "timing_dynamic_rsi_lookback": 50,
-        "timing_dynamic_rsi_buy_percentile": 20,
-        "timing_dynamic_rsi_sell_percentile": 80,
+        "timing_dynamic_rsi_lookback": 100,
+        "timing_dynamic_rsi_buy_percentile": 25,
+        "timing_dynamic_rsi_sell_percentile": 75,
         "exhaustion_shield_enabled": true,
         "exhaustion_mode": "dynamic",
         "exhaustion_static_overbought": 80.0,
         "exhaustion_static_oversold": 20.0,
         "exhaustion_dynamic_rsi_lookback": 100,
-        "exhaustion_dynamic_overbought_percentile": 88,
-        "exhaustion_dynamic_oversold_percentile": 12
+        "exhaustion_dynamic_overbought_percentile": 90,
+        "exhaustion_dynamic_oversold_percentile": 10
       },
       "kumo_reversal_engine": {
         "enabled": true,
@@ -153,7 +153,7 @@
       },
       "adaptive_targeting": {
         "enabled": true,
-        "atr_multiples": [3.0, 4.0, 5.0]
+        "atr_multiples": [1.5, 3.0, 5.0]
       },
       "htf_quality_scoring": {
         "enabled": true,
@@ -180,8 +180,8 @@
       "min_total_score_base": 61.0,
       "min_total_score_breakout_base": 58.0,
       "high_quality_score_threshold": 76.0,
-      "min_rr_ratio": 2.0,
-      "sl_hybrid_max_atr_mult": 1.5,
+      "min_rr_ratio": 1.5,
+      "sl_hybrid_max_atr_mult": 1.8,
       "volume_z_relax_threshold": 1.5,
       "cooldown_bars": 3,
       "outlier_candle_shield": true,
@@ -221,7 +221,7 @@
         "volume_spike": 4,
         "future_kumo_aligned": 3
       },
-      "market_regime_adx": 21,
+      "market_regime_adx": 24,
       "sl_mode": "hybrid",
       "htf_confirmation_enabled": true,
       "htf_map": {
