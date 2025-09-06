@@ -93,7 +93,7 @@
       "risk_per_trade_percent": 0.01,
       "htf_confirmation_enabled": true,
       "htf_map": { "5m": "15m", "15m": "1h", "1h": "4h", "4h": "1d" },
-      "htf_confirmations": { "min_required_score": 1, "adx": { "weight": 1, "min_strength": 28 }, "supertrend": { "weight": 1 } }
+      "htf_confirmations": { "min_required_score": 1, "adx": { "weight": 1, "min_strength": 25 }, "supertrend": { "weight": 1 } }
     },
     "DivergenceSniperPro": {
       "enabled": true,
@@ -103,7 +103,7 @@
       "volatility_regimes": { "low_atr_pct_threshold": 1.5, "low_vol_sl_multiplier": 1.0, "high_vol_sl_multiplier": 1.5 },
       "htf_confirmation_enabled": true,
       "htf_map": { "5m": "15m", "15m": "1h", "1h": "4h", "4h": "1d" },
-      "htf_confirmations": { "min_required_score": 1, "adx": { "weight": 1, "min_strength": 24 } }
+      "htf_confirmations": { "min_required_score": 1, "adx": { "weight": 1, "min_strength": 25 } }
     },
     "BreakoutHunter": {
       "enabled": true,
@@ -112,7 +112,7 @@
       "weights": { "squeeze_release": 4, "volume_catalyst": 4, "momentum_thrust": 3, "htf_alignment": 2 },
       "htf_confirmation_enabled": true,
       "htf_map": { "5m": "15m", "15m": "1h", "1h": "4h", "4h": "1d" },
-      "htf_confirmations": { "min_required_score": 2, "adx": { "weight": 1, "min_strength": 24 }, "supertrend": { "weight": 1 } }
+      "htf_confirmations": { "min_required_score": 2, "adx": { "weight": 1, "min_strength": 25 }, "supertrend": { "weight": 1 } }
     },
     "ConfluenceSniper": {
       "enabled": true,
@@ -123,7 +123,7 @@
       "volatility_regimes": { "low_atr_pct_threshold": 1.5, "low_vol_sl_multiplier": 1.2, "high_vol_sl_multiplier": 1.5 },
       "htf_confirmation_enabled": true,
       "htf_map": { "5m": "15m", "15m": "1h", "1h": "4h", "4h": "1d" },
-      "htf_confirmations": { "min_required_score": 1, "adx": { "weight": 1, "min_strength": 24 } }
+      "htf_confirmations": { "min_required_score": 1, "adx": { "weight": 1, "min_strength": 25 } }
     },
     "IchimokuHybridPro": {
       "enabled": true,
@@ -166,7 +166,7 @@
         },
         "min_score_levels": {
           "weak": 38.0,
-          "normal": 46.0,
+          "normal": 53.0,
           "strong": 61.0
         },
         "strict_mode_requires_quality": "normal"
@@ -327,7 +327,7 @@
       "timeframe_overrides": { "5m": { "confluence_proximity_percent": 0.3, "atr_sl_multiplier": 1.5 }, "1d": { "confluence_proximity_percent": 0.5, "min_rr_ratio": 2.0 } },
       "htf_confirmation_enabled": true,
       "htf_map": { "5m": "15m", "15m": "1h", "1h": "4h", "4h": "1d" },
-      "htf_confirmations": { "min_required_score": 1, "adx": { "weight": 1, "min_strength": 24 } }
+      "htf_confirmations": { "min_required_score": 1, "adx": { "weight": 1, "min_strength": 25 } }
     },
     "PullbackSniperPro": {
       "enabled": true,
@@ -345,7 +345,7 @@
       "sl_atr_multiplier": 1.5,
       "min_rr_ratio": 2.0,
       "htf_map": { "5m": "15m", "15m": "1h", "1h": "4h", "4h": "1d" },
-      "htf_confirmations": { "min_required_score": 1, "adx": { "weight": 1, "min_strength": 24 }, "supertrend": { "weight": 1 } }
+      "htf_confirmations": { "min_required_score": 1, "adx": { "weight": 1, "min_strength": 25 }, "supertrend": { "weight": 1 } }
     },
     "KeltnerMomentumBreakout": {
       "enabled": true,
@@ -368,7 +368,7 @@
       "target_atr_multiples": [3.0, 3.5, 4.0],
       "htf_confirmation_enabled": true,
       "htf_map": { "5m": "15m", "15m": "1h", "1h": "4h", "4h": "1d" },
-      "htf_confirmations": { "min_required_score": 1, "adx": { "weight": 1, "min_strength": 24 }, "supertrend": { "weight": 1 } },
+      "htf_confirmations": { "min_required_score": 1, "adx": { "weight": 1, "min_strength": 25 }, "supertrend": { "weight": 1 } },
       "indicator_configs": {
         "keltner_channel": {
           "name": "keltner_channel",
@@ -422,7 +422,7 @@
       "trending_tp_logic": { "type": "atr_multiple_by_trend_strength", "adx_thresholds": { "strong": 35, "normal": 24 }, "multiples_map": { "strong": [2.5, 4.5, 6.5], "normal": [2.0, 3.5, 5.0], "weak": [1.8, 2.0, 3.0] } },
       "htf_confirmation_enabled": true,
       "htf_map": { "5m": "15m", "15m": "1h", "1h": "4h", "4h": "1d" },
-      "htf_confirmations": { "min_required_score": 1, "adx": { "weight": 1, "min_strength": 24 }, "supertrend": { "weight": 1 } },
+      "htf_confirmations": { "min_required_score": 1, "adx": { "weight": 1, "min_strength": 25 }, "supertrend": { "weight": 1 } },
       "indicator_configs": {
         "adx": {
           "name": "adx",
@@ -442,7 +442,7 @@
       "timeframe_overrides": { "5m": { "min_adx_strength": 21.0 }, "1d": { "min_adx_strength": 28.0, "tactical_tp_rr_ratio": 2.5 } },
       "htf_confirmation_enabled": true,
       "htf_map": { "5m": "15m", "15m": "1h", "1h": "4h", "4h": "1d" },
-      "htf_confirmations": { "min_required_score": 1, "adx": { "weight": 1, "min_strength": 24 }, "supertrend": { "weight": 1 } }
+      "htf_confirmations": { "min_required_score": 1, "adx": { "weight": 1, "min_strength": 25 }, "supertrend": { "weight": 1 } }
     },
     "VolumeCatalystPro": {
       "enabled": true,
@@ -453,7 +453,7 @@
       "min_rr_ratio": 2.0,
       "htf_confirmation_enabled": true,
       "htf_map": { "5m": "15m", "15m": "1h", "1h": "4h", "4h": "1d" },
-      "htf_confirmations": { "min_required_score": 1, "adx": { "weight": 1, "min_strength": 24 }, "supertrend": { "weight": 1 } }
+      "htf_confirmations": { "min_required_score": 1, "adx": { "weight": 1, "min_strength": 25 }, "supertrend": { "weight": 1 } }
     },
     "RangeHunterPro": {
       "enabled": true,
@@ -477,7 +477,7 @@
       "atr_sl_multiplier": 1.5,
       "htf_confirmation_enabled": true,
       "htf_map": { "5m": "15m", "15m": "1h", "1h": "4h", "4h": "1d" },
-      "htf_confirmations": { "min_required_score": 1, "adx": { "weight": 1, "min_strength": 24 } }
+      "htf_confirmations": { "min_required_score": 1, "adx": { "weight": 1, "min_strength": 25 } }
     },
     "VwapMeanReversion": {
       "enabled": true,
@@ -496,7 +496,7 @@
       "min_rr_ratio": 2.0,
       "htf_confirmation_enabled": true,
       "htf_map": { "5m": "15m", "15m": "1h", "1h": "4h", "4h": "1d" },
-      "htf_confirmations": { "min_required_score": 1, "adx": { "weight": 1, "min_strength": 24 } }
+      "htf_confirmations": { "min_required_score": 1, "adx": { "weight": 1, "min_strength": 25 } }
     }
   }
 }
