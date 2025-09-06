@@ -19,7 +19,7 @@ class ConfluenceSniper(BaseStrategy):
     strategy_name: str = "ConfluenceSniper"
     
     default_config: ClassVar[Dict[str, Any]] = {
-        "fib_levels_to_watch": ["61.8%", "50.0%", "61.8%", "78.6%"],
+        "fib_levels_to_watch": ["38.2%", "50.0%", "61.8%", "78.6%"],
         "confluence_proximity_percent": 0.5,
         "min_confluence_score": 5,
         "weights": { "dual_oscillator": 2, "single_oscillator": 1, "candlestick_strong": 3, "candlestick_medium": 2, "climactic_volume": 3 },
