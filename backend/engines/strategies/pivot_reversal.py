@@ -21,14 +21,14 @@ class PivotConfluenceSniper(BaseStrategy):
 
     default_config = {
         "default_params": {
-            "pivot_levels_to_check": ["R2", "R1", "S1", "S2"],
-            "confluence_proximity_percent": 0.3,
+            "pivot_levels_to_check": ["R2", "R1", "P", "S1", "S2"],
+            "confluence_proximity_percent": 0.4,
             "stoch_oversold": 25.0, "stoch_overbought": 75.0,
             "cci_oversold": -100.0, "cci_overbought": 100.0,
-            "atr_sl_multiplier": 1.5,
-            "min_rr_ratio": 2.0,
+            "atr_sl_multiplier": 1.3,
+            "min_rr_ratio": 1.5,
             # ✅ UPGRADE (v4.2): Added new configurable parameter.
-            "oscillator_logic": "AND" 
+            "oscillator_logic": "OR" 
         },
         "timeframe_overrides": {
             "5m": { "confluence_proximity_percent": 0.2, "atr_sl_multiplier": 1.2 },
