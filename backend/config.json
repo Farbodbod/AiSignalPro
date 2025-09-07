@@ -453,7 +453,7 @@
       "enabled": true,
       "direction": 0,
       "max_adx_for_ranging": 20.0,
-      "min_adx_for_trending": 21.0,
+      "min_adx_for_trending": 22.0,
       "sl_atr_buffer_multipliers": { "squeeze": 0.8, "ranging": 1.0, "trending": 9.0 },
       "max_sl_multiplier_cap": 2.5,
       "vol_ratio_cap": 0.1,
