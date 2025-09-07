@@ -237,11 +237,11 @@
         },
         "min_score_levels": {
           "weak": 30.0,
-          "normal": 50.0,
+          "normal": 56.0,
           "strong": 70.0
         },
         "strict_mode_requires_quality": "normal",
-        "adx_min_strength_for_htf": 25.0
+        "adx_min_strength_for_htf": 23.0
       },
       "timing_and_exhaustion_engine": {
         "enabled": true,
@@ -266,8 +266,8 @@
         "enabled": true,
         "atr_multiples": [
           1.5,
-          3.0,
-          5.0
+          2.5,
+          4.0
         ]
       },
       "signal_grading_thresholds": {
