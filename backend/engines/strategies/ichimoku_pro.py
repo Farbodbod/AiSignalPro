@@ -1,5 +1,3 @@
-#backend/engines/strategies/ichimoku_pro.py - (v22.0 - The Elite Squads Edition)
-
 from __future__ import annotations
 import logging
 import pandas as pd
@@ -224,7 +222,7 @@ class IchimokuHybridPro(BaseStrategy):
         # --- Guard Clauses (Unchanged) ---
         if not self.price_data or not isinstance(self.df, pd.DataFrame) or self.df.empty: return None
         if (len(self.df) - 1 - getattr(self, "last_signal_bar", -10**9)) < cfg.get('cooldown_bars', 3): return None
-        required = ['ichimoku', 'adx', 'atr', 'volume', 'keltner_channel', 'rsi', 'patterns', 'macd']
+        required = ['ichimoku', 'adx', 'atr', 'volume', 'keltner_channel', 'rsi', 'patterns', 'macd', 'supertrend']
         indicators = {name: self.get_indicator(name) for name in required}
         if any(not self._indicator_ok(data) for data in indicators.values()): return None
         if cfg.get('outlier_candle_shield', True) and self._is_outlier_candle(atr_multiplier=cfg.get('outlier_atr_mult', 3.5)): return None
@@ -287,7 +285,7 @@ class IchimokuHybridPro(BaseStrategy):
         is_htf_ok, htf_details, norm_htf_score, htf_penalties, htf_quality_grade = self._evaluate_htf(trigger_type, signal_direction)
         intrinsic_penalties.extend(htf_penalties); adaptive_penalties = []
         if not is_htf_ok:
-            if effective_mode == 'Strict': self._log_final_decision("HOLD", f"Strict Mode blocked by HTF failure."); return None
+            if effective_mode == 'Strict': self._log_final_decision("HOLD", f"Strict Mode blocked by HTF failure ({htf_details})."); return None
             adaptive_penalties.append({'reason': 'HTF Conflict', 'value_pct': cfg.get('penalty_pct_htf_conflict', 35.0)})
         
         final_score = base_score
@@ -317,41 +315,61 @@ class IchimokuHybridPro(BaseStrategy):
         return {"direction": signal_direction, "entry_price": self.price_data.get('close'), **risk_params, "confirmations": confirmations}
         
     def _evaluate_htf(self, trigger_type: str, direction: str) -> Tuple[bool, str, float, List[Dict], str]:
-        # ✅ UPGRADED: Evolved HTF Scoring Engine with more indicators and context-awareness
+        # ✅ REFACTORED: Implemented transparent, single-line logging.
         htf_cfg = self.config.get('htf_quality_scoring', {})
-        if not htf_cfg.get('enabled', True) or not self.htf_analysis: return True, "Disabled", 100.0, [], "N/A"
+        if not htf_cfg.get('enabled', True) or not self.htf_analysis: 
+            return True, "Disabled", 100.0, [], "N/A"
         
-        htf_weights = htf_cfg.get('weights_htf', {})
-        # ✅ NEW: Context-aware logic for reversals
+        htf_weights = htf_cfg.get('weights_htf', {}).copy() # Use a copy to modify
         if trigger_type == 'KUMO_REVERSAL' and 'price_vs_kumo' in htf_weights:
-            htf_weights = htf_weights.copy(); del htf_weights['price_vs_kumo']
+            del htf_weights['price_vs_kumo']
 
         max_score = sum(htf_weights.values())
         current_score = 0
-        
+        confirmations = []
+        component_results = {}
+
+        def check(name: str, weight_key: str, condition: bool):
+            nonlocal current_score
+            component_results[name] = (condition, weight_key)
+            if condition and weight_key in htf_weights:
+                current_score += htf_weights[weight_key]
+                confirmations.append(name)
+                
+        # Fetch all HTF indicators once
         htf_ichi = self.get_indicator('ichimoku', analysis_source=self.htf_analysis)
         htf_adx = self.get_indicator('adx', analysis_source=self.htf_analysis)
         htf_st = self.get_indicator('supertrend', analysis_source=self.htf_analysis)
         htf_macd = self.get_indicator('macd', analysis_source=self.htf_analysis)
         
-        # Perform individual checks
-        ichi_analysis = self._safe_get(htf_ichi, ['analysis'], {}); ichi_dir = "BUY" if ichi_analysis.get('trend_score',0) > 0 else "SELL" if ichi_analysis.get('trend_score',0) < 0 else "NEUTRAL"
-        if self._safe_get(ichi_analysis, ['price_position']) not in ["Inside Kumo"] and ichi_dir == direction: current_score += htf_weights.get('price_vs_kumo', 0)
-        if "Free" in self._safe_get(ichi_analysis, ['chikou_status'], ''): current_score += htf_weights.get('chikou_free', 0)
-        if self._safe_get(ichi_analysis, ['future_kumo_direction'], '').upper() == direction: current_score += htf_weights.get('future_kumo_aligned', 0)
+        # Perform individual checks and record their status
+        ichi_analysis = self._safe_get(htf_ichi, ['analysis'], {})
+        ichi_dir_is_aligned = (self._safe_get(ichi_analysis, ['trend_score'], 0) > 0 and direction == "BUY") or \
+                              (self._safe_get(ichi_analysis, ['trend_score'], 0) < 0 and direction == "SELL")
+        price_pos_ok = self._safe_get(ichi_analysis, ['price_position']) not in ["Inside Kumo"] and ichi_dir_is_aligned
+        check("HTF Price vs Kumo", 'price_vs_kumo', price_pos_ok)
+
+        chikou_ok = "Free" in self._safe_get(ichi_analysis, ['chikou_status'], '')
+        check("HTF Chikou Free", 'chikou_free', chikou_ok)
+        
+        future_kumo_ok = self._safe_get(ichi_analysis, ['future_kumo_direction'], '').upper() == direction
+        check("HTF Future Kumo", 'future_kumo_aligned', future_kumo_ok)
         
         adx_strength = self._safe_get(htf_adx, ['values', 'adx'], 0)
-        if adx_strength >= htf_cfg.get('adx_min_strength_for_htf', 25.0): current_score += htf_weights.get('adx_strong', 0)
+        adx_ok = adx_strength >= htf_cfg.get('adx_min_strength_for_htf', 25.0)
+        check("HTF ADX Strong", 'adx_strong', adx_ok)
         
         st_trend = self._safe_get(htf_st, ['analysis', 'trend'], '').upper()
-        if st_trend == direction: current_score += htf_weights.get('supertrend_aligned', 0)
+        st_ok = st_trend == direction
+        check("HTF SuperTrend Aligned", 'supertrend_aligned', st_ok)
             
         macd_context = self._safe_get(htf_macd, ['analysis', 'context'], {})
-        if macd_context.get('trend', '').upper() == direction and macd_context.get('momentum') == "Increasing": current_score += htf_weights.get('macd_aligned', 0)
+        macd_ok = macd_context.get('trend', '').upper() == direction and macd_context.get('momentum') == "Increasing"
+        check("HTF MACD Aligned", 'macd_aligned', macd_ok)
 
         norm_htf_score = round((current_score / max_score) * 100, 2) if max_score > 0 else 0
         
-        # Grading and final decision logic (unchanged from original)
+        # Grading logic
         levels = htf_cfg.get('min_score_levels', {}); grade = "Fail"
         if norm_htf_score >= levels.get('strong', 70.0): grade = "Strong"
         elif norm_htf_score >= levels.get('normal', 50.0): grade = "Normal"
@@ -361,8 +379,20 @@ class IchimokuHybridPro(BaseStrategy):
         quality_map = {"Fail": 0, "Weak": 1, "Normal": 2, "Strong": 3}
         is_quality_ok = quality_map.get(grade, 0) >= quality_map.get(required_quality, 2)
         
-        details = f"Score: {norm_htf_score:.2f}, Grade: {grade}"
-        return is_quality_ok, details, norm_htf_score, [], grade
+        # Generate log message and details for return
+        passed_confirmations = confirmations
+        failed_confirmations = [name for name, (status, w_key) in component_results.items() if not status and w_key in htf_weights]
+        
+        log_msg = (
+            f"Score: {norm_htf_score:.2f}, Grade: {grade}. "
+            f"Confirms: {passed_confirmations}. "
+            f"Fails: {failed_confirmations}."
+        )
+        self._log_criteria("HTF Evaluation Result", is_quality_ok, log_msg)
+        
+        # Return concise details for the narrative, but log the full details.
+        details_for_narrative = f"Score: {norm_htf_score:.2f}, Grade: {grade}"
+        return is_quality_ok, details_for_narrative, norm_htf_score, [], grade
 
     def _calculate_stop_loss(self, direction: str, ichi_vals: Dict, price: float, atr: float, cfg: Dict) -> Optional[float]:
         # Unchanged
