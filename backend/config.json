@@ -170,7 +170,7 @@
       "enabled": true,
       "operation_mode": "Regime-Aware",
       "market_regime_adx": 24,
-      "penalty_pct_htf_conflict": 35.0,
+      "penalty_pct_htf_conflict": 20.0,
       "min_total_score_base": 60.0,
       "min_total_score_breakout_base": 66.0,
       "min_score_pullback_base": 61.0,
