@@ -19,7 +19,7 @@ uvicorn
 djangorestframework
 numpy
 pandas
-git+https://github.com/twopirllc/pandas-ta.git@0.3.14b
-git+https://github.com/cgohlke/talib-builds@main#subdirectory=talib_precompiled/0.4.25
+https://github.com/twopirllc/pandas-ta/archive/refs/tags/0.3.14b.zip
+https://github.com/cgohlke/talib-builds/releases/download/v0.4.25/TA_Lib-0.4.25-cp310-cp310-manylinux_2_17_x86_64.whl
 httpx
 #final deploy trigger v33.0
