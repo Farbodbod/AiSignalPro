@@ -21,7 +21,7 @@ from .trend_rider import TrendRiderPro
 from .volume_catalyst import VolumeCatalystPro
 from .volume_reversal import WhaleReversal
 from .vwap_reversion import VwapMeanReversion
-
+from .oracle_x_pro import OracleXPro
 # This is the definitive list of our world-class strategies.
 __all__ = [
     'BaseStrategy',
@@ -40,4 +40,5 @@ __all__ = [
     'VolumeCatalystPro',
     'WhaleReversal',
     'VwapMeanReversion',
+    'OracleXPro',
 ]
