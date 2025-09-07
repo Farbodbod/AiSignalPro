@@ -20,7 +20,7 @@ uvicorn
 djangorestframework
 numpy
 pandas
-pandas-ta==0.3.14b0
+pandas-ta==0.3.14b
 TA-Lib-Precompiled==0.4.25
 httpx
 #final deploy trigger v33.0
