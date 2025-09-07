@@ -18,9 +18,9 @@ jdatetime
 pytz
 uvicorn
 djangorestframework
-numpy==1.26.4
-pandas==2.2.2
-pandas-ta==0.3.14b0
+numpy
+pandas
+pandas-ta
 TA-Lib-Precompiled==0.4.25
 httpx
 #final deploy trigger v33.0
