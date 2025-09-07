@@ -1,4 +1,4 @@
-# backend/engines/strategies/ichimoku_pro.py (v22.0 - The Elite Squads Edition)
+#backend/engines/strategies/ichimoku_pro.py - (v22.0 - The Elite Squads Edition)
 
 from __future__ import annotations
 import logging
@@ -124,38 +124,57 @@ class IchimokuHybridPro(BaseStrategy):
         return context_ok
         
     def _score_and_normalize(self, direction: str, analysis_data: Dict, weights: Dict, trigger_type: str) -> Tuple[float, List[str], List[Dict]]:
-        # ✅ UPGRADED: Now includes MACD check
+        # ✅ REFACTORED: Consolidated single-line logging for clarity.
         self._log_criteria(f"Path Check: Scoring Engine", True, f"Calculating base score for trigger '{trigger_type}'.")
         positive_score, confirmations, penalties = 0, [], []
-        positive_weights = {k: v for k, v in weights.items() if v > 0}; penalty_weights = {k: v for k, v in weights.items() if v < 0}
+        positive_weights = {k: v for k, v in weights.items() if v > 0}
+        penalty_weights = {k: v for k, v in weights.items() if v < 0}
         max_positive_score = sum(positive_weights.values())
+        
+        # --- Data Aggregation for Logging ---
+        component_results = {}
+
+        def check(name: str, weight_key: str, condition: bool):
+            """Helper to check conditions, update score, and record results for logging."""
+            nonlocal positive_score, confirmations
+            component_results[name] = (condition, weight_key) # Record result and key for final log line
+            if condition and weight_key in positive_weights:
+                positive_score += positive_weights[weight_key]
+                confirmations.append(name)
+        
+        # --- Indicator Data Fetching ---
         ichi_data = self.get_indicator('ichimoku', analysis_source=analysis_data)
         if not self._indicator_ok(ichi_data): return 0.0, [], []
         analysis = ichi_data.get('analysis', {})
         
-        def check(name: str, weight_key: str, condition: bool, reason: str = ""):
-            nonlocal positive_score, confirmations
-            self._log_criteria(f"ScoreComponent: {name}", condition, reason)
-            if condition and weight_key in positive_weights: positive_score += positive_weights[weight_key]; confirmations.append(name)
-        
         # --- Standard Ichimoku Checks ---
-        is_above_kumo = analysis.get('price_position') == "Above Kumo"; is_below_kumo = analysis.get('price_position') == "Below Kumo"
-        if direction == "BUY": check("Price>Kumo", 'price_vs_kumo', is_above_kumo)
-        else: check("Price<Kumo", 'price_vs_kumo', is_below_kumo)
-        tk_cross = str(analysis.get('tk_cross', "")).lower(); is_strong = "strong" in tk_cross
-        is_aligned = ("bullish" in tk_cross and direction == "BUY") or ("bearish" in tk_cross and direction == "SELL")
-        if is_aligned: check("Strong TK Cross", 'tk_cross_strong', is_strong); check("Medium TK Cross", 'tk_cross_medium', not is_strong)
-        future_kumo = analysis.get('future_kumo_direction', ""); check("Future Kumo Aligned", 'future_kumo', (future_kumo == "Bullish" and direction == "BUY") or (future_kumo == "Bearish" and direction == "SELL"))
-        chikou_status = analysis.get('chikou_status', ""); check("Chikou Free", 'chikou_free', ("Free" in chikou_status and (("Bullish" in chikou_status and direction == "BUY") or ("Bearish" in chikou_status and direction == "SELL"))))
-        kumo_twist = analysis.get('kumo_twist', ""); check("Kumo Twist Aligned", 'kumo_twist', (kumo_twist == "Bullish Twist" and direction == "BUY") or (kumo_twist == "Bearish Twist" and direction == "SELL"))
+        is_above_kumo = analysis.get('price_position') == "Above Kumo"
+        is_below_kumo = analysis.get('price_position') == "Below Kumo"
+        check("Price>Kumo", 'price_vs_kumo', (direction == "BUY" and is_above_kumo) or (direction == "SELL" and is_below_kumo))
+        
+        tk_cross = str(analysis.get('tk_cross', "")).lower()
+        is_strong_cross = "strong" in tk_cross
+        is_tk_aligned = ("bullish" in tk_cross and direction == "BUY") or ("bearish" in tk_cross and direction == "SELL")
+        if is_tk_aligned:
+            check("Strong TK Cross", 'tk_cross_strong', is_strong_cross)
+            check("Medium TK Cross", 'tk_cross_medium', not is_strong_cross)
+
+        future_kumo = analysis.get('future_kumo_direction', "")
+        check("Future Kumo Aligned", 'future_kumo', (future_kumo == "Bullish" and direction == "BUY") or (future_kumo == "Bearish" and direction == "SELL"))
+        
+        chikou_status = analysis.get('chikou_status', "")
+        check("Chikou Free", 'chikou_free', "Free" in chikou_status and (("Bullish" in chikou_status and direction == "BUY") or ("Bearish" in chikou_status and direction == "SELL")))
+
+        kumo_twist = analysis.get('kumo_twist', "")
+        check("Kumo Twist Aligned", 'kumo_twist', (kumo_twist == "Bullish Twist" and direction == "BUY") or (kumo_twist == "Bearish Twist" and direction == "SELL"))
         
         # --- Specialist Squad Checks ---
         volume_data = self.get_indicator('volume', analysis_source=analysis_data)
-        is_climactic = self._safe_get(volume_data, ['analysis', 'is_climactic_volume'], False); zscore = self._safe_get(volume_data, ['values', 'z_score'])
+        is_climactic = self._safe_get(volume_data, ['analysis', 'is_climactic_volume'], False)
+        zscore = self._safe_get(volume_data, ['values', 'z_score'])
         is_z_spike = self._is_valid_number(zscore) and zscore >= self.config.get('volume_z_relax_threshold', 1.5)
         check("Volume Spike", 'volume_spike', is_climactic or is_z_spike)
         
-        # ✅ NEW: MACD Specialist Confirmation
         macd_data = self.get_indicator('macd', analysis_source=analysis_data)
         macd_context = self._safe_get(macd_data, ['analysis', 'context'], {})
         macd_ok = (direction == "BUY" and macd_context.get('momentum') == "Increasing" and macd_context.get('trend') == "Uptrend") or \
@@ -166,19 +185,37 @@ class IchimokuHybridPro(BaseStrategy):
         if trigger_type == 'KUMO_REVERSAL': check("Kumo Rejection Candle", 'kumo_rejection_candle', True)
         if trigger_type == 'PULLBACK': check("Pullback to Key Level", 'pullback_to_key_level', True)
 
-        # --- Timing Confirmation (Unchanged) ---
-        engine_cfg = self.config.get('timing_and_exhaustion_engine', {}); apply_timing = 'timing_apply_to_tk_cross' if trigger_type in ['TK_CROSS', 'PULLBACK'] else 'timing_apply_to_breakout'
+        # --- Timing Confirmation ---
+        engine_cfg = self.config.get('timing_and_exhaustion_engine', {})
+        apply_timing = 'timing_apply_to_tk_cross' if trigger_type in ['TK_CROSS', 'PULLBACK'] else 'timing_apply_to_breakout'
         if engine_cfg.get('enabled', True) and engine_cfg.get('timing_confirm_enabled', True) and engine_cfg.get(apply_timing, False):
-            is_timing_ok = not self._is_trend_exhausted_dynamic(direction=direction, rsi_lookback=engine_cfg.get('timing_dynamic_rsi_lookback', 100), rsi_buy_percentile=engine_cfg.get('timing_dynamic_rsi_sell_percentile', 70), rsi_sell_percentile=engine_cfg.get('timing_dynamic_rsi_buy_percentile', 30))
+            is_timing_ok = not self._is_trend_exhausted_dynamic(
+                direction=direction, 
+                rsi_lookback=engine_cfg.get('timing_dynamic_rsi_lookback', 100), 
+                rsi_buy_percentile=engine_cfg.get('timing_dynamic_rsi_sell_percentile', 70), 
+                rsi_sell_percentile=engine_cfg.get('timing_dynamic_rsi_buy_percentile', 30)
+            )
             check("Timing Confirmed (Dynamic)", "leading_timing_confirm", is_timing_ok)
 
-        # --- Penalty Calculation (Unchanged) ---
+        # --- Penalty Calculation ---
         for key, raw_points in penalty_weights.items():
-            condition = False; vol_state = str(self._safe_get(self.get_indicator('keltner_channel', analysis_source=analysis_data), ['analysis', 'volatility_state'], '')).lower()
+            vol_state = str(self._safe_get(self.get_indicator('keltner_channel', analysis_source=analysis_data), ['analysis', 'volatility_state'], '')).lower()
             if key == 'volatility_filter' and vol_state in ('squeeze', 'compression', 'low'):
                 penalties.append({'reason': f"Volatility Filter ({vol_state})", 'value_pct': abs(raw_points)})
         
         normalized_score = round((positive_score / max_positive_score) * 100, 2) if max_positive_score > 0 else 0.0
+
+        # --- ✅ NEW: Single Consolidated Log Line ---
+        passed_confirmations = confirmations
+        failed_confirmations = [name for name, (status, w_key) in component_results.items() if not status and w_key in positive_weights]
+        
+        log_msg = (
+            f"Trigger: '{trigger_type}', Score: {normalized_score:.2f}. "
+            f"Confirms: {passed_confirmations}. "
+            f"Fails: {failed_confirmations}."
+        )
+        self._log_criteria("Scoring Result", normalized_score > 0, log_msg)
+
         return normalized_score, confirmations, penalties
 
     def check_signal(self) -> Optional[Dict[str, Any]]:
