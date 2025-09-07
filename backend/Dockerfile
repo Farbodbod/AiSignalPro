@@ -1,5 +1,5 @@
 # ۱. انتخاب سیستم‌عامل پایه
-FROM python:3.10-slim
+FROM python:3.12-slim
 
 # تنظیم متغیرهای محیطی
 ENV DEBIAN_FRONTEND=noninteractive
