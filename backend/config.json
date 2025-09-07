@@ -87,7 +87,7 @@
     "enabled": true,
     "htf_context_config": {
         "enabled": true,
-        "min_adx_strength": 25.0
+        "min_adx_strength": 24.0
     },
     "prz_config": {
         "use_fibonacci": true,
@@ -96,10 +96,10 @@
         "pivot_levels": ["R2", "R1", "P", "S1", "S2"],
         "use_structure": true,
         "min_structure_strength": 2,
-        "proximity_percent": 0.7
+        "proximity_percent": 0.8
     },
     "confirmation_scoring": {
-        "min_score": 10,
+        "min_score": 6,
         "weights": {
             "climactic_volume": 4,
             "candlestick_strong": 4,
@@ -133,7 +133,7 @@
       "risk_per_trade_percent": 0.01,
       "htf_confirmation_enabled": true,
       "htf_map": { "5m": "15m", "15m": "1h", "1h": "4h", "4h": "1d" },
-      "htf_confirmations": { "min_required_score": 1, "adx": { "weight": 1, "min_strength": 25 }, "supertrend": { "weight": 1 } }
+      "htf_confirmations": { "min_required_score": 2, "adx": { "weight": 1, "min_strength": 25 }, "supertrend": { "weight": 1 } }
     },
     "DivergenceSniperPro": {
       "enabled": true,
@@ -266,13 +266,13 @@
         "enabled": true,
         "atr_multiples": [
           1.5,
-          2.5,
-          4.0
+          2.0,
+          3.0
         ]
       },
       "signal_grading_thresholds": {
-        "strong": 80.0,
-        "normal": 60.0
+        "strong": 70.0,
+        "normal": 56.0
       },
       "high_quality_score_threshold": 74.0,
       "min_rr_ratio": 1.5,
@@ -453,21 +453,21 @@
       "enabled": true,
       "direction": 0,
       "max_adx_for_ranging": 20.0,
-      "min_adx_for_trending": 25.0,
-      "sl_atr_buffer_multipliers": { "squeeze": 0.8, "ranging": 1.1, "trending": 1.0 },
+      "min_adx_for_trending": 21.0,
+      "sl_atr_buffer_multipliers": { "squeeze": 0.8, "ranging": 1.0, "trending": 9.0 },
       "max_sl_multiplier_cap": 2.5,
       "vol_ratio_cap": 0.1,
       "allow_mixed_mode": false,
-      "min_squeeze_score": 5,
+      "min_squeeze_score": 4,
       "weights_squeeze": { "bollinger_breakout": { "strong": 3, "medium": 2 }, "momentum_confirmation": 3, "momentum_rsi_thresholds": { "buy": 55, "sell": 45 }, "volume_spike_confirmation": 2, "htf_alignment": 2 },
-      "min_ranging_score": 8,
+      "min_ranging_score": 7,
       "ranging_proximity_atr_mult": 0.25,
       "weights_ranging": { "rsi_reversal": 3, "divergence_confirmation": 3, "volume_fade": 2, "candlestick": { "weak": 1, "medium": 2, "strong": 4 } },
       "ranging_rsi_dynamic_enabled": true,
       "ranging_rsi_lookback": 100,
       "ranging_rsi_buy_percentile": 10,
       "ranging_rsi_sell_percentile": 90,
-      "min_trending_score": 8,
+      "min_trending_score": 7,
       "weights_trending": { "htf_alignment": 4, "rsi_cooldown": 3, "adx_acceleration_confirmation": 2, "adx_strength": 1 },
       "trending_tp_logic": { "type": "atr_multiple_by_trend_strength", "adx_thresholds": { "strong": 40, "normal": 25 }, "multiples_map": { "strong": [3.0, 5.0, 7.0], "normal": [2.5, 3.0, 4.0], "weak": [1.5, 2.5, 3.0] } },
       "htf_confirmation_enabled": true,
