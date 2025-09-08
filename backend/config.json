@@ -137,7 +137,7 @@
     },
     "DivergenceSniperPro": {
       "enabled": true,
-      "min_score": 7,
+      "min_score": 5,
       "weights": { "fortress_sr": 3, "climactic_volume": 3, "candlestick": 2, "williams_r_trigger": 2, "htf_filter": 1 },
       "min_structure_strength": 3,
       "volatility_regimes": { "low_atr_pct_threshold": 1.5, "low_vol_sl_multiplier": 1.0, "high_vol_sl_multiplier": 1.5 },
@@ -147,7 +147,7 @@
     },
     "BreakoutHunter": {
       "enabled": true,
-      "min_breakout_score": 7,
+      "min_breakout_score": 6,
       "rr_requirements": { "low_score_threshold": 8, "high_rr": 2.5, "default_rr": 1.5 },
       "weights": { "squeeze_release": 3, "volume_catalyst": 3, "momentum_thrust": 3, "htf_alignment": 1 },
       "htf_confirmation_enabled": true,
@@ -496,7 +496,7 @@
     },
     "VolumeCatalystPro": {
       "enabled": true,
-      "min_quality_score": 60.0,
+      "min_quality_score": 40.0,
       "weights": { "volume_catalyst_strength": 4, "momentum_thrust": 3, "volatility_release": 3 },
       "cci_threshold": 100.0,
       "atr_sl_multiplier": 1.0,
@@ -520,7 +520,7 @@
     },
     "WhaleReversal": {
       "enabled": true,
-      "min_reversal_score": 7,
+      "min_reversal_score": 5,
       "weights": { "whale_intensity": 4, "rejection_wick": 3, "volatility_context": 3, "candlestick_pattern": 2 },
       "adaptive_proximity_multiplier": 0.5,
       "min_rr_ratio": 1.5,
