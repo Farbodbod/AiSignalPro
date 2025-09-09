@@ -241,7 +241,7 @@
           "strong": 68.0
         },
         "strict_mode_requires_quality": "normal",
-        "adx_min_percentile_for_htf": 75.0,
+        "adx_min_percentile_for_htf": 75.0
       },
       "timing_and_exhaustion_engine": {
         "enabled": true,
