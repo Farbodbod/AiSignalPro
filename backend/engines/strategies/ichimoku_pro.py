@@ -1,4 +1,4 @@
-#backend/engines/strategies/ichimoku_pro.py(v22.1)
+#backend/engines/strategies/ichimoku_pro.py(v23.0)
 
 from __future__ import annotations
 import logging
@@ -11,44 +11,39 @@ logger = logging.getLogger(__name__)
 
 class IchimokuHybridPro(BaseStrategy):
     """
-    IchimokuHybridPro - (v22.1 - The Definitive Edition)
+    IchimokuHybridPro - (v23.0 - Adaptive Regime Engine Integration)
     -------------------------------------------------------------------------
-    Engineered by Grandmaster Oracle-X, this definitive version merges the robust
-    bug fixes of the "Final Flawless Patch" with the superior, transparent
-    logging of the original "Elite Squads Edition."
+    This major upgrade integrates the world-class Adaptive Regime Engine (ADX v6.0)
+    into the core decision-making and scoring frameworks of the strategy.
 
-    🚀 KEY UPGRADES in v22.1 (The Definitive Edition):
-    1.  **Flawless Future Kumo Logic:** The logic for future kumo alignment in both
-        the primary and HTF scoring engines is now 100% correct, mapping the
-        raw indicator output to signal direction accurately.
-    2.  **Robust Stop-Loss Calculation:** The stop-loss logic is now immune to
-        Kumo twists, always selecting the correct protective cloud boundary
-        (min for BUY, max for SELL).
-    3.  **Transparent Consolidated Logging:** Retains the clear, single-line
-        logging from the original v22.0, detailing all passed and failed
-        confirmations for both primary and HTF scoring for maximum clarity.
+    🚀 KEY EVOLUTIONS in v23.0:
+    1.  **Adaptive Market Regime Detection:** The logic for determining TRENDING vs.
+        RANGING regimes no longer uses a fixed ADX threshold. It now uses the
+        ADX percentile rank, making it dynamically adapt to each asset's unique
+        volatility profile.
+    2.  **Adaptive HTF Scoring:** The HTF quality scoring engine has been upgraded
+        to use the ADX percentile rank for confirming trend strength, replacing
+        the previous static threshold for a much smarter, context-aware validation.
     
-    This version represents the ultimate synthesis of stability and insight,
-    preserving the full strategic power of the Elite Squads architecture.
+    (All bug fixes and features from v22.1 are 100% preserved).
     """
     strategy_name: str = "IchimokuHybridPro"
     
     default_config: ClassVar[Dict[str, Any]] = {
       "operation_mode": "Regime-Aware",
-      "market_regime_adx": 24,
+      # ✅ UPGRADED: From fixed value to adaptive percentile
+      "market_regime_adx_percentile": 70.0,
       "penalty_pct_htf_conflict": 35.0,
       "min_total_score_base": 68.0,
       "min_total_score_breakout_base": 70.0,
       "min_score_pullback_base": 75.0,
       "min_score_reversal_base": 72.0,
 
-      # --- All weights now include macd_aligned ---
       "weights_trending": { "price_vs_kumo": 2, "tk_cross_strong": 3, "tk_cross_medium": 2, "future_kumo": 1, "chikou_free": 2, "kumo_twist": 1, "volume_spike": 2, "volatility_filter": -5, "leading_timing_confirm": 2, "macd_aligned": 2 },
       "weights_ranging": { "price_vs_kumo": 1, "tk_cross_strong": 3, "tk_cross_medium": 2, "future_kumo": 1, "chikou_free": 2, "kumo_twist": 4, "volume_spike": 2, "volatility_filter": -5, "leading_timing_confirm": 2, "macd_aligned": 2 },
       "weights_breakout": { "price_vs_kumo": 4, "chikou_free": 3, "future_kumo": 1, "volume_spike": 3, "kumo_twist": 1, "macd_aligned": 3 },
       "weights_reversal": { "kumo_rejection_candle": 5, "volume_spike": 3, "future_kumo_aligned": 2, "macd_aligned": 3 },
       
-      # --- Weights for the Pullback Hunter Squad ---
       "weights_pullback": {
           "pullback_to_key_level": 5,
           "chikou_free": 3,
@@ -62,7 +57,6 @@ class IchimokuHybridPro(BaseStrategy):
           "candle_reliability": "Medium"
       },
 
-      # --- Evolved HTF Scoring Engine ---
       "htf_quality_scoring": {
         "enabled": True,
         "weights_htf": { 
@@ -75,10 +69,11 @@ class IchimokuHybridPro(BaseStrategy):
         },
         "min_score_levels": { "weak": 30.0, "normal": 50.0, "strong": 70.0 },
         "strict_mode_requires_quality": "normal",
-        "adx_min_strength_for_htf": 25.0
+        # ✅ UPGRADED: From fixed value to adaptive percentile
+        "adx_min_percentile_for_htf": 75.0
       },
       
-      # --- Other parameters from original v22.0 ---
+      # --- Other parameters (Unchanged) ---
       "timing_and_exhaustion_engine": { "enabled": True, "timing_confirm_enabled": True, "timing_mode": "dynamic", "timing_apply_to_tk_cross": True, "timing_apply_to_breakout": False, "timing_dynamic_rsi_lookback": 100, "timing_dynamic_rsi_buy_percentile": 30, "timing_dynamic_rsi_sell_percentile": 70, "exhaustion_shield_enabled": True, "exhaustion_mode": "dynamic", "exhaustion_dynamic_rsi_lookback": 100, "exhaustion_dynamic_overbought_percentile": 90, "exhaustion_dynamic_oversold_percentile": 10 },
       "kumo_reversal_engine": { "enabled": True, "min_reliability": "Medium" },
       "adaptive_targeting": { "enabled": True, "atr_multiples": [1.5, 3.0, 5.0] },
@@ -126,17 +121,14 @@ class IchimokuHybridPro(BaseStrategy):
         return context_ok
         
     def _score_and_normalize(self, direction: str, analysis_data: Dict, weights: Dict, trigger_type: str) -> Tuple[float, List[str], List[Dict]]:
-        # ✅ MERGED: Bug fixes from v22.1 + Consolidated logging from v22.0
         self._log_criteria(f"Path Check: Scoring Engine", True, f"Calculating base score for trigger '{trigger_type}'.")
         positive_score, confirmations, penalties = 0, [], []
         positive_weights = {k: v for k, v in weights.items() if v > 0}
         penalty_weights = {k: v for k, v in weights.items() if v < 0}
         max_positive_score = sum(positive_weights.values())
-        
         component_results = {}
 
         def check(name: str, weight_key: str, condition: bool):
-            """Helper to check conditions, update score, and record results for logging."""
             nonlocal positive_score, confirmations
             component_results[name] = (condition, weight_key)
             if condition and weight_key in positive_weights:
@@ -158,7 +150,6 @@ class IchimokuHybridPro(BaseStrategy):
             check("Strong TK Cross", 'tk_cross_strong', is_strong_cross)
             check("Medium TK Cross", 'tk_cross_medium', not is_strong_cross)
 
-        # ✅ BUG FIX: Correct Future Kumo logic
         future_kumo_raw = str(analysis.get('future_kumo_direction', '')).strip().lower()
         future_kumo_mapped = "BUY" if future_kumo_raw == 'bullish' else "SELL" if future_kumo_raw == 'bearish' else None
         check("Future Kumo Aligned", 'future_kumo', future_kumo_mapped is not None and future_kumo_mapped == direction)
@@ -201,22 +192,13 @@ class IchimokuHybridPro(BaseStrategy):
                 penalties.append({'reason': f"Volatility Filter ({vol_state})", 'value_pct': abs(raw_points)})
         
         normalized_score = round((positive_score / max_positive_score) * 100, 2) if max_positive_score > 0 else 0.0
-
-        # ✅ LOGGING: Retained from v22.0 for clarity
         passed_confirmations = confirmations
         failed_confirmations = [name for name, (status, w_key) in component_results.items() if not status and w_key in positive_weights]
-        
-        log_msg = (
-            f"Trigger: '{trigger_type}', Score: {normalized_score:.2f}. "
-            f"Confirms: {passed_confirmations}. "
-            f"Fails: {failed_confirmations}."
-        )
+        log_msg = (f"Trigger: '{trigger_type}', Score: {normalized_score:.2f}. Confirms: {passed_confirmations}. Fails: {failed_confirmations}.")
         self._log_criteria("Scoring Result", normalized_score > 0, log_msg)
-
         return normalized_score, confirmations, penalties
 
     def check_signal(self) -> Optional[Dict[str, Any]]:
-        # This method's high-level logic is unchanged from v22.0
         cfg = self.config
         
         if not self.price_data or not isinstance(self.df, pd.DataFrame) or self.df.empty: return None
@@ -244,7 +226,11 @@ class IchimokuHybridPro(BaseStrategy):
         tk_cross = str(ichi_analysis.get('tk_cross', "")).lower()
         tk_cross_direction = "BUY" if "bullish" in tk_cross else "SELL" if "bearish" in tk_cross else None
         if tk_cross_direction:
-            adx_val = self._safe_get(indicators, ['adx', 'values', 'adx'], 0.0); regime = "TRENDING" if adx_val > cfg.get('market_regime_adx', 24) else "RANGING"
+            # ✅ UPGRADED: Use adaptive ADX percentile for regime detection
+            adx_data = indicators.get('adx')
+            adx_percentile = self._safe_get(adx_data, ['analysis', 'adx_percentile'], 0.0)
+            regime = "TRENDING" if adx_percentile >= cfg.get('market_regime_adx_percentile', 70.0) else "RANGING"
+            
             if price_pos == "Inside Kumo": regime = "RANGING"
             weights = cfg.get('weights_trending' if regime == "TRENDING" else 'weights_ranging', {})
             score, confirms, penalties = self._score_and_normalize(tk_cross_direction, self.analysis, weights, "TK_CROSS")
@@ -307,7 +293,6 @@ class IchimokuHybridPro(BaseStrategy):
         return {"direction": signal_direction, "entry_price": self.price_data.get('close'), **risk_params, "confirmations": confirmations}
         
     def _evaluate_htf(self, trigger_type: str, direction: str) -> Tuple[bool, str, float, List[Dict], str]:
-        # ✅ MERGED: Bug fixes from v22.1 + Consolidated logging from v22.0
         htf_cfg = self.config.get('htf_quality_scoring', {})
         if not htf_cfg.get('enabled', True) or not self.htf_analysis: 
             return True, "Disabled", 100.0, [], "N/A"
@@ -342,15 +327,16 @@ class IchimokuHybridPro(BaseStrategy):
         chikou_ok = "Free" in self._safe_get(ichi_analysis, ['chikou_status'], '')
         check("HTF Chikou Free", 'chikou_free', chikou_ok)
         
-        # ✅ BUG FIX: Correct Future Kumo logic
         future_kumo_raw = str(self._safe_get(ichi_analysis, ['future_kumo_direction'], '')).strip().lower()
         future_kumo_mapped = "BUY" if future_kumo_raw == 'bullish' else "SELL" if future_kumo_raw == 'bearish' else None
         future_kumo_ok = future_kumo_mapped is not None and future_kumo_mapped == direction
         check("HTF Future Kumo", 'future_kumo_aligned', future_kumo_ok)
         
-        adx_strength = self._safe_get(htf_adx, ['values', 'adx'], 0)
-        adx_ok = adx_strength >= htf_cfg.get('adx_min_strength_for_htf', 25.0)
-        check("HTF ADX Strong", 'adx_strong', adx_ok)
+        # ✅ UPGRADED: Use adaptive ADX percentile for HTF confirmation
+        adx_percentile_htf = self._safe_get(htf_adx, ['analysis', 'adx_percentile'])
+        min_percentile_htf = htf_cfg.get('adx_min_percentile_for_htf', 75.0)
+        adx_ok = self._is_valid_number(adx_percentile_htf) and adx_percentile_htf >= min_percentile_htf
+        check("HTF ADX Strong (Adaptive)", 'adx_strong', adx_ok)
         
         st_trend = self._safe_get(htf_st, ['analysis', 'trend'], '').upper()
         st_ok = st_trend == direction
@@ -371,56 +357,38 @@ class IchimokuHybridPro(BaseStrategy):
         quality_map = {"Fail": 0, "Weak": 1, "Normal": 2, "Strong": 3}
         is_quality_ok = quality_map.get(grade, 0) >= quality_map.get(required_quality, 2)
         
-        # ✅ LOGGING: Retained from v22.0 for clarity
         passed_confirmations = confirmations
         failed_confirmations = [name for name, (status, w_key) in component_results.items() if not status and w_key in htf_weights]
-        
-        log_msg = (
-            f"Score: {norm_htf_score:.2f}, Grade: {grade}. "
-            f"Confirms: {passed_confirmations}. "
-            f"Fails: {failed_confirmations}."
-        )
+        log_msg = (f"Score: {norm_htf_score:.2f}, Grade: {grade}. Confirms: {passed_confirmations}. Fails: {failed_confirmations}.")
         self._log_criteria("HTF Evaluation Result", is_quality_ok, log_msg)
         
         details_for_narrative = f"Score: {norm_htf_score:.2f}, Grade: {grade}"
         return is_quality_ok, details_for_narrative, norm_htf_score, [], grade
 
     def _calculate_stop_loss(self, direction: str, ichi_vals: Dict, price: float, atr: float, cfg: Dict) -> Optional[float]:
-        # ✅ BUG FIX: Robust logic against Kumo twists
         sl_mode = str(cfg.get('sl_mode', 'hybrid')).lower()
         if not self._is_valid_number(price, atr): return None
         calculated_sl = None
-
-        senkou_a = ichi_vals.get('senkou_a')
-        senkou_b = ichi_vals.get('senkou_b')
-        kijun = ichi_vals.get('kijun')
-
+        senkou_a = ichi_vals.get('senkou_a'); senkou_b = ichi_vals.get('senkou_b'); kijun = ichi_vals.get('kijun')
         if sl_mode == 'hybrid':
             structural_sl = None
-            # Always find the protective cloud boundary
             if self._is_valid_number(senkou_a) and self._is_valid_number(senkou_b):
                 structural_sl = min(senkou_a, senkou_b) if direction == 'BUY' else max(senkou_a, senkou_b)
             elif self._is_valid_number(kijun):
                 structural_sl = kijun
-
             if self._is_valid_number(structural_sl):
                 max_dist = cfg.get('sl_hybrid_max_atr_mult', 2.0) * atr
                 if abs(price - structural_sl) > max_dist:
                     calculated_sl = price - max_dist if direction == 'BUY' else price + max_dist
                 else:
                     calculated_sl = structural_sl
-            else: # Fallback to ATR if no structural level is found
+            else: 
                 calculated_sl = (price - (2.0 * atr) if direction == 'BUY' else price + (2.0 * atr))
-
         elif sl_mode == 'kumo':
-            # Always find the protective cloud boundary
             if self._is_valid_number(senkou_a) and self._is_valid_number(senkou_b):
                 calculated_sl = min(senkou_a, senkou_b) if direction == 'BUY' else max(senkou_a, senkou_b)
-
         elif sl_mode == 'kijun':
             calculated_sl = ichi_vals.get('kijun')
-    
         if self._is_valid_number(calculated_sl) and not ((direction == 'BUY' and calculated_sl >= price) or (direction == 'SELL' and calculated_sl <= price)):
             return calculated_sl
         return None
-
