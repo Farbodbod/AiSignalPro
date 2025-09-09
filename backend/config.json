@@ -169,18 +169,18 @@
     "IchimokuHybridPro": {
       "enabled": true,
       "operation_mode": "Regime-Aware",
-      "market_regime_adx": 25,
-      "penalty_pct_htf_conflict": 20.0,
-      "min_total_score_base": 60.0,
-      "min_total_score_breakout_base": 66.0,
-      "min_score_pullback_base": 61.0,
-      "min_score_reversal_base": 61.0,
+      "market_regime_adx": 26,
+      "penalty_pct_htf_conflict": 30.0,
+      "min_total_score_base": 66.0,
+      "min_total_score_breakout_base": 68.0,
+      "min_score_pullback_base": 72.0,
+      "min_score_reversal_base": 70.0,
       "weights_trending": {
-        "price_vs_kumo": 4,
-        "tk_cross_strong": 4,
+        "price_vs_kumo": 3,
+        "tk_cross_strong": 3,
         "tk_cross_medium": 2,
         "future_kumo": 1,
-        "chikou_free": 4,
+        "chikou_free": 2,
         "kumo_twist": 1,
         "volume_spike": 2,
         "volatility_filter": -4,
@@ -189,11 +189,11 @@
       },
       "weights_ranging": {
         "price_vs_kumo": 1,
-        "tk_cross_strong": 4,
+        "tk_cross_strong": 3,
         "tk_cross_medium": 2,
         "future_kumo": 1,
         "chikou_free": 2,
-        "kumo_twist": 6,
+        "kumo_twist": 4,
         "volume_spike": 2,
         "volatility_filter": -4,
         "leading_timing_confirm": 2,
@@ -205,13 +205,13 @@
         "future_kumo": 1,
         "volume_spike": 3,
         "kumo_twist": 1,
-        "macd_aligned": 3
+        "macd_aligned": 4
       },
       "weights_reversal": {
         "kumo_rejection_candle": 5,
         "volume_spike": 3,
         "future_kumo_aligned": 2,
-        "macd_aligned": 3
+        "macd_aligned": 4
       },
       "weights_pullback": {
         "pullback_to_key_level": 5,
@@ -219,7 +219,7 @@
         "future_kumo": 2,
         "volume_spike": 3,
         "leading_timing_confirm": 2,
-        "macd_aligned": 3
+        "macd_aligned": 4
       },
       "pullback_config": {
         "enabled": true,
@@ -236,12 +236,12 @@
           "macd_aligned": 3
         },
         "min_score_levels": {
-          "weak": 30.0,
-          "normal": 40.0,
-          "strong": 70.0
+          "weak": 28.0,
+          "normal": 48.0,
+          "strong": 68.0
         },
         "strict_mode_requires_quality": "normal",
-        "adx_min_strength_for_htf": 25.0
+        "adx_min_strength_for_htf": 28.0
       },
       "timing_and_exhaustion_engine": {
         "enabled": true,
@@ -249,14 +249,14 @@
         "timing_mode": "dynamic",
         "timing_apply_to_tk_cross": true,
         "timing_apply_to_breakout": false,
-        "timing_dynamic_rsi_lookback": 100,
-        "timing_dynamic_rsi_buy_percentile": 30,
-        "timing_dynamic_rsi_sell_percentile": 70,
+        "timing_dynamic_rsi_lookback": 80,
+        "timing_dynamic_rsi_buy_percentile": 28,
+        "timing_dynamic_rsi_sell_percentile": 72,
         "exhaustion_shield_enabled": true,
         "exhaustion_mode": "dynamic",
-        "exhaustion_dynamic_rsi_lookback": 100,
-        "exhaustion_dynamic_overbought_percentile": 90,
-        "exhaustion_dynamic_oversold_percentile": 10
+        "exhaustion_dynamic_rsi_lookback": 80,
+        "exhaustion_dynamic_overbought_percentile": 88,
+        "exhaustion_dynamic_oversold_percentile": 12
       },
       "kumo_reversal_engine": {
         "enabled": true,
@@ -265,23 +265,23 @@
       "adaptive_targeting": {
         "enabled": true,
         "atr_multiples": [
-          1.5,
           2.0,
-          3.0
+          3.5,
+          5.5
         ]
       },
       "signal_grading_thresholds": {
-        "strong": 70.0,
-        "normal": 56.0
+        "strong": 78.0,
+        "normal": 58.0
       },
-      "high_quality_score_threshold": 74.0,
-      "min_rr_ratio": 1.5,
-      "sl_hybrid_max_atr_mult": 2.0,
-      "volume_z_relax_threshold": 1.5,
-      "cooldown_bars": 3,
+      "high_quality_score_threshold": 72.0,
+      "min_rr_ratio": 1.8,
+      "sl_hybrid_max_atr_mult": 2.5,
+      "volume_z_relax_threshold": 1.7,
+      "cooldown_bars": 4,
       "outlier_candle_shield": true,
-      "outlier_atr_mult": 3.5,
-      "late_entry_atr_threshold": 1.2,
+      "outlier_atr_mult": 3.0,
+      "late_entry_atr_threshold": 1.5,
       "sl_mode": "hybrid",
       "htf_confirmation_enabled": true,
       "htf_map": {
@@ -290,9 +290,9 @@
         "1h": "4h",
         "4h": "1d"
       },
-      "score_weight_primary": 0.75,
-      "score_weight_htf": 0.25,
-      "htf_conflict_dampen_weight": 0.15,
+      "score_weight_primary": 0.70,
+      "score_weight_htf": 0.30,
+      "htf_conflict_dampen_weight": 0.1,
       "htf_breakout_context_filter_enabled": true,
       "htf_breakout_context_levels": [
         "kumo",
