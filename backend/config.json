@@ -304,21 +304,24 @@
       "market_regime_filter": {
         "enabled": true,
         "required_regime": "TRENDING",
-        "adx_threshold": 25.0
+        "adx_percentile_threshold": 70.0
       },
-      "divergence_veto_enabled": true,
+      "divergence_veto_enabled": false,
       "exhaustion_shield": {
         "enabled": true,
-        "rsi_overbought": 78.0,
-        "rsi_oversold": 22.0
+        "mode": "dynamic",
+        "dynamic_rsi_lookback": 120,
+        "dynamic_overbought_percentile": 85.0,
+        "dynamic_oversold_percentile": 15.0
       },
       "min_confirmation_score": 9,
       "weights": {
         "master_trend": 4,
-        "macd": 2,
-        "stochastic_cross": 3,
-        "htf_alignment": 3,
-        "adx_strength": 2,
+        "hidden_divergence": 4,
+        "macd": 3,
+        "stochastic_cross": 2,
+        "htf_alignment": 2,
+        "adx_strength": 3,
         "volume": 2,
         "candlestick": 1
       },
@@ -353,7 +356,7 @@
         "min_required_score": 2,
         "adx": {
           "weight": 1,
-          "min_strength": 25
+          "min_percentile": 70
         },
         "supertrend": {
           "weight": 1
