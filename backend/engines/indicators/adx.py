@@ -1,4 +1,4 @@
-# backend/engines/indicators/adx.py (v5.0 - The Trend Quantum Engine)
+# backend/engines/indicators/adx.py (v6.0 - The Adaptive Regime Engine)
 
 import pandas as pd
 import numpy as np
@@ -11,26 +11,27 @@ logger = logging.getLogger(__name__)
 
 class AdxIndicator(BaseIndicator):
     """
-    ADX Indicator - (v5.0 - The Trend Quantum Engine)
+    ADX Indicator - (v6.0 - The Adaptive Regime Engine)
     ---------------------------------------------------------------------------
-    This quantum upgrade transforms the ADX indicator into a true trend analysis
-    engine. Key enhancements include:
+    This quantum leap transforms the ADX into a self-adapting regime detection
+    engine. Instead of relying on fixed thresholds (e.g., 25), it now calculates
+    the percentile rank of the current ADX value against its own historical
+    distribution. This allows strategies to make smarter, context-aware decisions
+    that automatically adapt to each asset's unique volatility profile.
+
+    🚀 KEY EVOLUTIONS in v6.0:
+    1.  **ADX Percentile Rank:** The core innovation. The indicator now calculates
+        and outputs the 'adx_percentile', a value from 0-100 indicating the
+        strength of the current trend relative to its recent history.
+    2.  **Configurable Lookback:** Introduces a 'regime_lookback_period' to
+        control the sample size for statistical analysis.
     
-    1.  **Strategic Feature Addition:** Now provides a `series` output, containing
-        recent ADX values. This is critical for advanced strategies that need to
-        calculate "ADX delta" or trend acceleration.
-        
-    2.  **Full Architectural Alignment:** The architecture has been standardized
-        to use the project's "Gold Standard" `default_config` pattern, and
-        obsolete attributes have been removed, ensuring 100% compliance with
-        the BaseIndicator v4.0+ framework.
-        
-    3.  **Enhanced Robustness:** Minor improvements to calculations and data
-        validation have been implemented for maximum stability.
+    (All features from v5.0, including `series` output, are preserved).
     """
     default_config: Dict[str, Any] = {
         'period': 14,
         'series_lookback': 5,
+        'regime_lookback_period': 200, # Lookback for statistical percentile ranking
         'adx_thresholds': {
             'no_trend_max': 20,
             'weak_trend_max': 25,
@@ -42,6 +43,7 @@ class AdxIndicator(BaseIndicator):
         super().__init__(df, params=params, **kwargs)
         self.period = int(self.params.get('period', self.default_config['period']))
         self.series_lookback = int(self.params.get('series_lookback', self.default_config['series_lookback']))
+        self.regime_lookback_period = int(self.params.get('regime_lookback_period', self.default_config['regime_lookback_period']))
         self.adx_thresholds = self.params.get('adx_thresholds', self.default_config['adx_thresholds'])
         self.timeframe = self.params.get('timeframe')
         
@@ -51,11 +53,13 @@ class AdxIndicator(BaseIndicator):
         self.adx_col = f'adx{suffix}'
         self.plus_di_col = f'plus_di{suffix}'
         self.minus_di_col = f'minus_di{suffix}'
+        self.adx_percentile_col = f'adx_pct{suffix}' # New column for the percentile
 
     def calculate(self) -> 'AdxIndicator':
-        if len(self.df) < self.period * 2:
-            logger.warning(f"Not enough data for ADX on timeframe {self.timeframe or 'base'}.")
-            for col in [self.adx_col, self.plus_di_col, self.minus_di_col]:
+        min_data_needed = max(self.period * 2, self.regime_lookback_period)
+        if len(self.df) < min_data_needed:
+            logger.warning(f"Not enough data for ADX on timeframe {self.timeframe or 'base'}. Need {min_data_needed}, have {len(self.df)}.")
+            for col in [self.adx_col, self.plus_di_col, self.minus_di_col, self.adx_percentile_col]:
                 self.df[col] = np.nan
             return self
 
@@ -84,15 +88,22 @@ class AdxIndicator(BaseIndicator):
         dx = (di_diff / di_sum) * 100
         adx = dx.ewm(alpha=1/self.period, adjust=False).mean()
         
+        # ✅ QUANTUM UPGRADE: Calculate the percentile rank of the current ADX value
+        self.df[self.adx_percentile_col] = adx.rolling(
+            window=self.regime_lookback_period,
+            min_periods=int(self.regime_lookback_period / 2)
+        ).rank(pct=True) * 100
+        
         fill_limit = 3
         self.df[self.adx_col] = adx.ffill(limit=fill_limit)
         self.df[self.plus_di_col] = plus_di.ffill(limit=fill_limit)
         self.df[self.minus_di_col] = minus_di.ffill(limit=fill_limit)
+        self.df[self.adx_percentile_col] = self.df[self.adx_percentile_col].ffill(limit=fill_limit)
             
         return self
 
     def analyze(self) -> Dict[str, Any]:
-        required_cols = [self.adx_col, self.plus_di_col, self.minus_di_col]
+        required_cols = [self.adx_col, self.plus_di_col, self.minus_di_col, self.adx_percentile_col]
         empty_analysis = {"values": {}, "analysis": {}, "series": []}
 
         if any(col not in self.df.columns for col in required_cols):
@@ -105,7 +116,10 @@ class AdxIndicator(BaseIndicator):
         last = valid_df.iloc[-1]
         prev = valid_df.iloc[-2]
 
-        adx_val, plus_di, minus_di = last[self.adx_col], last[self.plus_di_col], last[self.minus_di_col]
+        adx_val = last[self.adx_col]
+        plus_di = last[self.plus_di_col]
+        minus_di = last[self.minus_di_col]
+        adx_percentile = last[self.adx_percentile_col]
         
         t = self.adx_thresholds
         if adx_val <= t['no_trend_max']: strength = "No Trend"
@@ -115,7 +129,8 @@ class AdxIndicator(BaseIndicator):
         
         is_strengthening = adx_val > prev[self.adx_col]
 
-        direction, cross_signal = "Neutral", "None"
+        direction = "Neutral"
+        cross_signal = "None"
         if plus_di > minus_di:
             direction = "Bullish"
             if prev[self.plus_di_col] <= prev[self.minus_di_col]: cross_signal = "Bullish Crossover"
@@ -134,10 +149,10 @@ class AdxIndicator(BaseIndicator):
             "direction": direction,
             "is_strengthening": is_strengthening,
             "cross_signal": cross_signal,
-            "summary": f"{strength} ({direction}) - {'Strengthening' if is_strengthening else 'Weakening'}"
+            "summary": f"{strength} ({direction}) - {'Strengthening' if is_strengthening else 'Weakening'}",
+            "adx_percentile": round(adx_percentile, 2) # ✅ QUANTUM UPGRADE: Add percentile to output
         }
         
-        # ✅ STRATEGIC FEATURE: Provide a series of recent values for delta analysis
         series_content = [round(v, 2) for v in valid_df[self.adx_col].tail(self.series_lookback).tolist()]
 
         return {
