@@ -169,7 +169,7 @@
     "IchimokuHybridPro": {
       "enabled": true,
       "operation_mode": "Regime-Aware",
-      "market_regime_adx": 25,
+      "market_regime_adx_percentile": 70.0,
       "penalty_pct_htf_conflict": 30.0,
       "min_total_score_base": 66.0,
       "min_total_score_breakout_base": 68.0,
@@ -241,7 +241,7 @@
           "strong": 68.0
         },
         "strict_mode_requires_quality": "normal",
-        "adx_min_strength_for_htf": 25.0
+        "adx_min_percentile_for_htf": 75.0,
       },
       "timing_and_exhaustion_engine": {
         "enabled": true,
