@@ -8,7 +8,7 @@ from copy import deepcopy
 
 logger = logging.getLogger(__name__)
 
-# --- Helper functions (unchanged from v21.2.0) ---
+# --- Helper functions (unchanged) ---
 def get_indicator_config_key(name: str, params: Dict[str, Any]) -> str:
     try:
         filtered_params = {k: v for k, v in params.items() if k not in ['enabled', 'dependencies', 'name']}
@@ -28,15 +28,13 @@ def deep_merge(dict1: Dict[str, Any], dict2: Dict[str, Any]) -> Dict[str, Any]:
 
 class BaseStrategy(ABC):
     """
-    World-Class Base Strategy Framework - (v22.0 - The Quantum Grid Engine)
+    World-Class Base Strategy Framework - (v22.1 - The Adaptive HTF Engine)
     ---------------------------------------------------------------------------------------------
-    This version represents a major architectural enhancement, introducing the new
-    _orchestrate_static_risk method. This "Quantum Grid Engine" creates a unified
-    map of all key S/R levels (Pivots, Structure, Fibonacci) and intelligently
-    places static, reliable SL and TP points. It features anti-stop-hunt and
-    anti-front-running logic, while guaranteeing compliance with the system's
-    global min_risk_reward_ratio. All previous functionalities from v21.2.0 are
-    100% preserved.
+    This surgical upgrade enhances the HTF confirmation engine (_get_trend_confirmation)
+    to leverage the new adaptive ADX (v6.0). Instead of using a fixed threshold,
+    it can now validate HTF trend strength using the ADX percentile rank, making
+    confirmations smarter and more context-aware. All other functionalities,
+    including the Quantum Grid Engine, are 100% preserved from v22.0.
     """
     strategy_name: str = "BaseStrategy"
     default_config: ClassVar[Dict[str, Any]] = {}
@@ -46,7 +44,7 @@ class BaseStrategy(ABC):
         self.primary_timeframe, self.symbol, self.price_data, self.df = primary_timeframe, symbol, self.analysis.get('price_data'), self.analysis.get('final_df')
         self.indicator_configs, self.log_details, self.name = self.config.get('indicator_configs', {}), {"criteria_results": [], "indicator_trace": [], "risk_trace": []}, self.config.get('name', self.strategy_name)
 
-    # --- Logging Methods (Unchanged from v21.2.0) ---
+    # --- Logging Methods (Unchanged) ---
     def _log_criteria(self, criterion_name: str, status: Any, reason: str = ""):
         is_ok = bool(status); focus_symbol = self.main_config.get("general", {}).get("logging_focus_symbol");
         if focus_symbol and self.symbol != focus_symbol: return
@@ -66,7 +64,7 @@ class BaseStrategy(ABC):
     @abstractmethod
     def check_signal(self) -> Optional[Dict[str, Any]]: pass
 
-    # --- Indicator Fetching (Unchanged from v21.2.0) ---
+    # --- Indicator Fetching (Unchanged) ---
     def get_indicator(self, name_or_alias: str, analysis_source: Optional[Dict] = None) -> Optional[Dict[str, Any]]:
         source = analysis_source if analysis_source is not None else self.analysis;
         if not source: return None
@@ -81,7 +79,7 @@ class BaseStrategy(ABC):
         if "error" in status or "failed" in status: self._log_indicator_trace(name_or_alias, status, status="FAILED", reason=f"Indicator reported failure status: {status}"); return None
         indicator_data.setdefault('_meta', {})['unique_key'] = unique_key; self._log_indicator_trace(name_or_alias, "OK"); return indicator_data
 
-    # --- Universal Toolkit Helpers (Unchanged from v21.2.0) ---
+    # --- Universal Toolkit Helpers (Unchanged) ---
     def _safe_get(self, data: Dict, keys: List[str], default: Any = None) -> Any:
         for key in keys:
             if not isinstance(data, dict): return default
@@ -145,26 +143,43 @@ class BaseStrategy(ABC):
         volume_analysis = self._safe_get(self.get_indicator('volume'), ['analysis']);
         if not volume_analysis: return False
         return bool(volume_analysis.get('is_climactic_volume'))
+    
     def _get_trend_confirmation(self, direction: str) -> bool:
         htf_map = self.config.get('htf_map', {}); target_htf = htf_map.get(self.primary_timeframe)
         if not target_htf: return True
         if not self.htf_analysis: logger.warning(f"HTF confirmation skipped: HTF analysis object is missing for '{target_htf}'."); return True
         htf_rules = self.config.get('htf_confirmations', {}); current_score = 0; min_required_score = htf_rules.get('min_required_score', 1)
+        
         for rule_name, rule_params in htf_rules.items():
             if rule_name == "min_required_score": continue
             indicator_analysis = self.get_indicator(rule_name, analysis_source=self.htf_analysis)
             if not indicator_analysis: logger.warning(f"HTF confirmation failed: Required indicator '{rule_name}' missing."); continue
+            
             weight = rule_params.get('weight', 1)
+
             if rule_name.lower() == "adx":
+                # Direction alignment check remains the same
                 adx_dir = self._safe_get(indicator_analysis, ['analysis', 'direction'], 'Neutral')
-                is_aligned = (direction.upper() == "BUY" and "BULLISH" in adx_dir.upper()) or (direction.upper() == "SELL" and "BEARISH" in adx_dir.upper())
-                if self._safe_get(indicator_analysis, ['values', 'adx'], 0) >= rule_params.get('min_strength', 20) and is_aligned: current_score += weight
+                is_aligned = (direction.upper() == "BUY" and "BULLISH" in adx_dir.upper()) or \
+                             (direction.upper() == "SELL" and "BEARISH" in adx_dir.upper())
+                
+                # ✅ SURGICAL UPGRADE: Use adaptive percentile instead of fixed strength
+                adx_percentile = self._safe_get(indicator_analysis, ['analysis', 'adx_percentile'])
+                min_percentile = rule_params.get('min_percentile', 75.0)
+                
+                if self._is_valid_number(adx_percentile) and adx_percentile >= min_percentile and is_aligned:
+                    current_score += weight
+
             elif rule_name.lower() == "supertrend":
                 st_trend = self._safe_get(indicator_analysis, ['analysis', 'trend'], 'Neutral')
-                if (direction.upper() == "BUY" and "UP" in st_trend.upper()) or (direction.upper() == "SELL" and "DOWN" in st_trend.upper()): current_score += weight
-        self._log_indicator_trace(f"HTF_Score", current_score, reason=f"Required: {min_required_score}"); return current_score >= min_required_score
+                if (direction.upper() == "BUY" and "UP" in st_trend.upper()) or \
+                   (direction.upper() == "SELL" and "DOWN" in st_trend.upper()):
+                    current_score += weight
+                    
+        self._log_indicator_trace(f"HTF_Score", current_score, reason=f"Required: {min_required_score}"); 
+        return current_score >= min_required_score
 
-    # --- Blueprint-based Risk Calculators (Unchanged from v21.2.0) ---
+    # --- Blueprint-based Risk Calculators (Unchanged) ---
     def _calculate_sl_from_blueprint(self, entry_price: float, direction: str, sl_params: Dict[str, Any]) -> Optional[float]:
         sl_type = sl_params.get('type'); atr_data = self.get_indicator('atr'); atr_value = self._safe_get(atr_data, ['values', 'atr']); calculated_sl = None
         if sl_type == 'band':
@@ -214,7 +229,7 @@ class BaseStrategy(ABC):
             for level in levels: targets.append(entry_price + (risk_per_unit * level if direction == 'BUY' else -risk_per_unit * level))
         return sorted(targets) if direction == 'BUY' else sorted(targets, reverse=True)
 
-    # --- Final Risk Parameter Calculation (Unchanged from v21.2.0) ---
+    # --- Final Risk Parameter Calculation (Unchanged) ---
     def _finalize_risk_parameters(self, entry_price: float, stop_loss: float, targets: List[float], direction: str) -> Dict[str, Any]:
         if not targets or not self._is_valid_number(entry_price, stop_loss) or entry_price == stop_loss: return {}
         fees_pct = self.main_config.get("general", {}).get("assumed_fees_pct", 0.0)
@@ -226,24 +241,17 @@ class BaseStrategy(ABC):
         actual_rr = round(total_reward / total_risk, 2) if total_risk > 0 else 0.0
         return {"stop_loss": stop_loss, "targets": targets, "risk_reward_ratio": actual_rr}
 
-    # --- ✅ NEW: The Quantum Grid Engine for Static Risk Management (v22.0) ---
+    # --- Quantum Grid Engine for Static Risk Management (Unchanged) ---
     def _orchestrate_static_risk(self, direction: str, entry_price: float, 
                                 sl_anchor_price: float, 
                                 sl_atr_buffer: float = 1.0,
                                 tp_atr_buffer: float = 0.5,
                                 num_targets: int = 3) -> Optional[Dict[str, Any]]:
-        """
-        The heart of the Quantum Grid Engine. This master function generates
-        static, reliable SL and TP levels based on a unified map of all major
-        S/R levels, while guaranteeing R:R compliance.
-        """
         self._log_criteria("Quantum Grid Engine", True, f"Initiating static risk orchestration for {direction} signal.")
-        
         pivots = self.get_indicator('pivots'); structure = self.get_indicator('structure'); fib = self.get_indicator('fibonacci'); atr = self.get_indicator('atr')
         atr_value = self._safe_get(atr, ['values', 'atr'])
         if not all([pivots, structure, fib, self._is_valid_number(atr_value)]):
             self._log_criteria("Quantum Grid Data", False, "Missing essential indicators (Pivots, Structure, Fib, ATR) for grid creation."); return None
-        
         all_supports, all_resistances = [], []
         all_supports.extend([lvl['price'] for lvl in self._safe_get(pivots, ['levels'], []) if 'S' in lvl.get('level','') or 'P' in lvl.get('level','')])
         all_resistances.extend([lvl['price'] for lvl in self._safe_get(pivots, ['levels'], []) if 'R' in lvl.get('level','') or 'P' in lvl.get('level','')])
@@ -251,10 +259,8 @@ class BaseStrategy(ABC):
         all_resistances.extend([lvl['price'] for lvl in self._safe_get(structure, ['key_levels', 'resistances'], [])])
         all_supports.extend([lvl['price'] for lvl in self._safe_get(fib, ['values', 'levels'], []) if 'Retracement' in lvl.get('type', '')])
         all_resistances.extend([lvl['price'] for lvl in self._safe_get(fib, ['values', 'levels'], []) if 'Retracement' in lvl.get('type', '')])
-        
         support_grid = sorted(list(set(s for s in all_supports if self._is_valid_number(s))), reverse=True)
         resistance_grid = sorted(list(set(r for r in all_resistances if self._is_valid_number(r))))
-        
         final_sl = None
         if direction == "BUY":
             strongest_support = next((lvl for lvl in support_grid if lvl < sl_anchor_price), None)
@@ -262,16 +268,13 @@ class BaseStrategy(ABC):
         else: # SELL
             strongest_resistance = next((lvl for lvl in resistance_grid if lvl > sl_anchor_price), None)
             if strongest_resistance: final_sl = strongest_resistance + (atr_value * sl_atr_buffer)
-        
         if not self._is_valid_number(final_sl): self._log_criteria("SL Protocol", False, f"Could not find a structural level behind anchor {sl_anchor_price}."); return None
         if (direction == 'BUY' and final_sl >= entry_price) or (direction == 'SELL' and final_sl <= entry_price):
             self._log_criteria("SL Protocol", False, "Calculated SL was inverted."); return None
         self._log_criteria("SL Protocol", True, f"Static SL calculated at {final_sl:.5f} (behind structural level).")
-
         risk_dist = abs(entry_price - final_sl)
         min_rr = self.main_config.get("general", {}).get("min_risk_reward_ratio", 1.5)
         min_rr = float(self.config.get("override_min_rr_ratio", min_rr))
-
         final_targets = []
         if direction == "BUY":
             min_tp_price = entry_price + (risk_dist * min_rr)
@@ -287,7 +290,6 @@ class BaseStrategy(ABC):
                 if len(final_targets) >= num_targets: break
                 smart_target = level + (atr_value * tp_atr_buffer)
                 if smart_target < min_tp_price: final_targets.append(smart_target)
-
         if not final_targets:
             self._log_criteria("TP Protocol", False, "No valid structural targets found that meet the min R:R. Falling back to pure R:R.")
             reward_ratios = self.config.get('adaptive_targeting', {}).get('atr_multiples', [min_rr, min_rr + 1, min_rr + 2])
@@ -295,10 +297,9 @@ class BaseStrategy(ABC):
                        else [entry_price - (risk_dist * r) for r in reward_ratios]
         else:
              self._log_criteria("TP Protocol", True, f"Generated {len(final_targets)} static targets with anti-front-running logic.")
-
         return self._finalize_risk_parameters(entry_price, final_sl, final_targets, direction)
 
-    # --- Original Adaptive/Dynamic Risk Engine (Preserved from v21.2.0) ---
+    # --- Original Adaptive/Dynamic Risk Engine (Unchanged) ---
     def _calculate_smart_risk_management(self, entry_price: float, direction: str, 
                                          stop_loss: Optional[float] = None, 
                                          sl_params: Optional[Dict[str, Any]] = None, 
@@ -316,7 +317,6 @@ class BaseStrategy(ABC):
             else: final_targets = [s['price'] for s in sorted(key_levels.get('supports', []), key=lambda x: x['price'], reverse=True) if s['price'] < entry_price][:3]
         else:
             return {}
-            
         if not final_targets:
             adaptive_cfg = self.config.get('adaptive_targeting', {})
             if adaptive_cfg.get('enabled', False):
@@ -337,10 +337,8 @@ class BaseStrategy(ABC):
                 risk_dist = abs(entry_price - final_sl)
                 final_targets = [entry_price + (risk_dist * r if direction.upper() == 'BUY' else -risk_dist * r) for r in reward_ratios]
                 self._log_indicator_trace("TP Targets", final_targets, reason="Generated using fallback fixed R/R targets.")
-
         valid_targets = [t for t in final_targets if abs(t - entry_price) > 1e-9]
         if not valid_targets:
             self._log_criteria("Risk Management", False, "No valid take-profit targets found after filtering.")
             return {}
-
         return self._finalize_risk_parameters(entry_price, final_sl, valid_targets, direction)
