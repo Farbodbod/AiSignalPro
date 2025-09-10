@@ -306,23 +306,23 @@
         "required_regime": "TRENDING",
         "adx_percentile_threshold": 70.0
       },
-      "divergence_veto_enabled": false,
       "exhaustion_shield": {
         "enabled": true,
         "mode": "dynamic",
         "dynamic_rsi_lookback": 120,
-        "dynamic_overbought_percentile": 85.0,
-        "dynamic_oversold_percentile": 15.0
+        "dynamic_overbought_percentile": 85,
+        "dynamic_oversold_percentile": 15
       },
-      "min_confirmation_score": 9,
+      "divergence_veto_enabled": false,
+      "min_confirmation_score": 12,
       "weights": {
         "master_trend": 4,
         "hidden_divergence": 4,
         "macd": 3,
-        "stochastic_cross": 2,
-        "htf_alignment": 2,
         "adx_strength": 3,
+        "stochastic_cross": 2,
         "volume": 2,
+        "htf_alignment": 2,
         "candlestick": 1
       },
       "stochastic_confirm": {
@@ -333,17 +333,21 @@
       "macd_confirmation_enabled": true,
       "volume_confirmation_enabled": true,
       "adx_confirmation_enabled": true,
-      "min_adx_strength": 25.0,
+      "min_adx_percentile": 70.0,
       "candlestick_confirmation_enabled": true,
       "master_trend_ma_indicator": "fast_ma",
       "volatility_regimes": {
         "low_atr_pct_threshold": 1.5,
-        "low_vol_sl_multiplier": 1.8,
-        "high_vol_sl_multiplier": 2.5
+        "low_vol_sl_multiplier": 2.0,
+        "high_vol_sl_multiplier": 3.0
       },
       "adaptive_targeting": {
         "enabled": true,
-        "atr_multiples": [1.5, 2.5, 3.5]
+        "atr_multiples": [
+          2.0,
+          3.0,
+          4.0
+        ]
       },
       "htf_confirmation_enabled": true,
       "htf_map": {
@@ -353,26 +357,14 @@
         "4h": "1d"
       },
       "htf_confirmations": {
-        "min_required_score": 2,
+        "min_required_score": 1,
         "adx": {
           "weight": 1,
-          "min_percentile": 70
+          "min_percentile": 75.0
         },
         "supertrend": {
           "weight": 1
         }
-      },
-      "indicator_configs": {
-        "ema_cross_primary": { "name": "ema_cross" },
-        "atr_risk": { "name": "atr" },
-        "adx_regime_strength": { "name": "adx" },
-        "rsi_exhaustion": { "name": "rsi" },
-        "master_trend_ma": { "name": "fast_ma" },
-        "macd_confirm": { "name": "macd" },
-        "volume_confirm": { "name": "whales" },
-        "patterns_confirm": { "name": "patterns" },
-        "divergence_veto": { "name": "divergence" },
-        "stochastic_confirm": { "name": "stochastic" }
       }
     },
     "PivotConfluenceSniper": {
@@ -454,12 +446,22 @@
       "direction": 0,
       "max_adx_percentile_for_ranging": 45.0,
       "min_adx_percentile_for_trending": 70.0,
-      "allow_mixed_mode": false,
+      "sl_atr_buffer_multipliers": {
+        "squeeze": 0.6,
+        "ranging": 1.1,
+        "trending": 0.7
+      },
       "min_squeeze_score": 6,
       "weights_squeeze": {
-        "bollinger_breakout": { "strong": 3, "medium": 2 },
+        "bollinger_breakout": {
+          "strong": 3,
+          "medium": 2
+        },
         "momentum_confirmation": 3,
-        "momentum_rsi_thresholds": { "buy": 52, "sell": 48 },
+        "momentum_rsi_thresholds": {
+          "buy": 52,
+          "sell": 48
+        },
         "volume_spike_confirmation": 2,
         "htf_alignment": 2,
         "macd_aligned": 2
@@ -470,14 +472,24 @@
         "rsi_reversal": 3,
         "divergence_confirmation": 3,
         "volume_fade": 2,
-        "candlestick": { "weak": 1, "medium": 2, "strong": 4 },
+        "candlestick": {
+          "weak": 1,
+          "medium": 2,
+          "strong": 4
+        },
         "macd_aligned": 2
       },
       "ranging_rsi_dynamic_enabled": true,
       "ranging_rsi_lookback": 100,
-      "ranging_rsi_buy_percentile": 10,
-      "ranging_rsi_sell_percentile": 90,
+      "ranging_rsi_buy_percentile": 15,
+      "ranging_rsi_sell_percentile": 85,
       "min_trending_score": 10,
+      "trending_rsi_zones": {
+        "buy_min": 45,
+        "buy_max": 65,
+        "sell_min": 35,
+        "sell_max": 55
+      },
       "weights_trending": {
         "htf_alignment": 4,
         "rsi_cooldown": 3,
@@ -502,15 +514,7 @@
           "weight": 1
         }
       },
-      "indicator_configs": {
-        "adx": {
-          "name": "adx",
-          "series_lookback": 5
-        },
-        "divergence": {
-          "name": "divergence"
-        }
-      }
+      "allow_mixed_mode": false
     },
     "TrendRiderPro": {
       "enabled": true,
