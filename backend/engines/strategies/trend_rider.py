@@ -1,4 +1,4 @@
-#backend/engines/strategies/trend_rider.py - (v8.0 - The Adaptive Engine Integration)
+# backend/engines/strategies/trend_rider.py - (v8.1 - The OHRE Refactor)
 
 import logging
 from typing import Dict, Any, Optional, Tuple, ClassVar
@@ -10,23 +10,24 @@ logger = logging.getLogger(__name__)
 
 class TrendRiderPro(BaseStrategy):
     """
-    TrendRiderPro - (v8.0 - The Adaptive Engine Integration)
+    TrendRiderPro - (v8.1 - The OHRE Refactor)
     -----------------------------------------------------------------------------------------
-    This major upgrade fully integrates the Adaptive Regime Engine (ADX v6.0). All
-    fixed ADX thresholds for market regime filtering, primary signal confirmation, and
-    HTF confirmation have been replaced with adaptive percentile-based logic. This
-    makes the strategy significantly more context-aware and robust across different
-    market conditions and assets.
+    This version refactors the strategy to be fully compliant with the latest BaseStrategy
+    architecture. The flawed manual risk management logic has been removed and replaced
+    with a direct integration to the advanced Optimized Hybrid Risk Engine (OHRE). The
+    strategy now provides a contextual anchor price to the OHRE, delegating the full
+    responsibility of SL/TP calculation to the BaseStrategy for superior, structure-aware
+    risk management. The redundant HTF data pre-check has also been removed to improve
+    encapsulation.
     """
     strategy_name: str = "TrendRiderPro"
 
+    # --- Configuration remains unchanged as the logic adapts to it ---
     default_config: ClassVar[Dict[str, Any]] = {
-        # ✅ UPGRADED: Context Filters now use adaptive percentiles
         "market_regime_filter_enabled": True,
         "required_regime": "TRENDING",
         "regime_adx_percentile_threshold": 70.0,
         
-        # ✅ UPGRADED: Core Logic now uses adaptive percentiles
         "default_params": {
             "entry_trigger_type": "supertrend", "min_adx_percentile": 70.0,
             "st_multiplier": 3.0, "ch_atr_multiplier": 3.0, "tactical_tp_rr_ratio": 2.0,
@@ -38,12 +39,12 @@ class TrendRiderPro(BaseStrategy):
         },
         "htf_confirmation_enabled": True,
         "htf_map": { "5m": "15m", "15m": "1h", "1h": "4h", "4h": "1d" },
-        # ✅ UPGRADED: HTF confirmations config now uses adaptive percentiles
         "htf_confirmations": {
             "min_required_score": 2, "adx": {"weight": 1, "min_percentile": 75.0}, "supertrend": {"weight": 1}
         }
     }
 
+    # --- Helper methods are unchanged ---
     def _get_signal_config(self) -> Dict[str, Any]:
         final_cfg = self.config.copy()
         base_params = self.config.get("default_params", {})
@@ -66,29 +67,23 @@ class TrendRiderPro(BaseStrategy):
                 if "bearish crossover" in signal: return "SELL", trigger_name
         return None, ""
 
+    # --- Core logic refactored for full architectural compliance ---
     def check_signal(self) -> Optional[Dict[str, Any]]:
         cfg = self._get_signal_config()
         if not self.price_data: self._log_final_decision("HOLD", "No price data available."); return None
 
-        # --- 1. Data Availability Check (Unchanged) ---
+        # --- 1. Data Availability Check (Cleaned) ---
         required_names = ['adx', 'chandelier_exit', 'fast_ma']
         if cfg.get('entry_trigger_type') == 'ema_cross': required_names.append('ema_cross')
         else: required_names.append('supertrend')
         
         indicators = {name: self.get_indicator(name) for name in list(set(required_names))}
         missing = [name for name, data in indicators.items() if data is None]
-        if missing: self._log_final_decision("HOLD", f"Indicators missing: {', '.join(missing)}"); return None
+        if missing: self._log_final_decision("HOLD", f"Primary indicators missing: {', '.join(missing)}"); return None
         
-        if cfg.get('htf_confirmation_enabled'):
-            htf_rules = cfg.get('htf_confirmations', {})
-            htf_required = [name for name in htf_rules if name != 'min_required_score']
-            htf_indicators = {name: self.get_indicator(name, analysis_source=self.htf_analysis) for name in htf_required}
-            htf_missing = [name for name, data in htf_indicators.items() if data is None]
-            if htf_missing: self._log_final_decision("HOLD", f"HTF indicators missing: {', '.join(htf_missing)}"); return None
-        
-        self._log_criteria("Data Availability", True, "All required primary and HTF data is valid.")
+        self._log_criteria("Data Availability", True, "All required primary data is valid.")
 
-        # --- 2. Market Regime Filter (✅ UPGRADED) ---
+        # --- 2. Market Regime Filter (Unchanged) ---
         if cfg.get('market_regime_filter_enabled'):
             required_regime = cfg.get('required_regime', 'TRENDING')
             adx_data = indicators.get('adx')
@@ -102,7 +97,7 @@ class TrendRiderPro(BaseStrategy):
             self._log_criteria("Market Regime Filter (Adaptive)", regime_is_ok, reason)
             if not regime_is_ok: self._log_final_decision("HOLD", "Market regime is not suitable."); return None
 
-        # --- 3. Confirmation Funnel (✅ UPGRADED) ---
+        # --- 3. Confirmation Funnel (Unchanged) ---
         signal_direction, entry_trigger_name = self._get_primary_signal(cfg)
         self._log_criteria("Primary Trigger", signal_direction is not None, f"Signal from {cfg.get('entry_trigger_type')}: {'Found' if signal_direction else 'Not Found'}")
         if not signal_direction: self._log_final_decision("HOLD", "No primary trigger."); return None
@@ -131,36 +126,36 @@ class TrendRiderPro(BaseStrategy):
         self._log_criteria("HTF Filter", htf_ok, "Not aligned with HTF." if not htf_ok else "HTF is aligned.")
         if not htf_ok: self._log_final_decision("HOLD", "HTF filter failed."); return None
         
-        # --- 4. Risk Management (Unchanged) ---
+        # --- 4. Risk Management (UPGRADED to OHRE Engine) ---
         entry_price = self.price_data.get('close')
+        
+        # Use Chandelier Exit as a smart "anchor" for the OHRE engine to find the best structural SL.
         stop_loss_key = 'long_stop' if signal_direction == "BUY" else 'short_stop'
-        trailing_stop_loss = (indicators['chandelier_exit'].get('values') or {}).get(stop_loss_key)
+        sl_anchor_price = self._safe_get(indicators, ['chandelier_exit', 'values', stop_loss_key])
 
-        if not self._is_valid_number(entry_price, trailing_stop_loss):
-            self._log_final_decision("HOLD", "Risk data missing or invalid (entry/SL)."); return None
+        if not self._is_valid_number(entry_price, sl_anchor_price):
+            self._log_final_decision("HOLD", "Risk data missing for OHRE (entry/sl_anchor)."); return None
 
-        risk_amount = abs(entry_price - trailing_stop_loss)
-        min_risk_threshold = entry_price * (cfg.get('min_risk_pct', 0.1) / 100)
-        if risk_amount < min_risk_threshold:
-            self._log_final_decision("HOLD", f"Risk too tight ({risk_amount:.4f} < {min_risk_threshold:.4f})."); return None
+        risk_params = self._orchestrate_static_risk(
+            direction=signal_direction,
+            entry_price=entry_price,
+            sl_anchor_price=sl_anchor_price
+        )
+
+        if not risk_params:
+            self._log_final_decision("HOLD", "OHRE failed to generate a valid risk plan."); return None
         
-        risk_params = self._calculate_smart_risk_management(entry_price, signal_direction, trailing_stop_loss)
-        tactical_tp1 = entry_price + (risk_amount * cfg['tactical_tp_rr_ratio']) if signal_direction == "BUY" else entry_price - (risk_amount * cfg['tactical_tp_rr_ratio'])
-        
-        if not isinstance(risk_params, dict): risk_params = {}
-            
-        risk_params['targets'] = [round(tactical_tp1, 5)]
-        risk_params['risk_reward_ratio'] = round(abs(tactical_tp1 - entry_price) / risk_amount, 2) if risk_amount > 1e-9 else 0
-        
-        # --- 5. Final Decision (✅ UPGRADED Narrative) ---
+        # --- 5. Final Decision (UPGRADED Narrative) ---
         def _fmt5(x): return f"{float(x):.5f}" if self._is_valid_number(x) else "N/A"
         confirmations = {
             "entry_trigger": entry_trigger_name,
             "strength_filter": f"ADX Percentile > {cfg['min_adx_percentile']:.1f}% (Value: {adx_percentile:.2f}%)",
             "trend_filter": "Price confirmed by Master MA",
             "htf_confirmation": "Confirmed by HTF Engine" if cfg.get('htf_confirmation_enabled') else "Disabled",
-            "exit_management": f"Tactical TP1 + Chandelier Trailing SL at {_fmt5(trailing_stop_loss)}"
+            "risk_engine": self.log_details["risk_trace"][-1].get("source", "OHRE"),
+            "risk_reward": risk_params.get('risk_reward_ratio'),
+            "exit_management": f"SL: {_fmt5(risk_params.get('stop_loss'))}, TP1: {_fmt5(risk_params.get('targets', [None])[0])}"
         }
-        self._log_final_decision(signal_direction, "All criteria met. Adaptive Trend Rider signal confirmed.")
+        self._log_final_decision(signal_direction, "All criteria met. Adaptive Trend Rider signal confirmed by OHRE.")
         
         return {"direction": signal_direction, "entry_price": entry_price, **risk_params, "confirmations": confirmations}
