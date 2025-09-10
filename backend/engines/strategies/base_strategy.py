@@ -28,13 +28,13 @@ def deep_merge(dict1: Dict[str, Any], dict2: Dict[str, Any]) -> Dict[str, Any]:
 
 class BaseStrategy(ABC):
     """
-    World-Class Base Strategy Framework - (v22.1 - The Adaptive HTF Engine)
+    World-Class Base Strategy Framework - (v24.1 - The Rescue Logic Hotfix)
     ---------------------------------------------------------------------------------------------
-    This surgical upgrade enhances the HTF confirmation engine (_get_trend_confirmation)
-    to leverage the new adaptive ADX (v6.0). Instead of using a fixed threshold,
-    it can now validate HTF trend strength using the ADX percentile rank, making
-    confirmations smarter and more context-aware. All other functionalities,
-    including the Quantum Grid Engine, are 100% preserved from v22.0.
+    This version applies a critical hotfix to the 'Golden Opportunity Rescue' logic inside
+    the OHRE v24.0. The fix ensures the recalculation of the first take-profit target is
+    always perfectly aligned with the trade's direction (BUY/SELL), preventing any
+    possibility of an inverted target during the rescue operation. All other features
+    of the v24.0 engine are preserved.
     """
     strategy_name: str = "BaseStrategy"
     default_config: ClassVar[Dict[str, Any]] = {}
@@ -158,12 +158,10 @@ class BaseStrategy(ABC):
             weight = rule_params.get('weight', 1)
 
             if rule_name.lower() == "adx":
-                # Direction alignment check remains the same
                 adx_dir = self._safe_get(indicator_analysis, ['analysis', 'direction'], 'Neutral')
                 is_aligned = (direction.upper() == "BUY" and "BULLISH" in adx_dir.upper()) or \
                              (direction.upper() == "SELL" and "BEARISH" in adx_dir.upper())
                 
-                # ✅ SURGICAL UPGRADE: Use adaptive percentile instead of fixed strength
                 adx_percentile = self._safe_get(indicator_analysis, ['analysis', 'adx_percentile'])
                 min_percentile = rule_params.get('min_percentile', 75.0)
                 
@@ -241,63 +239,270 @@ class BaseStrategy(ABC):
         actual_rr = round(total_reward / total_risk, 2) if total_risk > 0 else 0.0
         return {"stop_loss": stop_loss, "targets": targets, "risk_reward_ratio": actual_rr}
 
-    # --- Quantum Grid Engine for Static Risk Management (Unchanged) ---
-    def _orchestrate_static_risk(self, direction: str, entry_price: float, 
-                                sl_anchor_price: float, 
-                                sl_atr_buffer: float = 1.0,
-                                tp_atr_buffer: float = 0.5,
-                                num_targets: int = 3) -> Optional[Dict[str, Any]]:
-        self._log_criteria("Quantum Grid Engine", True, f"Initiating static risk orchestration for {direction} signal.")
-        pivots = self.get_indicator('pivots'); structure = self.get_indicator('structure'); fib = self.get_indicator('fibonacci'); atr = self.get_indicator('atr')
+    # --- ✅ SURGICAL UPGRADE START: Optimized Hybrid Risk Engine (OHRE) v24.1 ---
+    
+    def _get_dynamic_buffers(self) -> Tuple[float, float]:
+        """Calculates SL and TP buffers dynamically based on market conditions."""
+        engine_config = self.config.get('ohre_engine', {})
+        # SL buffer based on volatility
+        sl_buffer_map = engine_config.get('sl_buffer_map', {'Low': 0.8, 'Normal': 1.1, 'High': 1.6, 'Extreme': 2.0})
+        atr_indicator = self.get_indicator('atr')
+        volatility_level = self._safe_get(atr_indicator, ['analysis', 'volatility'], "Normal")
+        sl_atr_buffer = sl_buffer_map.get(volatility_level, 1.1)
+
+        # TP buffer based on trend strength for anti-front-running
+        tp_buffer_map = engine_config.get('tp_buffer_map', {'strong': 1.5, 'developing': 1.0, 'weak': 0.6})
+        adx_indicator = self.get_indicator('adx')
+        adx_percentile = self._safe_get(adx_indicator, ['analysis', 'adx_percentile'], 50.0)
+        percentile_thresholds = engine_config.get('percentile_thresholds', {'strong': 80, 'developing': 40})
+        
+        if adx_percentile >= percentile_thresholds['strong']: strength_key = 'strong'
+        elif adx_percentile >= percentile_thresholds['developing']: strength_key = 'developing'
+        else: strength_key = 'weak'
+        tp_atr_buffer = tp_buffer_map.get(strength_key, 1.0)
+        
+        return sl_atr_buffer, tp_atr_buffer
+
+    def _score_structural_plan(self, plan: Dict[str, Any], source: str, details: Dict[str, Any]) -> int:
+        """Scores the quality of a generated structural risk plan."""
+        if not plan: return 0
+        engine_config = self.config.get('ohre_engine', {})
+        scoring_weights = engine_config.get('scoring_weights', {
+            'base_structure': 100, 'base_pivots': 80, 'strength_multiplier': 20, 'rr_multiplier': 15
+        })
+        
+        base_score = scoring_weights.get(f'base_{source}', 70)
+        strength_score = 0
+        if source == 'structure':
+            strength_score = details.get('strength', 0) * scoring_weights.get('strength_multiplier', 20)
+        
+        rr_score = plan.get('risk_reward_ratio', 0) * scoring_weights.get('rr_multiplier', 15)
+        
+        return int(base_score + strength_score + rr_score)
+
+    def _is_golden_opportunity(self, plan_score: int) -> bool:
+        """Determines if a setup is a high-conviction 'Golden Opportunity'."""
+        engine_config = self.config.get('ohre_engine', {})
+        golden_config = engine_config.get('golden_opportunity', {})
+        
+        min_plan_score = golden_config.get('min_plan_score', 150)
+        min_adx_percentile = golden_config.get('min_adx_percentile', 85)
+        
+        if plan_score < min_plan_score: return False
+        
+        adx_indicator = self.get_indicator('adx')
+        adx_percentile = self._safe_get(adx_indicator, ['analysis', 'adx_percentile'], 0)
+        if adx_percentile < min_adx_percentile: return False
+        
+        return True
+
+    def _validate_and_trace_plan(self, plan: Optional[Dict[str, Any]], source: str, score: int, entry_price_ref: float) -> Optional[Dict[str, Any]]:
+        """Performs final validation, tracing, and attempts to rescue golden opportunities."""
+        if not plan: return None
+        
+        min_rr = float(self.config.get("override_min_rr_ratio", self.main_config.get("general", {}).get("min_risk_reward_ratio", 1.5)))
+        
+        is_valid = True
+        final_plan = deepcopy(plan)
+        
+        # 1. Final Fail-Safe Checks
+        if final_plan['risk_reward_ratio'] < min_rr:
+            is_valid = False
+            # 2. Golden Opportunity Rescue Logic
+            if self._is_golden_opportunity(score):
+                self._log_criteria("Golden Opportunity", True, f"High-score plan ({score}) failed min R:R. Attempting rescue.")
+                
+                # ✅ HOTFIX v24.1: Robustly calculate the new TP1 with explicit direction.
+                direction = "BUY" if final_plan['targets'][0] > final_plan['stop_loss'] else "SELL"
+                risk_dist = abs(entry_price_ref - final_plan['stop_loss'])
+                
+                if risk_dist > 1e-9:
+                    new_tp1 = entry_price_ref + (risk_dist * min_rr) if direction == "BUY" else entry_price_ref - (risk_dist * min_rr)
+                    
+                    adjusted_plan = self._finalize_risk_parameters(
+                        entry_price_ref,
+                        final_plan['stop_loss'],
+                        [new_tp1] + final_plan['targets'][1:],
+                        direction
+                    )
+                    if adjusted_plan:
+                        final_plan = adjusted_plan
+                        is_valid = True
+                        source += " (Rescued)"
+
+        if (entry_price_ref <= final_plan['stop_loss'] and final_plan['targets'][0] > final_plan['stop_loss']) or \
+           (entry_price_ref >= final_plan['stop_loss'] and final_plan['targets'][0] < final_plan['stop_loss']):
+            self._log_criteria("Final Validation", False, "SL Inversion Detected in Final Plan.")
+            is_valid = False
+
+        # 3. Traceability
+        trace = { "source": source, "quality_score": score, "final_rr": final_plan.get('risk_reward_ratio', 0),
+                  "sl": final_plan.get('stop_loss'), "tp1": final_plan.get('targets', [None])[0] }
+        self.log_details["risk_trace"].append(trace)
+
+        if is_valid:
+            self._log_criteria("Risk Plan Source", True, f"Final plan selected. Source: {source}, Score: {score}, R:R: {final_plan.get('risk_reward_ratio')}")
+            return final_plan
+        
+        self._log_criteria("Final Validation", False, f"Plan from {source} (Score: {score}) failed final checks.")
+        return None
+
+    def _build_plan_from_structure(self, direction: str, entry_price: float, sl_anchor_price: float, num_targets: int) -> Tuple[Optional[Dict[str, Any]], Dict[str, Any]]:
+        """ Builds a risk plan using the Structure indicator's zones. Returns plan and details for scoring."""
+        structure = self.get_indicator('structure')
+        atr = self.get_indicator('atr')
         atr_value = self._safe_get(atr, ['values', 'atr'])
-        if not all([pivots, structure, fib, self._is_valid_number(atr_value)]):
-            self._log_criteria("Quantum Grid Data", False, "Missing essential indicators (Pivots, Structure, Fib, ATR) for grid creation."); return None
-        all_supports, all_resistances = [], []
-        all_supports.extend([lvl['price'] for lvl in self._safe_get(pivots, ['levels'], []) if 'S' in lvl.get('level','') or 'P' in lvl.get('level','')])
-        all_resistances.extend([lvl['price'] for lvl in self._safe_get(pivots, ['levels'], []) if 'R' in lvl.get('level','') or 'P' in lvl.get('level','')])
-        all_supports.extend([lvl['price'] for lvl in self._safe_get(structure, ['key_levels', 'supports'], [])])
-        all_resistances.extend([lvl['price'] for lvl in self._safe_get(structure, ['key_levels', 'resistances'], [])])
-        all_supports.extend([lvl['price'] for lvl in self._safe_get(fib, ['values', 'levels'], []) if 'Retracement' in lvl.get('type', '')])
-        all_resistances.extend([lvl['price'] for lvl in self._safe_get(fib, ['values', 'levels'], []) if 'Retracement' in lvl.get('type', '')])
-        support_grid = sorted(list(set(s for s in all_supports if self._is_valid_number(s))), reverse=True)
-        resistance_grid = sorted(list(set(r for r in all_resistances if self._is_valid_number(r))))
-        final_sl = None
+        if not structure or not self._is_valid_number(atr_value): return None, {}
+        
+        sl_atr_buffer, tp_atr_buffer = self._get_dynamic_buffers()
+        
+        key_levels = self._safe_get(structure, ['key_levels'], {})
+        supports = sorted(key_levels.get('supports', []), key=lambda x: x.get('strength', 0), reverse=True)
+        resistances = sorted(key_levels.get('resistances', []), key=lambda x: x.get('strength', 0), reverse=True)
+        
+        final_sl, final_targets, sl_details = None, [], {}
+        
         if direction == "BUY":
-            strongest_support = next((lvl for lvl in support_grid if lvl < sl_anchor_price), None)
-            if strongest_support: final_sl = strongest_support - (atr_value * sl_atr_buffer)
-        else: # SELL
-            strongest_resistance = next((lvl for lvl in resistance_grid if lvl > sl_anchor_price), None)
-            if strongest_resistance: final_sl = strongest_resistance + (atr_value * sl_atr_buffer)
-        if not self._is_valid_number(final_sl): self._log_criteria("SL Protocol", False, f"Could not find a structural level behind anchor {sl_anchor_price}."); return None
-        if (direction == 'BUY' and final_sl >= entry_price) or (direction == 'SELL' and final_sl <= entry_price):
-            self._log_criteria("SL Protocol", False, "Calculated SL was inverted."); return None
-        self._log_criteria("SL Protocol", True, f"Static SL calculated at {final_sl:.5f} (behind structural level).")
-        risk_dist = abs(entry_price - final_sl)
-        min_rr = self.main_config.get("general", {}).get("min_risk_reward_ratio", 1.5)
-        min_rr = float(self.config.get("override_min_rr_ratio", min_rr))
-        final_targets = []
-        if direction == "BUY":
-            min_tp_price = entry_price + (risk_dist * min_rr)
-            potential_tp_levels = [lvl for lvl in resistance_grid if lvl > entry_price]
-            for level in potential_tp_levels:
-                if len(final_targets) >= num_targets: break
-                smart_target = level - (atr_value * tp_atr_buffer)
-                if smart_target > min_tp_price: final_targets.append(smart_target)
-        else: # SELL
-            min_tp_price = entry_price - (risk_dist * min_rr)
-            potential_tp_levels = [lvl for lvl in support_grid if lvl < entry_price]
-            for level in potential_tp_levels:
-                if len(final_targets) >= num_targets: break
-                smart_target = level + (atr_value * tp_atr_buffer)
-                if smart_target < min_tp_price: final_targets.append(smart_target)
-        if not final_targets:
-            self._log_criteria("TP Protocol", False, "No valid structural targets found that meet the min R:R. Falling back to pure R:R.")
-            reward_ratios = self.config.get('adaptive_targeting', {}).get('atr_multiples', [min_rr, min_rr + 1, min_rr + 2])
-            final_targets = [entry_price + (risk_dist * r) for r in reward_ratios] if direction == "BUY" \
-                       else [entry_price - (risk_dist * r) for r in reward_ratios]
+            strongest_support = next((lvl for lvl in supports if lvl.get('price') and lvl['price'] < sl_anchor_price), None)
+            if strongest_support:
+                final_sl = strongest_support['price'] - (atr_value * sl_atr_buffer)
+                sl_details = {'price': strongest_support['price'], 'strength': strongest_support.get('strength', 0)}
         else:
-             self._log_criteria("TP Protocol", True, f"Generated {len(final_targets)} static targets with anti-front-running logic.")
-        return self._finalize_risk_parameters(entry_price, final_sl, final_targets, direction)
+            strongest_resistance = next((lvl for lvl in resistances if lvl.get('price') and lvl['price'] > sl_anchor_price), None)
+            if strongest_resistance:
+                final_sl = strongest_resistance['price'] + (atr_value * sl_atr_buffer)
+                sl_details = {'price': strongest_resistance['price'], 'strength': strongest_resistance.get('strength', 0)}
+
+        if not self._is_valid_number(final_sl): return None, {}
+        
+        potential_targets = sorted(resistances, key=lambda x: x.get('price', float('inf'))) if direction == "BUY" else sorted(supports, key=lambda x: x.get('price', 0), reverse=True)
+        for level_info in potential_targets:
+            if len(final_targets) >= num_targets: break
+            level_price = level_info.get('price')
+            if not self._is_valid_number(level_price): continue
+            
+            smart_target = level_price - (atr_value * tp_atr_buffer) if direction == "BUY" else level_price + (atr_value * tp_atr_buffer)
+            if (direction == "BUY" and smart_target > entry_price) or (direction == "SELL" and smart_target < entry_price):
+                final_targets.append(smart_target)
+        
+        if not final_targets: return None, {}
+        plan = self._finalize_risk_parameters(entry_price, final_sl, final_targets, direction)
+        return plan, sl_details
+
+    def _build_plan_from_pivots(self, direction: str, entry_price: float, sl_anchor_price: float, num_targets: int) -> Tuple[Optional[Dict[str, Any]], Dict[str, Any]]:
+        """ Builds a risk plan using the Pivot Points indicator. Returns plan and details for scoring."""
+        pivots = self.get_indicator('pivots')
+        atr = self.get_indicator('atr')
+        atr_value = self._safe_get(atr, ['values', 'atr'])
+        if not pivots or not self._is_valid_number(atr_value): return None, {}
+
+        sl_atr_buffer, tp_atr_buffer = self._get_dynamic_buffers()
+
+        all_levels = self._safe_get(pivots, ['levels'], [])
+        support_grid = sorted([lvl for lvl in all_levels if 'S' in lvl.get('level','') or 'P' in lvl.get('level','')], key=lambda x: x['price'], reverse=True)
+        resistance_grid = sorted([lvl for lvl in all_levels if 'R' in lvl.get('level','') or 'P' in lvl.get('level','')], key=lambda x: x['price'])
+        
+        final_sl, final_targets, sl_details = None, [], {}
+
+        if direction == "BUY":
+            closest_support = next((lvl for lvl in support_grid if lvl['price'] < sl_anchor_price), None)
+            if closest_support:
+                final_sl = closest_support['price'] - (atr_value * sl_atr_buffer)
+                sl_details = closest_support
+        else: # SELL
+            closest_resistance = next((lvl for lvl in resistance_grid if lvl['price'] > sl_anchor_price), None)
+            if closest_resistance:
+                final_sl = closest_resistance['price'] + (atr_value * sl_atr_buffer)
+                sl_details = closest_resistance
+        
+        if not self._is_valid_number(final_sl): return None, {}
+        
+        potential_targets = resistance_grid if direction == "BUY" else support_grid
+        for level_info in potential_targets:
+            if len(final_targets) >= num_targets: break
+            smart_target = level_info['price'] - (atr_value * tp_atr_buffer) if direction == "BUY" else level_info['price'] + (atr_value * tp_atr_buffer)
+            if (direction == "BUY" and smart_target > entry_price) or (direction == "SELL" and smart_target < entry_price):
+                final_targets.append(smart_target)
+
+        if not final_targets: return None, {}
+        plan = self._finalize_risk_parameters(entry_price, final_sl, final_targets, direction)
+        return plan, sl_details
+
+    def _build_plan_from_atr_fallback(self, direction: str, entry_price: float) -> Optional[Dict[str, Any]]:
+        """Intelligent Safety Net: Generates a risk plan using adaptive ATR for SL and adaptive R:R for TPs."""
+        atr_indicator = self.get_indicator('atr')
+        adx_indicator = self.get_indicator('adx')
+        if not atr_indicator or not adx_indicator: return None
+        atr_value = self._safe_get(atr_indicator, ['values', 'atr'])
+        if not self._is_valid_number(atr_value): return None
+        
+        engine_config = self.config.get('ohre_engine', {})
+        fallback_config = engine_config.get('atr_fallback_engine', {})
+        
+        sl_atr_buffer, _ = self._get_dynamic_buffers()
+        stop_loss = entry_price - (atr_value * sl_atr_buffer) if direction == 'BUY' else entry_price + (atr_value * sl_atr_buffer)
+        
+        risk_dist = abs(entry_price - stop_loss)
+        if risk_dist < 1e-9: return None
+
+        min_rr = float(self.config.get("override_min_rr_ratio", self.main_config.get("general", {}).get("min_risk_reward_ratio", 1.5)))
+        base_multiples = fallback_config.get('base_rr_multiples', [min_rr, min_rr + 1.5, min_rr + 3.0])
+        
+        adx_percentile = self._safe_get(adx_indicator, ['analysis', 'adx_percentile'], 50.0)
+        percentile_thresholds = engine_config.get('percentile_thresholds', {'strong': 80, 'developing': 40})
+        strength_multipliers = engine_config.get('strength_multipliers', {'strong': 1.75, 'developing': 1.25, 'weak': 1.0})
+        
+        if adx_percentile >= percentile_thresholds['strong']: strength_key = 'strong'
+        elif adx_percentile >= percentile_thresholds['developing']: strength_key = 'developing'
+        else: strength_key = 'weak'
+        final_rr_multiples = [m * strength_multipliers[strength_key] for m in base_multiples]
+
+        final_targets = [entry_price + (risk_dist * r) for r in final_rr_multiples] if direction == "BUY" \
+                   else [entry_price - (risk_dist * r) for r in final_rr_multiples]
+        
+        return self._finalize_risk_parameters(entry_price, stop_loss, final_targets, direction)
+    
+    def _orchestrate_static_risk(self, direction: str, entry_price: float, 
+                                sl_anchor_price: float, num_targets: int = 3) -> Optional[Dict[str, Any]]:
+        """
+        MODIFIED: Optimized Hybrid Risk Engine (OHRE) v24.1
+        
+        Orchestrates risk by scoring plans from multiple structural providers and selecting the best one.
+        If no high-quality structural plan exists, it executes an adaptive ATR/ADX fallback.
+        Includes dynamic buffers and a 'Golden Opportunity' rescue mechanism.
+        """
+        self._log_criteria("OHRE", True, f"Initiating for {direction} signal.")
+        engine_config = self.config.get('ohre_engine', {})
+        min_quality_score = engine_config.get('min_quality_score', 50)
+        
+        plans_to_score = []
+        
+        structure_plan, structure_details = self._build_plan_from_structure(direction, entry_price, sl_anchor_price, num_targets)
+        if structure_plan:
+            score = self._score_structural_plan(structure_plan, 'structure', structure_details)
+            plans_to_score.append({'plan': structure_plan, 'source': 'structure', 'score': score})
+
+        pivots_plan, pivots_details = self._build_plan_from_pivots(direction, entry_price, sl_anchor_price, num_targets)
+        if pivots_plan:
+            score = self._score_structural_plan(pivots_plan, 'pivots', pivots_details)
+            plans_to_score.append({'plan': pivots_plan, 'source': 'pivots', 'score': score})
+        
+        if plans_to_score:
+            best_plan_info = max(plans_to_score, key=lambda x: x['score'])
+            if best_plan_info['score'] >= min_quality_score:
+                final_plan = self._validate_and_trace_plan(best_plan_info['plan'], best_plan_info['source'], best_plan_info['score'], entry_price)
+                if final_plan: return final_plan
+        
+        self._log_criteria("OHRE", False, "No structural plan met minimum quality. Executing fallback.")
+        
+        fallback_plan = self._build_plan_from_atr_fallback(direction, entry_price)
+        if fallback_plan:
+            score = self._score_structural_plan(fallback_plan, 'atr_fallback', {})
+            final_plan = self._validate_and_trace_plan(fallback_plan, 'ATR Fallback', score, entry_price)
+            if final_plan: return final_plan
+
+        self._log_criteria("OHRE", False, "All risk plan providers, including fallback, failed.")
+        return None
 
     # --- Original Adaptive/Dynamic Risk Engine (Unchanged) ---
     def _calculate_smart_risk_management(self, entry_price: float, direction: str, 
