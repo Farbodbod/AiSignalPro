@@ -314,7 +314,7 @@
         "dynamic_oversold_percentile": 15
       },
       "divergence_veto_enabled": false,
-      "min_confirmation_score": 12,
+      "min_confirmation_score": 1,
       "weights": {
         "master_trend": 4,
         "hidden_divergence": 4,
@@ -341,14 +341,6 @@
         "low_vol_sl_multiplier": 2.0,
         "high_vol_sl_multiplier": 3.0
       },
-      "adaptive_targeting": {
-        "enabled": true,
-        "atr_multiples": [
-          2.0,
-          3.0,
-          4.0
-        ]
-      },
       "htf_confirmation_enabled": true,
       "htf_map": {
         "5m": "15m",
@@ -365,6 +357,19 @@
         "supertrend": {
           "weight": 1
         }
+      },
+      "ohre_engine": {
+        "min_quality_score": 50,
+        "sl_buffer_map": { "Low": 0.8, "Normal": 1.1, "High": 1.6, "Extreme": 2.0 },
+        "tp_buffer_map": { "strong": 1.5, "developing": 1.0, "weak": 0.6 },
+        "percentile_thresholds": { "strong": 80, "developing": 40 },
+        "strength_multipliers": { "strong": 1.75, "developing": 1.25, "weak": 1.0 },
+        "scoring_weights": {
+          "base_structure": 100, "base_pivots": 80,
+          "strength_multiplier": 20, "rr_multiplier": 15
+        },
+        "golden_opportunity": { "min_plan_score": 150, "min_adx_percentile": 85 },
+        "atr_fallback_engine": { "base_rr_multiples": [ 1.5, 2.5, 4.0 ] }
       }
     },
     "PivotConfluenceSniper": {
@@ -521,11 +526,31 @@
       "market_regime_filter_enabled": true,
       "required_regime": "TRENDING",
       "regime_adx_percentile_threshold": 70.0,
-      "default_params": { "entry_trigger_type": "supertrend", "min_adx_percentile": 70.0, "st_multiplier": 2.5, "ch_atr_multiplier": 2.8, "tactical_tp_rr_ratio": 1.8, "min_risk_pct": 0.1 },
-      "timeframe_overrides": { "5m": { "min_adx_percentile": 70.0 }, "1d": { "min_adx_percentile": 75.0, "tactical_tp_rr_ratio": 2.5 } },
+      "default_params": { "entry_trigger_type": "supertrend", "min_adx_percentile": 70.0, "st_multiplier": 2.5, "ch_atr_multiplier": 2.8 },
+      "timeframe_overrides": { "5m": { "min_adx_percentile": 70.0 }, "1d": { "min_adx_percentile": 75.0 } },
       "htf_confirmation_enabled": true,
       "htf_map": { "5m": "15m", "15m": "1h", "1h": "4h", "4h": "1d" },
-      "htf_confirmations": { "min_required_score": 2, "adx": { "weight": 1, "min_percentile": 75 }, "supertrend": { "weight": 1 } }
+      "htf_confirmations": { "min_required_score": 1, "adx": { "weight": 1, "min_percentile": 75.0 }, "supertrend": { "weight": 1 } },
+      "ohre_engine": {
+        "min_quality_score": 50,
+        "sl_buffer_map": { "Low": 0.8, "Normal": 1.1, "High": 1.6, "Extreme": 2.0 },
+        "tp_buffer_map": { "strong": 1.5, "developing": 1.0, "weak": 0.6 },
+        "percentile_thresholds": { "strong": 80, "developing": 40 },
+        "strength_multipliers": { "strong": 1.75, "developing": 1.25, "weak": 1.0 },
+        "scoring_weights": {
+          "base_structure": 100,
+          "base_pivots": 80,
+          "strength_multiplier": 20,
+          "rr_multiplier": 15
+        },
+        "golden_opportunity": {
+          "min_plan_score": 150,
+          "min_adx_percentile": 85
+        },
+        "atr_fallback_engine": {
+          "base_rr_multiples": [ 1.5, 2.5, 4.0 ]
+        }
+      }
     },
     "VolumeCatalystPro": {
       "enabled": true,
