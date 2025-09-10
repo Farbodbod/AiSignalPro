@@ -314,7 +314,7 @@
         "dynamic_oversold_percentile": 15
       },
       "divergence_veto_enabled": false,
-      "min_confirmation_score": 12,
+      "min_confirmation_score": 2,
       "weights": {
         "master_trend": 4,
         "hidden_divergence": 4,
@@ -406,7 +406,7 @@
       "outlier_candle_shield_enabled": true,
       "outlier_atr_multiplier": 3.0,
       "exhaustion_shield_enabled": true,
-      "rsi_exhaustion_lookback": 150,
+      "rsi_exhaustion_lookback": 100,
       "rsi_buy_percentile": 88,
       "rsi_sell_percentile": 12,
       "cooldown_bars": 4,
@@ -476,7 +476,7 @@
         "ranging": 1.1,
         "trending": 0.7
       },
-      "min_squeeze_score": 2,
+      "min_squeeze_score": 6,
       "weights_squeeze": {
         "bollinger_breakout": {
           "strong": 3,
@@ -491,8 +491,8 @@
         "htf_alignment": 2,
         "macd_aligned": 2
       },
-      "min_ranging_score": 2,
-      "ranging_proximity_atr_mult": 0.25,
+      "min_ranging_score": 7,
+      "ranging_proximity_atr_mult": 0.10,
       "weights_ranging": {
         "rsi_reversal": 3,
         "divergence_confirmation": 3,
@@ -508,7 +508,7 @@
       "ranging_rsi_lookback": 100,
       "ranging_rsi_buy_percentile": 15,
       "ranging_rsi_sell_percentile": 85,
-      "min_trending_score": 2,
+      "min_trending_score": 7,
       "trending_rsi_zones": {
         "buy_min": 45,
         "buy_max": 65,
