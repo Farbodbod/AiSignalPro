@@ -171,10 +171,10 @@
       "operation_mode": "Regime-Aware",
       "market_regime_adx_percentile": 70.0,
       "penalty_pct_htf_conflict": 30.0,
-      "min_total_score_base": 50.0,
-      "min_total_score_breakout_base": 50.0,
-      "min_score_pullback_base": 50.0,
-      "min_score_reversal_base": 50.0,
+      "min_total_score_base": 64.0,
+      "min_total_score_breakout_base": 68.0,
+      "min_score_pullback_base": 63.0,
+      "min_score_reversal_base": 57.0,
       "weights_trending": {
         "price_vs_kumo": 3,
         "tk_cross_strong": 3,
@@ -236,9 +236,9 @@
           "macd_aligned": 3
         },
         "min_score_levels": {
-          "weak": 10.0,
-          "normal": 20.0,
-          "strong": 30.0
+          "weak": 22.0,
+          "normal": 38.0,
+          "strong": 55.0
         },
         "strict_mode_requires_quality": "normal",
         "adx_min_percentile_for_htf": 75.0
@@ -271,11 +271,11 @@
         ]
       },
       "signal_grading_thresholds": {
-        "strong": 78.0,
-        "normal": 58.0
+        "strong": 72.0,
+        "normal": 53.0
       },
       "high_quality_score_threshold": 72.0,
-      "min_rr_ratio": 1.8,
+      "min_rr_ratio": 1.5,
       "sl_hybrid_max_atr_mult": 2.5,
       "volume_z_relax_threshold": 1.7,
       "cooldown_bars": 4,
@@ -476,7 +476,7 @@
         "ranging": 1.1,
         "trending": 0.7
       },
-      "min_squeeze_score": 6,
+      "min_squeeze_score": 2,
       "weights_squeeze": {
         "bollinger_breakout": {
           "strong": 3,
@@ -491,7 +491,7 @@
         "htf_alignment": 2,
         "macd_aligned": 2
       },
-      "min_ranging_score": 9,
+      "min_ranging_score": 2,
       "ranging_proximity_atr_mult": 0.25,
       "weights_ranging": {
         "rsi_reversal": 3,
@@ -508,7 +508,7 @@
       "ranging_rsi_lookback": 100,
       "ranging_rsi_buy_percentile": 15,
       "ranging_rsi_sell_percentile": 85,
-      "min_trending_score": 10,
+      "min_trending_score": 2,
       "trending_rsi_zones": {
         "buy_min": 45,
         "buy_max": 65,
