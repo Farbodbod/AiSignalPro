@@ -565,7 +565,7 @@
     "VwapMeanReversion": {
       "enabled": true,
       "max_adx_for_reversion": 21.0,
-      "oscillator_logic": "OR",
+      "oscillator_logic": "AND",
       "use_rsi": true,
       "rsi_oversold": 30.0,
       "rsi_overbought": 70.0,
