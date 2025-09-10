@@ -1,4 +1,4 @@
-# backend/engines/strategies/trend_rider.py - (v8.1 - The OHRE Refactor)
+# backend/engines/strategies/trend_rider.py - (v8.2 - The Perfected OHRE Integration)
 
 import logging
 from typing import Dict, Any, Optional, Tuple, ClassVar
@@ -10,19 +10,19 @@ logger = logging.getLogger(__name__)
 
 class TrendRiderPro(BaseStrategy):
     """
-    TrendRiderPro - (v8.1 - The OHRE Refactor)
+    TrendRiderPro - (v8.2 - The Perfected OHRE Integration)
     -----------------------------------------------------------------------------------------
-    This version refactors the strategy to be fully compliant with the latest BaseStrategy
-    architecture. The flawed manual risk management logic has been removed and replaced
-    with a direct integration to the advanced Optimized Hybrid Risk Engine (OHRE). The
-    strategy now provides a contextual anchor price to the OHRE, delegating the full
-    responsibility of SL/TP calculation to the BaseStrategy for superior, structure-aware
-    risk management. The redundant HTF data pre-check has also been removed to improve
-    encapsulation.
+    This version perfects the integration with the OHRE engine. Key fixes include:
+    1.  **Full Data Provisioning:** The strategy now explicitly requests all necessary
+        structural indicators ('structure', 'pivots') to ensure the OHRE can
+        leverage its primary, high-conviction plan builders.
+    2.  **Configuration Cleanup:** Obsolete risk parameters ('tactical_tp_rr_ratio',
+        'min_risk_pct') have been removed from the default_config to align it with
+        the strategy's actual logic.
     """
     strategy_name: str = "TrendRiderPro"
 
-    # --- Configuration remains unchanged as the logic adapts to it ---
+    # --- Default config cleaned of obsolete parameters ---
     default_config: ClassVar[Dict[str, Any]] = {
         "market_regime_filter_enabled": True,
         "required_regime": "TRENDING",
@@ -30,12 +30,11 @@ class TrendRiderPro(BaseStrategy):
         
         "default_params": {
             "entry_trigger_type": "supertrend", "min_adx_percentile": 70.0,
-            "st_multiplier": 3.0, "ch_atr_multiplier": 3.0, "tactical_tp_rr_ratio": 2.0,
-            "min_risk_pct": 0.1
+            "st_multiplier": 3.0, "ch_atr_multiplier": 3.0
         },
         "timeframe_overrides": {
             "5m": { "min_adx_percentile": 65.0 },
-            "1d": { "min_adx_percentile": 75.0, "tactical_tp_rr_ratio": 2.5 }
+            "1d": { "min_adx_percentile": 75.0 }
         },
         "htf_confirmation_enabled": True,
         "htf_map": { "5m": "15m", "15m": "1h", "1h": "4h", "4h": "1d" },
@@ -72,8 +71,8 @@ class TrendRiderPro(BaseStrategy):
         cfg = self._get_signal_config()
         if not self.price_data: self._log_final_decision("HOLD", "No price data available."); return None
 
-        # --- 1. Data Availability Check (Cleaned) ---
-        required_names = ['adx', 'chandelier_exit', 'fast_ma']
+        # --- 1. Data Availability Check (Updated for OHRE) ---
+        required_names = ['adx', 'chandelier_exit', 'fast_ma', 'structure', 'pivots']
         if cfg.get('entry_trigger_type') == 'ema_cross': required_names.append('ema_cross')
         else: required_names.append('supertrend')
         
@@ -129,7 +128,6 @@ class TrendRiderPro(BaseStrategy):
         # --- 4. Risk Management (UPGRADED to OHRE Engine) ---
         entry_price = self.price_data.get('close')
         
-        # Use Chandelier Exit as a smart "anchor" for the OHRE engine to find the best structural SL.
         stop_loss_key = 'long_stop' if signal_direction == "BUY" else 'short_stop'
         sl_anchor_price = self._safe_get(indicators, ['chandelier_exit', 'values', stop_loss_key])
 
@@ -159,3 +157,4 @@ class TrendRiderPro(BaseStrategy):
         self._log_final_decision(signal_direction, "All criteria met. Adaptive Trend Rider signal confirmed by OHRE.")
         
         return {"direction": signal_direction, "entry_price": entry_price, **risk_params, "confirmations": confirmations}
+
