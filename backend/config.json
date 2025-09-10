@@ -171,10 +171,10 @@
       "operation_mode": "Regime-Aware",
       "market_regime_adx_percentile": 70.0,
       "penalty_pct_htf_conflict": 30.0,
-      "min_total_score_base": 66.0,
-      "min_total_score_breakout_base": 68.0,
-      "min_score_pullback_base": 72.0,
-      "min_score_reversal_base": 70.0,
+      "min_total_score_base": 50.0,
+      "min_total_score_breakout_base": 50.0,
+      "min_score_pullback_base": 50.0,
+      "min_score_reversal_base": 50.0,
       "weights_trending": {
         "price_vs_kumo": 3,
         "tk_cross_strong": 3,
@@ -236,9 +236,9 @@
           "macd_aligned": 3
         },
         "min_score_levels": {
-          "weak": 28.0,
-          "normal": 48.0,
-          "strong": 68.0
+          "weak": 10.0,
+          "normal": 20.0,
+          "strong": 30.0
         },
         "strict_mode_requires_quality": "normal",
         "adx_min_percentile_for_htf": 75.0
