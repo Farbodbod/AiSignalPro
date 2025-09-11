@@ -1,4 +1,4 @@
-# backend/engines/strategies/ichimoku_pro.py - (v24.0 - The Perfected OHRE Integration)
+# backend/engines/strategies/ichimoku_pro.py - (v25.0 - The Final OHRE v3.0 Integration)
 
 from __future__ import annotations
 import logging
@@ -11,26 +11,19 @@ logger = logging.getLogger(__name__)
 
 class IchimokuHybridPro(BaseStrategy):
     """
-    IchimokuHybridPro - (v24.0 - The Perfected OHRE Integration)
+    IchimokuHybridPro - (v25.0 - The Final OHRE v3.0 Integration)
     -------------------------------------------------------------------------
-    This version marks the final architectural upgrade, bringing the strategy's
-    world-class signal analysis engine into perfect harmony with the BaseStrategy's
-    most advanced risk management system.
-
-    🚀 KEY EVOLUTIONS in v24.0:
-    1.  **Full OHRE Integration:** The legacy risk system is replaced. The strategy's
-        powerful, context-aware SL logic now serves as a smart anchor provider
-        for the `_orchestrate_static_risk` engine, combining the best of both worlds.
-    2.  **Dynamic R:R Preservation:** The intelligent logic that required a higher
-        Risk-Reward Ratio for higher quality signals is fully preserved by leveraging
-        the `override_min_rr_ratio` feature of the OHRE.
-    3.  **Perfected Dependencies:** The strategy is now architecturally complete,
-        requesting all necessary structural indicators to fully power the OHRE and
-        removing all obsolete configuration parameters.
+    This version completes the full architectural harmonization with BaseStrategy v25.0.
+    The strategy's powerful, multi-trigger signal engine is now perfectly paired with
+    the new OHRE v3.0 ("The Maestro Engine"). All internal, custom SL logic has been
+    removed, fully delegating the responsibility of finding the optimal structural SL
+    and calculating quantum targets to the BaseStrategy. This simplifies the strategy's
+    code while significantly upgrading its risk management capabilities to the project's
+    gold standard.
     """
     strategy_name: str = "IchimokuHybridPro"
     
-    # --- Default config cleaned of obsolete risk parameters ---
+    # --- Default config cleaned of all obsolete risk parameters ---
     default_config: ClassVar[Dict[str, Any]] = {
       "operation_mode": "Regime-Aware",
       "market_regime_adx_percentile": 70.0,
@@ -60,7 +53,7 @@ class IchimokuHybridPro(BaseStrategy):
       "kumo_reversal_engine": { "enabled": True, "min_reliability": "Medium" },
       "signal_grading_thresholds": { "strong": 80.0, "normal": 60.0 },
       "high_quality_score_threshold": 74.0, "min_rr_ratio": 1.5,
-      "sl_hybrid_max_atr_mult": 2.0, "volume_z_relax_threshold": 1.5,
+      "volume_z_relax_threshold": 1.5,
       "cooldown_bars": 3, "outlier_candle_shield": True, "outlier_atr_mult": 3.5,
       "late_entry_atr_threshold": 1.2,
       "htf_confirmation_enabled": True, "htf_map": { "5m": "15m", "15m": "1h", "1h": "4h", "4h": "1d" },
@@ -69,17 +62,20 @@ class IchimokuHybridPro(BaseStrategy):
       "htf_breakout_context_levels": ["kumo", "kijun"]
     }
 
-    # --- All Helper Methods are preserved as they are integral to the strategy's unique logic ---
+    # --- Helper methods integral to the strategy's unique logic (Unchanged) ---
     def _indicator_ok(self, d: Optional[Dict]) -> bool:
+        # ... (code remains unchanged)
         return isinstance(d, dict) and (d.get('values') or d.get('analysis'))
 
     def _grade_signal(self, score: float) -> str:
+        # ... (code remains unchanged)
         thresholds = self.config.get('signal_grading_thresholds', {})
         if score >= thresholds.get('strong', 80.0): return "Strong"
         if score >= thresholds.get('normal', 60.0): return "Normal"
         return "Weak"
-    
+
     def _generate_signal_narrative(self, direction: str, grade: str, mode: str, base_score: float, penalties: List[Dict], final_score: float, htf_details: str, htf_grade: str) -> str:
+        # ... (code remains unchanged)
         base = f"{direction} signal ({mode} Mode, {grade} grade)"
         score_str = f"Base Score: {base_score:.2f}"
         if penalties: penalty_parts = [f"-{p['value_pct']:.2f}% ({p['reason']})" for p in penalties]; penalties_str = "Penalties: " + " , ".join(penalty_parts)
@@ -90,6 +86,7 @@ class IchimokuHybridPro(BaseStrategy):
         return ". ".join(filter(None, parts))
 
     def _check_htf_breakout_context(self, direction: str) -> bool:
+        # ... (code remains unchanged)
         if not self.htf_analysis: return True
         htf_ichi_data = self.get_indicator('ichimoku', analysis_source=self.htf_analysis)
         if not self._indicator_ok(htf_ichi_data): return True
@@ -100,9 +97,9 @@ class IchimokuHybridPro(BaseStrategy):
         if direction == "BUY": context_ok = ("kumo" in check_levels and htf_analysis.get('price_position') == "Above Kumo") or ("kijun" in check_levels and self._is_valid_number(htf_kijun) and htf_price > htf_kijun)
         else: context_ok = ("kumo" in check_levels and htf_analysis.get('price_position') == "Below Kumo") or ("kijun" in check_levels and self._is_valid_number(htf_kijun) and htf_price < htf_kijun)
         return context_ok
-        
+
     def _score_and_normalize(self, direction: str, analysis_data: Dict, weights: Dict, trigger_type: str) -> Tuple[float, List[str], List[Dict]]:
-        # This entire complex method is preserved without change
+        # ... (code remains unchanged)
         self._log_criteria(f"Path Check: Scoring Engine", True, f"Calculating base score for trigger '{trigger_type}'.")
         positive_score, confirmations, penalties = 0, [], []
         positive_weights = {k: v for k, v in weights.items() if v > 0}
@@ -166,9 +163,9 @@ class IchimokuHybridPro(BaseStrategy):
         log_msg = (f"Trigger: '{trigger_type}', Score: {normalized_score:.2f}. Confirms: {passed_confirmations}. Fails: {failed_confirmations}.")
         self._log_criteria("Scoring Result", normalized_score > 0, log_msg)
         return normalized_score, confirmations, penalties
-    
+
     def _evaluate_htf(self, trigger_type: str, direction: str) -> Tuple[bool, str, float, List[Dict], str]:
-        # This entire complex method is preserved without change
+        # ... (code remains unchanged)
         htf_cfg = self.config.get('htf_quality_scoring', {})
         if not htf_cfg.get('enabled', True) or not self.htf_analysis: 
             return True, "Disabled", 100.0, [], "N/A"
@@ -225,39 +222,16 @@ class IchimokuHybridPro(BaseStrategy):
         details_for_narrative = f"Score: {norm_htf_score:.2f}, Grade: {grade}"
         return is_quality_ok, details_for_narrative, norm_htf_score, [], grade
 
-    def _calculate_stop_loss(self, direction: str, ichi_vals: Dict, price: float, atr: float, cfg: Dict) -> Optional[float]:
-        # This intelligent method is preserved to act as our smart anchor provider
-        if not self._is_valid_number(price, atr): return None
-        calculated_sl = None
-        senkou_a = ichi_vals.get('senkou_a'); senkou_b = ichi_vals.get('senkou_b'); kijun = ichi_vals.get('kijun')
-        
-        structural_sl = None
-        if self._is_valid_number(senkou_a) and self._is_valid_number(senkou_b):
-            structural_sl = min(senkou_a, senkou_b) if direction == 'BUY' else max(senkou_a, senkou_b)
-        elif self._is_valid_number(kijun):
-            structural_sl = kijun
-
-        if self._is_valid_number(structural_sl):
-            max_dist = cfg.get('sl_hybrid_max_atr_mult', 2.0) * atr
-            if abs(price - structural_sl) > max_dist:
-                calculated_sl = price - max_dist if direction == 'BUY' else price + max_dist
-            else:
-                calculated_sl = structural_sl
-        else: 
-            calculated_sl = (price - (2.0 * atr) if direction == 'BUY' else price + (2.0 * atr))
-
-        if self._is_valid_number(calculated_sl) and not ((direction == 'BUY' and calculated_sl >= price) or (direction == 'SELL' and calculated_sl <= price)):
-            return calculated_sl
-        return None
+    # --- Custom SL logic is now removed as OHRE v3.0 handles it ---
+    # def _calculate_stop_loss(...)
     
-    # --- Main signal method refactored for OHRE integration ---
     def check_signal(self) -> Optional[Dict[str, Any]]:
         cfg = self.config
         
         if not self.price_data or not isinstance(self.df, pd.DataFrame) or self.df.empty: return None
         if (len(self.df) - 1 - getattr(self, "last_signal_bar", -10**9)) < cfg.get('cooldown_bars', 3): return None
         
-        # ✅ UPGRADED: Added dependencies for OHRE
+        # UPGRADED: Added dependencies for OHRE v3.0
         required = ['ichimoku', 'adx', 'atr', 'volume', 'keltner_channel', 'rsi', 'patterns', 'macd', 'supertrend', 'pivots', 'structure']
         indicators = {name: self.get_indicator(name) for name in required}
         if any(not self._indicator_ok(data) for data in indicators.values()): return None
@@ -301,7 +275,6 @@ class IchimokuHybridPro(BaseStrategy):
 
         if not potential_signals: self._log_final_decision("HOLD", "No actionable trigger found."); return None
         
-        # --- The logic for selecting the best signal and applying penalties is 100% preserved ---
         best_signal = max(potential_signals, key=lambda x: x['score'])
         signal_direction, trigger_type, market_regime, base_score, _, intrinsic_penalties = best_signal['direction'], best_signal['trigger'], best_signal.get('regime', 'PULLBACK'), best_signal['score'], best_signal['confirms'], best_signal['penalties']
         engine_cfg = cfg.get('timing_and_exhaustion_engine', {})
@@ -325,29 +298,22 @@ class IchimokuHybridPro(BaseStrategy):
         
         # --- ✅ RISK MANAGEMENT UPGRADE ---
         entry_price = self.price_data.get('close')
-        atr_value = self._safe_get(indicators, ['atr', 'values', 'atr'])
-
-        # 1. Use existing smart logic to calculate the anchor price
-        sl_anchor_price = self._calculate_stop_loss(signal_direction, ichi_values, entry_price, atr_value, cfg)
-        if not sl_anchor_price: 
-            self._log_final_decision("HOLD", "Could not calculate a valid SL anchor."); return None
-
-        # 2. Preserve the dynamic R:R logic by setting an override
-        rr_needed = 2.0 if final_score >= cfg.get('high_quality_score_threshold', 74.0) else cfg.get('min_rr_ratio', 1.5)
-        self.config['override_min_rr_ratio'] = rr_needed # Temporarily set for the OHRE call
         
-        # 3. Delegate to the OHRE
+        # 1. Preserve the dynamic R:R logic by setting an override for the OHRE
+        rr_needed = 2.0 if final_score >= cfg.get('high_quality_score_threshold', 74.0) else cfg.get('min_rr_ratio', 1.5)
+        self.config['override_min_rr_ratio'] = rr_needed
+        
+        # 2. Delegate fully to the OHRE v3.0
         risk_params = self._orchestrate_static_risk(
             direction=signal_direction,
-            entry_price=entry_price,
-            sl_anchor_price=sl_anchor_price
+            entry_price=entry_price
         )
 
-        # 4. Clean up the temporary override
+        # 3. Clean up the temporary override
         self.config.pop('override_min_rr_ratio', None)
 
         if not risk_params: 
-            self._log_final_decision("HOLD", f"OHRE failed to generate a valid risk plan (min R:R needed: {rr_needed})."); return None
+            self._log_final_decision("HOLD", f"OHRE v3.0 failed to generate a valid risk plan (min R:R needed: {rr_needed})."); return None
 
         # --- Final signal construction is preserved ---
         self.last_signal_bar = len(self.df) - 1
