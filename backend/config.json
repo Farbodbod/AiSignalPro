@@ -171,10 +171,10 @@
       "operation_mode": "Regime-Aware",
       "market_regime_adx_percentile": 70.0,
       "penalty_pct_htf_conflict": 30.0,
-      "min_total_score_base": 50.0,
-      "min_total_score_breakout_base": 50.0,
-      "min_score_pullback_base": 50.0,
-      "min_score_reversal_base": 50.0,
+      "min_total_score_base": 64.0,
+      "min_total_score_breakout_base": 64.0,
+      "min_score_pullback_base": 60.0,
+      "min_score_reversal_base": 60.0,
       "weights_trending": {
         "price_vs_kumo": 3, "tk_cross_strong": 3, "tk_cross_medium": 2, "future_kumo": 1,
         "chikou_free": 2, "kumo_twist": 1, "volume_spike": 2, "volatility_filter": -4,
@@ -415,12 +415,7 @@
       "direction": 0,
       "max_adx_percentile_for_ranging": 45.0,
       "min_adx_percentile_for_trending": 70.0,
-      "sl_atr_buffer_multipliers": {
-        "squeeze": 0.6,
-        "ranging": 1.1,
-        "trending": 0.7
-      },
-      "min_squeeze_score": 6,
+      "min_squeeze_score": 4,
       "weights_squeeze": {
         "bollinger_breakout": {
           "strong": 3,
@@ -435,7 +430,7 @@
         "htf_alignment": 2,
         "macd_aligned": 2
       },
-      "min_ranging_score": 7,
+      "min_ranging_score": 4,
       "ranging_proximity_atr_mult": 0.10,
       "weights_ranging": {
         "rsi_reversal": 3,
@@ -452,7 +447,7 @@
       "ranging_rsi_lookback": 100,
       "ranging_rsi_buy_percentile": 15,
       "ranging_rsi_sell_percentile": 85,
-      "min_trending_score": 7,
+      "min_trending_score": 4,
       "trending_rsi_zones": {
         "buy_min": 45,
         "buy_max": 65,
@@ -483,7 +478,18 @@
           "weight": 1
         }
       },
-      "allow_mixed_mode": false
+      "allow_mixed_mode": false,
+      "ohre_engine": {
+        "min_level_strength": 2,
+        "pivot_strength_map": { "S3": 1, "R3": 1, "S2": 2, "R2": 2, "S1": 3, "R1": 3, "P": 3 },
+        "magnet_proximity_percent": 0.5,
+        "min_magnet_strength": 3,
+        "percentile_thresholds": { "strong": 80, "developing": 40 },
+        "atr_fallback_engine": {
+          "strength_multipliers": { "strong": 1.75, "developing": 1.25, "weak": 1.0 },
+          "base_rr_multiples": [ 1.5, 2.5, 4.0 ]
+        }
+      }
     },
     "TrendRiderPro": {
       "enabled": true,
