@@ -1,4 +1,4 @@
-# backend/engines/strategies/BollingerBandsDirectedMaestro.py - (v15.0 - The OHRE v3.0 Harmonization)
+# backend/engines/strategies/BollingerBandsDirectedMaestro.py - (v15.1 - Critical Return Fix)
 
 import logging
 from typing import Dict, Any, Optional, ClassVar, List
@@ -8,36 +8,25 @@ logger = logging.getLogger(__name__)
 
 class BollingerBandsDirectedMaestro(BaseStrategy):
     """
-    BollingerBandsDirectedMaestro - (v15.0 - The OHRE v3.0 Harmonization)
+    BollingerBandsDirectedMaestro - (v15.1 - Critical Return Fix)
     -------------------------------------------------------------------------
-    This version harmonizes the strategy with the definitive OHRE v3.0 engine
-    ("The Maestro Engine") introduced in BaseStrategy v25.0.
-
-    🚀 KEY EVOLUTIONS in v15.0:
-    1.  **Simplified Risk Delegation:** The strategy is now relieved of its duty to
-        provide an SL anchor. It makes a cleaner, simpler call to the new
-        `_orchestrate_static_risk`, fully trusting the BaseStrategy to find the
-        optimal structural SL and generate quantum targets.
-    2.  **Code & Config Cleanup:** All deprecated helper methods and obsolete config
-        parameters related to the previous risk engine have been surgically removed,
-        resulting in a cleaner, more maintainable, and architecturally pure strategy.
+    This version applies a critical bug fix to the v15.0 release. The helper methods
+    (_check_..._front) were returning an incomplete signal dictionary that was missing
+    the 'direction' and 'entry_price' keys. This version corrects the return
+    statements in all three fronts to ensure a complete, standard signal dictionary
+    is always produced, resolving the "zero entry price" bug.
     """
     strategy_name: str = "BollingerBandsDirectedMaestro"
     
-    # --- Default config cleaned of obsolete parameters ---
     default_config: ClassVar[Dict[str, Any]] = {
       "enabled": True, "direction": 0,
-      
-      "max_adx_percentile_for_ranging": 45.0,
-      "min_adx_percentile_for_trending": 70.0,
-      
+      "max_adx_percentile_for_ranging": 45.0, "min_adx_percentile_for_trending": 70.0,
       "min_squeeze_score": 6,
       "weights_squeeze": {
           "bollinger_breakout": {"strong": 3, "medium": 2}, "momentum_confirmation": 3,
           "momentum_rsi_thresholds": {"buy": 52, "sell": 48}, "volume_spike_confirmation": 2,
           "htf_alignment": 2, "macd_aligned": 2
       },
-      
       "min_ranging_score": 9,
       "ranging_proximity_atr_mult": 0.25,
       "weights_ranging": {
@@ -46,30 +35,24 @@ class BollingerBandsDirectedMaestro(BaseStrategy):
       },
       "ranging_rsi_dynamic_enabled": True, "ranging_rsi_lookback": 100,
       "ranging_rsi_buy_percentile": 15, "ranging_rsi_sell_percentile": 85,
-
       "min_trending_score": 10,
       "trending_rsi_zones": {"buy_min": 45, "buy_max": 65, "sell_min": 35, "sell_max": 55},
       "weights_trending": {
           "htf_alignment": 4, "rsi_cooldown": 3, "adx_acceleration_confirmation": 2,
           "adx_strength": 1, "macd_aligned": 2
       },
-
       "htf_confirmation_enabled": True,
       "htf_map": { "5m": "15m", "15m": "1h", "1h": "4h", "4h": "1d" },
       "htf_confirmations": { "min_required_score": 2, "adx": {"weight": 1, "min_percentile": 70.0},"supertrend": {"weight": 1}},
       "allow_mixed_mode": False
     }
 
-    # --- Deprecated helper method removed ---
-    # def _calculate_dynamic_sl_multiplier(...)
-
     def check_signal(self) -> Optional[Dict[str, Any]]:
         if not self.price_data: return None
         current_price = self.price_data.get('close')
-        if not self._is_valid_number(current_price):
+        if not self._is_valid_number(current_price) or current_price <= 0:
             self._log_final_decision("HOLD", f"Invalid current_price: {current_price}"); return None
-
-        # Dependencies are already perfect for OHRE v3.0
+        
         required = ['bollinger', 'rsi', 'adx', 'patterns', 'volume', 'atr', 'divergence', 
                     'macd', 'pivots', 'structure', 'fibonacci', 'supertrend']
         indicators = {name: self.get_indicator(name) for name in set(required)}
@@ -78,7 +61,6 @@ class BollingerBandsDirectedMaestro(BaseStrategy):
             missing = [name for name, data in indicators.items() if data is None]
             self._log_final_decision("HOLD", f"Required indicators missing: {', '.join(missing)}"); return None
         
-        # --- Conductor logic remains unchanged ---
         squeeze_signal = self._check_squeeze_front(current_price, indicators)
         if squeeze_signal: return squeeze_signal
         
@@ -99,12 +81,12 @@ class BollingerBandsDirectedMaestro(BaseStrategy):
         return None
 
     def _check_squeeze_front(self, current_price: float, indicators: Dict) -> Optional[Dict[str, Any]]:
-        # --- Scoring logic remains unchanged ---
         cfg = self.config; is_squeeze = self._safe_get(indicators, ['bollinger', 'analysis', 'is_squeeze_release'], False)
         self._log_criteria("Path Check: Squeeze", is_squeeze, f"Squeeze Release detected: {is_squeeze}")
         if not is_squeeze: return None
         
         score, weights, min_score = 0, cfg['weights_squeeze'], cfg['min_squeeze_score']
+        # ... (scoring logic is unchanged)
         bollinger_analysis = self._safe_get(indicators, ['bollinger', 'analysis'], {})
         trade_signal = self._safe_get(bollinger_analysis, ['trade_signal'], '').lower()
         temp_direction = "BUY" if "bullish" in trade_signal else "SELL" if "bearish" in trade_signal else None
@@ -122,17 +104,18 @@ class BollingerBandsDirectedMaestro(BaseStrategy):
         if (temp_direction == "BUY" and histo > 0) or (temp_direction == "SELL" and histo < 0):
             score += weights.get('macd_aligned', 0)
 
-        # --- ✅ Risk call is now simplified ---
         if score >= min_score:
             risk_params = self._orchestrate_static_risk(temp_direction, current_price)
             if risk_params:
-                self._log_final_decision(temp_direction, f"Squeeze Breakout triggered (Score: {score})"); 
-                risk_params["confirmations"] = {"final_score": score, "trade_mode": "Squeeze Breakout"}; return risk_params
+                self._log_final_decision(temp_direction, f"Squeeze Breakout triggered (Score: {score})")
+                risk_params["confirmations"] = {"final_score": score, "trade_mode": "Squeeze Breakout"}
+                # ✅ CRITICAL FIX: Return a complete signal dictionary
+                return { "direction": temp_direction, "entry_price": current_price, **risk_params }
 
         self._log_final_decision("HOLD", f"Squeeze conditions not met (Score: {score} < {min_score})."); return None
 
     def _check_ranging_front(self, current_price: float, indicators: Dict) -> Optional[Dict[str, Any]]:
-        # --- Scoring logic remains unchanged ---
+        # ... (trigger and scoring logic is unchanged)
         cfg = self.config; lower_band, upper_band, atr_value = (self._safe_get(indicators, ['bollinger', 'values', 'lower_band']), 
                                                                self._safe_get(indicators, ['bollinger', 'values', 'upper_band']),
                                                                self._safe_get(indicators, ['atr', 'values', 'atr']))
@@ -158,17 +141,18 @@ class BollingerBandsDirectedMaestro(BaseStrategy):
             if (temp_direction == "BUY" and histo > 0) or (temp_direction == "SELL" and histo < 0):
                 score += weights.get('macd_aligned', 0)
             
-            # --- ✅ Risk call is now simplified ---
             if score >= min_score:
                 risk_params = self._orchestrate_static_risk(temp_direction, current_price)
                 if risk_params:
-                    self._log_final_decision(temp_direction, f"Mean Reversion triggered (Score: {score})");
-                    risk_params["confirmations"] = {"final_score": score, "trade_mode": "Mean Reversion"}; return risk_params
+                    self._log_final_decision(temp_direction, f"Mean Reversion triggered (Score: {score})")
+                    risk_params["confirmations"] = {"final_score": score, "trade_mode": "Mean Reversion"}
+                    # ✅ CRITICAL FIX: Return a complete signal dictionary
+                    return { "direction": temp_direction, "entry_price": current_price, **risk_params }
         
         self._log_final_decision("HOLD", "Ranging conditions not fully met."); return None
 
     def _check_trending_front(self, current_price: float, indicators: Dict) -> Optional[Dict[str, Any]]:
-        # --- Scoring logic remains unchanged ---
+        # ... (trigger and scoring logic is unchanged)
         cfg = self.config; middle_band = self._safe_get(indicators, ['bollinger', 'values', 'middle_band'])
         price_low, price_high = self.price_data.get('low'), self.price_data.get('high')
         temp_direction = None
@@ -193,11 +177,12 @@ class BollingerBandsDirectedMaestro(BaseStrategy):
             if (temp_direction == "BUY" and histo > 0) or (temp_direction == "SELL" and histo < 0):
                 score += weights.get('macd_aligned', 0)
 
-            # --- ✅ Risk call is now simplified ---
             if score >= min_score:
                 risk_params = self._orchestrate_static_risk(temp_direction, current_price)
                 if risk_params:
-                    self._log_final_decision(temp_direction, f"Pullback triggered (Score: {score})"); 
-                    risk_params["confirmations"] = {"final_score": score, "trade_mode": "Pullback"}; return risk_params
+                    self._log_final_decision(temp_direction, f"Pullback triggered (Score: {score})")
+                    risk_params["confirmations"] = {"final_score": score, "trade_mode": "Pullback"}
+                    # ✅ CRITICAL FIX: Return a complete signal dictionary
+                    return { "direction": temp_direction, "entry_price": current_price, **risk_params }
 
         self._log_final_decision("HOLD", "Trending conditions not fully met."); return None
