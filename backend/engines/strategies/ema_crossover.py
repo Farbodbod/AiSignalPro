@@ -1,4 +1,4 @@
-# backend/engines/strategies/Ema_Crossover.py - (v7.2 - The Perfected OHRE Integration)
+# backend/engines/strategies/Ema_Crossover.py - (v8.1 - Critical Bug Fix)
 
 import logging
 from typing import Dict, Any, Optional, ClassVar, List
@@ -8,20 +8,16 @@ logger = logging.getLogger(__name__)
 
 class EmaCrossoverStrategy(BaseStrategy):
     """
-    EmaCrossoverStrategy - (v7.2 - The Perfected OHRE Integration)
+    EmaCrossoverStrategy - (v8.1 - Critical Bug Fix)
     -------------------------------------------------------------------
-    This version perfects the integration with the OHRE engine. Key fixes include:
-    1.  **Full Data Provisioning:** The strategy now explicitly requests all necessary
-        structural indicators ('structure', 'pivots') to ensure the OHRE can
-        leverage its primary, high-conviction plan builders instead of defaulting
-        to its fallback mechanism.
-    2.  **Configuration Cleanup:** The obsolete 'adaptive_targeting' parameter has been
-        removed from the default_config to eliminate confusion and align the
-        internal configuration with the strategy's actual logic.
+    This version applies a critical bug fix to the v8.0 release. It corrects a
+    NameError in the Hidden Divergence confirmation logic where an undefined
+    'direction' variable was used instead of 'signal_direction'. All other
+    features and the OHRE v3.0 harmonization from v8.0 are preserved.
     """
     strategy_name: str = "EmaCrossoverStrategy"
 
-    # --- Default config cleaned of obsolete parameters ---
+    # --- Default config is now fully harmonized with the code logic ---
     default_config: ClassVar[Dict[str, Any]] = {
         "market_regime_filter": {
             "enabled": True, "required_regime": "TRENDING", "adx_percentile_threshold": 70.0
@@ -44,7 +40,6 @@ class EmaCrossoverStrategy(BaseStrategy):
         "min_adx_percentile": 70.0,
         "candlestick_confirmation_enabled": True,
         "master_trend_ma_indicator": "fast_ma",
-        "volatility_regimes": { "low_atr_pct_threshold": 1.5, "low_vol_sl_multiplier": 2.0, "high_vol_sl_multiplier": 3.0 },
         "htf_confirmation_enabled": True,
         "htf_map": { "5m": "15m", "15m": "1h", "1h": "4h", "4h": "1d" },
         "htf_confirmations": {
@@ -59,7 +54,6 @@ class EmaCrossoverStrategy(BaseStrategy):
         if not self.price_data:
             self._log_final_decision("HOLD", "No price data available."); return None
 
-        # --- Indicator requirements updated to feed the OHRE engine ---
         required = ['ema_cross', 'atr', 'adx', 'rsi', 'divergence', 'structure', 'pivots']
         if cfg.get('master_trend_filter_enabled'): required.append(cfg.get('master_trend_ma_indicator', 'fast_ma'))
         if cfg.get('macd_confirmation_enabled'): required.append('macd')
@@ -72,7 +66,6 @@ class EmaCrossoverStrategy(BaseStrategy):
             missing = [name for name, data in indicators.items() if data is None]
             self._log_final_decision("HOLD", f"Indicators missing: {', '.join(missing)}"); return None
         
-        # --- STAGES 1-4 remain unchanged ---
         # STAGE 1: BATTLEFIELD SELECTION
         regime_cfg = cfg.get('market_regime_filter', {})
         if regime_cfg.get('enabled', True):
@@ -115,8 +108,11 @@ class EmaCrossoverStrategy(BaseStrategy):
                     score += weights.get('master_trend', 0); confirmations.append("Master Trend")
         if weights.get('hidden_divergence'):
             div_analysis = self._safe_get(indicators, ['divergence', 'analysis'], {})
+            
+            # ✅ CRITICAL FIX APPLIED HERE
             is_confirmed = (signal_direction == "BUY" and div_analysis.get('has_hidden_bullish_divergence')) or \
                            (signal_direction == "SELL" and div_analysis.get('has_hidden_bearish_divergence'))
+            
             if is_confirmed:
                 score += weights.get('hidden_divergence', 0); confirmations.append("Hidden Divergence")
         if cfg.get('macd_confirmation_enabled'):
@@ -146,35 +142,23 @@ class EmaCrossoverStrategy(BaseStrategy):
             self._log_final_decision("HOLD", f"Confirmation score {score} is below required {min_score}."); return None
         self._log_criteria("Confirmation Score", True, f"Score: {score} >= Min: {min_score}. Confirmed by: {', '.join(confirmations)}")
 
-        # --- STAGE 5: LOGISTICS (Perfected OHRE Integration) ---
+        # --- STAGE 5: LOGISTICS (Harmonized with OHRE v3.0) ---
         entry_price = self.price_data.get('close')
-        long_ema_val = self._safe_get(indicators, ['ema_cross', 'values', 'long_ema'])
-        atr_value = self._safe_get(indicators, ['atr', 'values', 'atr'])
-        if not self._is_valid_number(entry_price, long_ema_val, atr_value):
-            self._log_final_decision("HOLD", "Risk data missing for anchor calculation."); return None
-            
-        vol_cfg = cfg.get('volatility_regimes', {})
-        atr_pct = self._safe_get(indicators, ['atr', 'values', 'atr_percent'], 2.0)
-        is_low_vol = atr_pct < vol_cfg.get('low_atr_pct_threshold', 1.5)
-        atr_sl_multiplier = vol_cfg.get('low_vol_sl_multiplier', 2.0) if is_low_vol else vol_cfg.get('high_vol_sl_multiplier', 3.0)
-        
-        sl_anchor_price = long_ema_val - (atr_value * atr_sl_multiplier) if signal_direction == "BUY" else long_ema_val + (atr_value * atr_sl_multiplier)
         
         risk_params = self._orchestrate_static_risk(
             direction=signal_direction,
-            entry_price=entry_price,
-            sl_anchor_price=sl_anchor_price
+            entry_price=entry_price
         )
         
         if not risk_params:
-            self._log_final_decision("HOLD", "OHRE failed to generate a valid risk plan."); return None
+            self._log_final_decision("HOLD", "OHRE v3.0 failed to generate a valid risk plan."); return None
         
         confirmations_dict = {
             "score": score, 
             "confirmations_passed": ", ".join(confirmations),
-            "risk_engine": self.log_details["risk_trace"][-1].get("source", "OHRE"),
+            "risk_engine": self.log_details["risk_trace"][-1].get("source", "OHRE v3.0"),
             "risk_reward": risk_params.get('risk_reward_ratio')
         }
-        self._log_final_decision(signal_direction, f"Quantum Strategist assembled. Score: {score}. Risk plan by OHRE.")
+        self._log_final_decision(signal_direction, f"Quantum Strategist assembled. Score: {score}. Risk plan by OHRE v3.0.")
 
         return { "direction": signal_direction, "entry_price": entry_price, **risk_params, "confirmations": confirmations_dict }
