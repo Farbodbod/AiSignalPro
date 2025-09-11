@@ -99,7 +99,7 @@
         "proximity_percent": 0.8
     },
     "confirmation_scoring": {
-        "min_score": 1,
+        "min_score": 7,
         "weights": {
             "climactic_volume": 4,
             "candlestick_strong": 4,
@@ -241,7 +241,7 @@
           "strong": 55.0
         },
         "strict_mode_requires_quality": "normal",
-        "adx_min_percentile_for_htf": 75.0
+        "adx_min_percentile_for_htf": 70.0
       },
       "timing_and_exhaustion_engine": {
         "enabled": true,
@@ -352,7 +352,7 @@
         "min_required_score": 1,
         "adx": {
           "weight": 1,
-          "min_percentile": 75.0
+          "min_percentile": 70.0
         },
         "supertrend": {
           "weight": 1
@@ -416,7 +416,7 @@
       "late_entry_atr_mult": 1.5,
       "htf_confirmation_enabled": true,
       "htf_map": { "5m": "15m", "15m": "1h", "1h": "4h", "4h": "1d" },
-      "htf_confirmations": { "min_required_score": 2, "adx": { "weight": 1, "min_percentile": 75 }, "supertrend": { "weight": 1 } },
+      "htf_confirmations": { "min_required_score": 2, "adx": { "weight": 1, "min_percentile": 70 }, "supertrend": { "weight": 1 } },
       "indicator_configs": {
         "keltner_channel": {
           "name": "keltner_channel",
@@ -550,7 +550,7 @@
       "timeframe_overrides": { "5m": { "min_adx_percentile": 70.0 }, "1d": { "min_adx_percentile": 75.0 } },
       "htf_confirmation_enabled": true,
       "htf_map": { "5m": "15m", "15m": "1h", "1h": "4h", "4h": "1d" },
-      "htf_confirmations": { "min_required_score": 2, "adx": { "weight": 1, "min_percentile": 75.0 }, "supertrend": { "weight": 1 } },
+      "htf_confirmations": { "min_required_score": 2, "adx": { "weight": 1, "min_percentile": 70.0 }, "supertrend": { "weight": 1 } },
       "ohre_engine": {
         "min_quality_score": 50,
         "sl_buffer_map": { "Low": 0.8, "Normal": 1.1, "High": 1.6, "Extreme": 2.0 },
