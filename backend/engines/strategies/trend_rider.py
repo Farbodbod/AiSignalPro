@@ -1,4 +1,4 @@
-# backend/engines/strategies/trend_rider.py - (v8.2 - The Perfected OHRE Integration)
+# backend/engines/strategies/trend_rider.py - (v9.0 - The Final OHRE v3.0 Harmonization)
 
 import logging
 from typing import Dict, Any, Optional, Tuple, ClassVar
@@ -10,19 +10,17 @@ logger = logging.getLogger(__name__)
 
 class TrendRiderPro(BaseStrategy):
     """
-    TrendRiderPro - (v8.2 - The Perfected OHRE Integration)
+    TrendRiderPro - (v9.0 - The Final OHRE v3.0 Harmonization)
     -----------------------------------------------------------------------------------------
-    This version perfects the integration with the OHRE engine. Key fixes include:
-    1.  **Full Data Provisioning:** The strategy now explicitly requests all necessary
-        structural indicators ('structure', 'pivots') to ensure the OHRE can
-        leverage its primary, high-conviction plan builders.
-    2.  **Configuration Cleanup:** Obsolete risk parameters ('tactical_tp_rr_ratio',
-        'min_risk_pct') have been removed from the default_config to align it with
-        the strategy's actual logic.
+    This version represents the final harmonization with the definitive OHRE v3.0 engine
+    ("The Maestro Engine") from BaseStrategy v25.0. The strategy is now relieved of its
+    duty to provide an SL anchor, as the new engine handles the optimal SL search
+    independently. This results in a cleaner, simpler, and more robust implementation
+    that fully trusts the core logic of the BaseStrategy.
     """
     strategy_name: str = "TrendRiderPro"
 
-    # --- Default config cleaned of obsolete parameters ---
+    # --- Default config is already clean and compatible ---
     default_config: ClassVar[Dict[str, Any]] = {
         "market_regime_filter_enabled": True,
         "required_regime": "TRENDING",
@@ -66,12 +64,12 @@ class TrendRiderPro(BaseStrategy):
                 if "bearish crossover" in signal: return "SELL", trigger_name
         return None, ""
 
-    # --- Core logic refactored for full architectural compliance ---
+    # --- Core logic with simplified risk call ---
     def check_signal(self) -> Optional[Dict[str, Any]]:
         cfg = self._get_signal_config()
         if not self.price_data: self._log_final_decision("HOLD", "No price data available."); return None
 
-        # --- 1. Data Availability Check (Updated for OHRE) ---
+        # --- 1. Data Availability Check (Already compatible with OHRE v3.0) ---
         required_names = ['adx', 'chandelier_exit', 'fast_ma', 'structure', 'pivots']
         if cfg.get('entry_trigger_type') == 'ema_cross': required_names.append('ema_cross')
         else: required_names.append('supertrend')
@@ -125,36 +123,30 @@ class TrendRiderPro(BaseStrategy):
         self._log_criteria("HTF Filter", htf_ok, "Not aligned with HTF." if not htf_ok else "HTF is aligned.")
         if not htf_ok: self._log_final_decision("HOLD", "HTF filter failed."); return None
         
-        # --- 4. Risk Management (UPGRADED to OHRE Engine) ---
+        # --- 4. Risk Management (✅ UPGRADED to OHRE v3.0 call) ---
         entry_price = self.price_data.get('close')
         
-        stop_loss_key = 'long_stop' if signal_direction == "BUY" else 'short_stop'
-        sl_anchor_price = self._safe_get(indicators, ['chandelier_exit', 'values', stop_loss_key])
-
-        if not self._is_valid_number(entry_price, sl_anchor_price):
-            self._log_final_decision("HOLD", "Risk data missing for OHRE (entry/sl_anchor)."); return None
-
+        # The strategy now fully delegates the SL search to the BaseStrategy.
+        # No anchor calculation is needed anymore.
         risk_params = self._orchestrate_static_risk(
             direction=signal_direction,
-            entry_price=entry_price,
-            sl_anchor_price=sl_anchor_price
+            entry_price=entry_price
         )
 
         if not risk_params:
-            self._log_final_decision("HOLD", "OHRE failed to generate a valid risk plan."); return None
+            self._log_final_decision("HOLD", "OHRE v3.0 failed to generate a valid risk plan."); return None
         
-        # --- 5. Final Decision (UPGRADED Narrative) ---
+        # --- 5. Final Decision (Narrative Updated) ---
         def _fmt5(x): return f"{float(x):.5f}" if self._is_valid_number(x) else "N/A"
         confirmations = {
             "entry_trigger": entry_trigger_name,
             "strength_filter": f"ADX Percentile > {cfg['min_adx_percentile']:.1f}% (Value: {adx_percentile:.2f}%)",
             "trend_filter": "Price confirmed by Master MA",
             "htf_confirmation": "Confirmed by HTF Engine" if cfg.get('htf_confirmation_enabled') else "Disabled",
-            "risk_engine": self.log_details["risk_trace"][-1].get("source", "OHRE"),
+            "risk_engine": self.log_details["risk_trace"][-1].get("source", "OHRE v3.0"),
             "risk_reward": risk_params.get('risk_reward_ratio'),
             "exit_management": f"SL: {_fmt5(risk_params.get('stop_loss'))}, TP1: {_fmt5(risk_params.get('targets', [None])[0])}"
         }
-        self._log_final_decision(signal_direction, "All criteria met. Adaptive Trend Rider signal confirmed by OHRE.")
+        self._log_final_decision(signal_direction, "All criteria met. Adaptive Trend Rider signal confirmed by OHRE v3.0.")
         
         return {"direction": signal_direction, "entry_price": entry_price, **risk_params, "confirmations": confirmations}
-
