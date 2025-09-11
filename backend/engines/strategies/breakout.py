@@ -1,7 +1,7 @@
-# strategies/breakout_hunter.py (v4.2 - Specific Diagnostic Logging)
+# backend/engines/strategies/breakout_hunter.py (v5.0 - The OHRE v3.0 Harmonization)
 
 import logging
-from typing import Dict, Any, Optional, List, Tuple
+from typing import Dict, Any, Optional, List, Tuple, ClassVar
 
 from .base_strategy import BaseStrategy
 
@@ -9,16 +9,28 @@ logger = logging.getLogger(__name__)
 
 class BreakoutHunter(BaseStrategy):
     """
-    BreakoutHunter - (v4.2 - Specific Diagnostic Logging)
+    BreakoutHunter - (v5.0 - The OHRE v3.0 Harmonization)
     ----------------------------------------------------------------
-    This version enhances the logging to specify exactly which required
-    indicators are missing, providing clearer diagnostics.
+    This is a major architectural overhaul to fully align the strategy with the
+    BaseStrategy v25.0 and its OHRE v3.0 engine.
+
+    🚀 KEY EVOLUTIONS in v5.0:
+    1.  **Full OHRE v3.0 Integration:** The complex, multi-step custom risk management
+        logic has been completely replaced with a single, clean call to the new
+        `_orchestrate_static_risk` engine.
+    2.  **Dynamic R:R Preservation:** The strategy's unique intelligence of requiring a
+        higher R:R for lower-quality signals has been preserved and integrated
+        with the OHRE engine via the `override_min_rr_ratio` feature.
+    3.  **Adaptive HTF Engine:** The HTF confirmation logic has been upgraded to use
+        ADX percentiles, making it more robust and context-aware.
     """
     strategy_name: str = "BreakoutHunter"
 
-    default_config = {
+    # --- Default config updated for new architecture ---
+    default_config: ClassVar[Dict[str, Any]] = {
         "min_breakout_score": 6,
-        "rr_requirements": { "low_score_threshold": 7, "high_rr": 2.5, "default_rr": 1.5 },
+        # NOTE: rr_requirements is now deprecated. The logic is preserved in the code.
+        "rr_config": { "low_score_threshold": 7, "high_rr": 2.5, "default_rr": 1.5 },
         "weights": {
             "squeeze_release": 3,
             "volume_catalyst": 3,
@@ -27,33 +39,35 @@ class BreakoutHunter(BaseStrategy):
         },
         "htf_confirmation_enabled": True,
         "htf_map": { "5m": "15m", "15m": "1h", "1h": "4h", "4h": "1d" },
+        # ✅ UPGRADED: HTF ADX now uses percentiles
         "htf_confirmations": {
             "min_required_score": 2,
-            "adx": {"weight": 1, "min_strength": 25},
+            "adx": {"weight": 1, "min_percentile": 75.0},
             "supertrend": {"weight": 1}
         }
     }
 
-    def _calculate_breakout_score(self, signal_direction: str, bollinger_data: Dict, whales_data: Dict, cci_data: Dict) -> Tuple[int, List[str]]:
+    def _calculate_breakout_score(self, signal_direction: str, indicators: Dict) -> Tuple[int, List[str]]:
         # This internal calculation logic remains unchanged.
         cfg = self.config
         weights = cfg.get('weights', {})
         score = 0
         confirmations = []
 
-        if bollinger_data['analysis'].get('is_squeeze_release'):
+        if self._safe_get(indicators, ['Bollinger', 'analysis', 'is_squeeze_release']):
             score += weights.get('squeeze_release', 3)
             confirmations.append("Volatility Squeeze Release")
         
-        if whales_data['analysis'].get('is_whale_activity'):
-            whale_pressure = whales_data['analysis'].get('pressure', '')
+        whales_analysis = self._safe_get(indicators, ['Whales', 'analysis'], {})
+        if whales_analysis.get('is_whale_activity'):
+            whale_pressure = whales_analysis.get('pressure', '')
             if (signal_direction == "BUY" and "Buying" in whale_pressure) or \
                (signal_direction == "SELL" and "Selling" in whale_pressure):
                 score += weights.get('volume_catalyst', 3)
                 confirmations.append("Whale Volume Catalyst")
 
         cci_threshold = cfg.get('cci_threshold', 100.0)
-        cci_value = cci_data.get('values', {}).get('value', 0)
+        cci_value = self._safe_get(indicators, ['CCI', 'values', 'cci'], 0)
         if (signal_direction == "BUY" and cci_value > cci_threshold) or \
            (signal_direction == "SELL" and cci_value < -cci_threshold):
             score += weights.get('momentum_thrust', 2)
@@ -72,30 +86,22 @@ class BreakoutHunter(BaseStrategy):
             self._log_final_decision("HOLD", "No price data available.")
             return None
         
-        # --- 1. Data Gathering & Availability Check ---
-        indicator_data = {
-            "Donchian": self.get_indicator('donchian_channel'),
-            "Bollinger": self.get_indicator('bollinger'),
-            "Whales": self.get_indicator('whales'),
-            "CCI": self.get_indicator('cci'),
-            "ATR": self.get_indicator('atr')
-        }
-
-        # ✅ NEW: Specific check to identify exactly which indicators are missing
-        missing_indicators = [name for name, data in indicator_data.items() if data is None]
+        # --- 1. Data Gathering & Availability Check (Upgraded for OHRE v3.0) ---
+        required_names = ['donchian_channel', 'bollinger', 'whales', 'cci', 'atr', 'structure', 'pivots', 'adx']
         
-        data_is_ok = not missing_indicators
-        reason = f"Missing required indicators: {', '.join(missing_indicators)}" if not data_is_ok else "All required indicator data is present."
+        indicators = {name: self.get_indicator(name) for name in required_names}
         
-        self._log_criteria("Data Availability", data_is_ok, reason)
-        
-        if not data_is_ok:
+        missing_indicators = [name for name, data in indicators.items() if data is None]
+        if missing_indicators:
+            reason = f"Missing required indicators: {', '.join(missing_indicators)}"
+            self._log_criteria("Data Availability", False, reason)
             self._log_final_decision("HOLD", reason)
             return None
+        self._log_criteria("Data Availability", True, "All required indicator data is present.")
 
         # --- 2. Primary Trigger (Donchian Channel Breakout) ---
-        donchian_signal = indicator_data["Donchian"].get('analysis', {}).get('signal')
-        signal_direction = "BUY" if "Buy" in donchian_signal else "SELL" if "Sell" in donchian_signal else None
+        donchian_signal = self._safe_get(indicators, ["donchian_channel", 'analysis', 'signal'])
+        signal_direction = "BUY" if "Buy" in str(donchian_signal) else "SELL" if "Sell" in str(donchian_signal) else None
         
         self._log_criteria("Primary Trigger (Donchian)", signal_direction is not None, 
                            f"No valid breakout signal from Donchian Channel. (Signal: {donchian_signal})")
@@ -105,7 +111,7 @@ class BreakoutHunter(BaseStrategy):
             return None
         
         # --- 3. Breakout Quality Scoring ---
-        breakout_score, score_details = self._calculate_breakout_score(signal_direction, indicator_data["Bollinger"], indicator_data["Whales"], indicator_data["CCI"])
+        breakout_score, score_details = self._calculate_breakout_score(signal_direction, indicators["bollinger"], indicators["whales"], indicators["cci"])
         min_score = cfg.get('min_breakout_score', 6)
         score_is_ok = breakout_score >= min_score
 
@@ -116,41 +122,38 @@ class BreakoutHunter(BaseStrategy):
             self._log_final_decision("HOLD", "Breakout power score is too low.")
             return None
             
-        confirmations = {"power_score": breakout_score, "score_details": ", ".join(score_details)}
-        
-        # --- 4. Risk Management & R/R Validation ---
+        # --- 4. Risk Management (✅ UPGRADED to OHRE v3.0) ---
         entry_price = self.price_data.get('close')
-        if not entry_price:
-            self._log_final_decision("HOLD", "Could not determine entry price.")
+        if not self._is_valid_number(entry_price) or entry_price <= 0:
+            self._log_final_decision("HOLD", f"Could not determine a valid entry price: {entry_price}.")
             return None
         
-        stop_loss = indicator_data["Donchian"].get('values', {}).get('middle_band')
-        sl_source = "Donchian Middle Band"
-        if not stop_loss:
-            atr_value = indicator_data["ATR"].get('values', {}).get('atr', entry_price * 0.02)
-            stop_loss = entry_price - (atr_value * 2) if signal_direction == "BUY" else entry_price + (atr_value * 2)
-            sl_source = "ATR Fallback"
-
-        self._log_criteria("Stop Loss Calculation", stop_loss is not None, f"SL determined via {sl_source} at {stop_loss:.5f}")
-
-        risk_params = self._calculate_smart_risk_management(entry_price, signal_direction, stop_loss)
+        # Preserve the strategy's unique dynamic R:R logic
+        rr_reqs = cfg.get('rr_config', {})
+        rr_needed = rr_reqs.get('high_rr', 2.5) if breakout_score < rr_reqs.get('low_score_threshold', 7) else rr_reqs.get('default_rr', 1.5)
+        self.config['override_min_rr_ratio'] = rr_needed
         
-        rr_reqs = cfg.get('rr_requirements', {})
-        min_rr_ratio = rr_reqs.get('high_rr', 2.5) if breakout_score < rr_reqs.get('low_score_threshold', 7) else rr_reqs.get('default_rr', 1.5)
+        # Delegate fully to the OHRE v3.0
+        risk_params = self._orchestrate_static_risk(
+            direction=signal_direction,
+            entry_price=entry_price
+        )
         
-        calculated_rr = risk_params.get("risk_reward_ratio", 0) if risk_params else 0
-        rr_is_ok = calculated_rr >= min_rr_ratio
+        # Clean up the temporary override
+        self.config.pop('override_min_rr_ratio', None)
 
-        self._log_criteria("Risk/Reward Check", rr_is_ok, 
-                           f"Failed R/R check. (Calculated: {calculated_rr}, Required: {min_rr_ratio})")
-        
-        if not rr_is_ok:
-            self._log_final_decision("HOLD", "Risk/Reward ratio is too low.")
+        if not risk_params:
+            self._log_final_decision("HOLD", f"OHRE v3.0 failed to generate a valid risk plan (min R:R needed: {rr_needed}).")
             return None
 
-        confirmations['rr_check'] = f"Passed (R/R: {calculated_rr}, Required: {min_rr_ratio})"
-        
         # --- 5. Final Decision ---
+        confirmations = {
+            "power_score": breakout_score, 
+            "score_details": ", ".join(score_details),
+            "rr_check": f"Passed (R/R: {risk_params.get('risk_reward_ratio')}, Required: {rr_needed})",
+            "risk_engine": self.log_details["risk_trace"][-1].get("source", "OHRE v3.0")
+        }
+        
         self._log_final_decision(signal_direction, "All criteria met. Breakout Hunter signal confirmed.")
 
         return {
