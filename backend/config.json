@@ -606,7 +606,7 @@
         "bbw_quantile": 0.40
       },
       "confirmation_scoring": {
-        "min_score": 5,
+        "min_score": 2,
         "weights": {
           "rsi_reversal": 3,
           "stochastic_reversal": 2,
