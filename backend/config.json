@@ -258,7 +258,7 @@
         "dynamic_oversold_percentile": 15
       },
       "divergence_veto_enabled": false,
-      "min_confirmation_score": 2,
+      "min_confirmation_score": 8,
       "weights": {
         "master_trend": 4,
         "hidden_divergence": 4,
@@ -352,7 +352,7 @@
       "rsi_buy_percentile": 88,
       "rsi_sell_percentile": 12,
       "cooldown_bars": 4,
-      "min_momentum_score": { "low_tf": 2, "high_tf": 4 },
+      "min_momentum_score": { "low_tf": 9, "high_tf": 11 },
       "weights": {
         "momentum_acceleration": 4, "volume_catalyst": 3, "volatility_expansion": 3,
         "macd_aligned": 2, "adx_strength": 2, "htf_alignment": 3, "candlestick": 1
