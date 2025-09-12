@@ -28,15 +28,13 @@ def deep_merge(dict1: Dict[str, Any], dict2: Dict[str, Any]) -> Dict[str, Any]:
 
 class BaseStrategy(ABC):
     """
-    World-Class Base Strategy Framework - (v25.0 - The Maestro Engine)
+    World-Class Base Strategy Framework - (v25.1 - The Pivot Logic Hotfix)
     ---------------------------------------------------------------------------------------------
-    This landmark version represents a complete architectural overhaul of the risk management
-    system, replacing the previous competitive scoring model with the definitive OHRE v3.0,
-    nicknamed "The Maestro Engine". This new engine implements the "Structural Anchor,
-    Quantum Targets" philosophy. It first finds the single closest, strongest structural
-    stop-loss and then calculates dynamic, momentum-aware take-profit targets. This
-    simplifies the logic, enhances predictability, and perfectly aligns the risk management
-    with a professional trader's mindset.
+    This version applies a critical hotfix to the OHRE v3.0 SL Search Engine. The fix
+    corrects the pivot point candidate selection logic to properly recognize broken
+    resistance levels as potential support (and vice-versa), ensuring the engine
+    considers all valid structural levels and preventing suboptimal SL placements.
+    All other features of the Maestro Engine are preserved.
     """
     strategy_name: str = "BaseStrategy"
     default_config: ClassVar[Dict[str, Any]] = {}
@@ -208,10 +206,8 @@ class BaseStrategy(ABC):
         engine_config = self.config.get('ohre_engine', {})
         min_strength = engine_config.get('min_level_strength', 2)
         
-        # 1. Create the unified pool of candidates
         candidates = []
         
-        # Add levels from 'structure' indicator
         structure_data = self.get_indicator('structure')
         key_levels = self._safe_get(structure_data, ['key_levels'], {})
         s_levels = key_levels.get('supports', []) if direction == 'BUY' else key_levels.get('resistances', [])
@@ -219,20 +215,18 @@ class BaseStrategy(ABC):
             if self._is_valid_number(level.get('price')):
                 candidates.append({'price': level['price'], 'strength': level.get('strength', 0), 'source': 'structure'})
                 
-        # Add levels from 'pivots' indicator
+        # ✅ HOTFIX v25.1: The pivot candidate gathering logic is now corrected.
         pivots_data = self.get_indicator('pivots')
         pivot_levels = self._safe_get(pivots_data, ['levels'], [])
         strength_map = engine_config.get('pivot_strength_map', {"S3":1,"R3":1,"S2":2,"R2":2,"S1":3,"R1":3,"P":3})
         for p_level in pivot_levels:
-            level_name = p_level.get('level', '')
-            if (direction == 'BUY' and ('S' in level_name or 'P' in level_name)) or \
-               (direction == 'SELL' and ('R' in level_name or 'P' in level_name)):
-                if self._is_valid_number(p_level.get('price')):
-                    candidates.append({'price': p_level['price'], 'strength': strength_map.get(level_name, 1), 'source': 'pivots'})
+            # The restrictive 'S' or 'R' check is removed. All pivots are now candidates.
+            # The filtering for position (above/below entry) will happen in the next step for ALL candidates.
+            if self._is_valid_number(p_level.get('price')):
+                candidates.append({'price': p_level['price'], 'strength': strength_map.get(p_level.get('level', ''), 1), 'source': 'pivots'})
 
         if not candidates: return None
 
-        # 2. Filter for valid and strong enough candidates
         valid_candidates = []
         for cand in candidates:
             price = cand['price']
@@ -242,7 +236,6 @@ class BaseStrategy(ABC):
                 
         if not valid_candidates: return None
 
-        # 3. Select the winner: the one closest to the entry price
         winner = min(valid_candidates, key=lambda x: abs(entry_price - x['price']))
         return winner
 
@@ -258,7 +251,6 @@ class BaseStrategy(ABC):
         risk_dist = abs(entry_price - structural_sl)
         if risk_dist < 1e-9: return []
 
-        # 1. Get momentum/volatility modifiers
         adx_data = self.get_indicator('adx'); atr_data = self.get_indicator('atr')
         adx_percentile = self._safe_get(adx_data, ['analysis', 'adx_percentile'], 50.0)
         
@@ -270,7 +262,6 @@ class BaseStrategy(ABC):
         else: strength_key = 'weak'
         final_modifier = strength_multipliers[strength_key]
 
-        # 2. Calculate baseline Quantum Targets
         min_rr = float(self.config.get("override_min_rr_ratio", self.main_config.get("general", {}).get("min_risk_reward_ratio", 1.5)))
         base_multiples = fallback_config.get('base_rr_multiples', [min_rr, min_rr + 1.5, min_rr + 3.0])
         final_rr_multiples = [m * final_modifier for m in base_multiples]
@@ -278,7 +269,6 @@ class BaseStrategy(ABC):
         quantum_targets = [entry_price + (risk_dist * r) for r in final_rr_multiples] if direction == "BUY" \
                          else [entry_price - (risk_dist * r) for r in final_rr_multiples]
 
-        # 3. Apply "Price Magnet" Logic
         final_targets = []
         proximity_pct = engine_config.get('magnet_proximity_percent', 0.5) / 100.0
         min_magnet_strength = engine_config.get('min_magnet_strength', 3)
@@ -291,9 +281,9 @@ class BaseStrategy(ABC):
             magnet_zone_min, magnet_zone_max = qt * (1 - proximity_pct), qt * (1 + proximity_pct)
             found_magnet = None
             for magnet in magnet_levels:
-                if magnet.get('strength', 0) >= min_magnet_strength and magnet_zone_min <= magnet['price'] <= magnet_zone_max:
+                if self._is_valid_number(magnet.get('price')) and magnet.get('strength', 0) >= min_magnet_strength and magnet_zone_min <= magnet['price'] <= magnet_zone_max:
                     found_magnet = magnet['price']
-                    break # Snap to the first strong magnet found
+                    break
             
             final_targets.append(found_magnet if found_magnet else qt)
             
@@ -303,11 +293,10 @@ class BaseStrategy(ABC):
         """
         OHRE v3.0 - The Conductor.
         Implements the definitive "Structural Anchor, Quantum Targets" architecture.
-        Note: sl_anchor_price is now deprecated but kept for backward compatibility.
+        Note: sl_anchor_price is deprecated but kept for backward compatibility.
         """
         self._log_criteria("OHRE v3.0", True, f"Initiating for {direction} signal.")
         
-        # Path A: Structural SL attempt
         best_sl_candidate = self._find_optimal_structural_sl(direction, entry_price)
         
         final_plan = None
@@ -315,7 +304,7 @@ class BaseStrategy(ABC):
             self._log_criteria("OHRE.SL_Engine", True, f"Found structural SL candidate at {best_sl_candidate['price']:.5f} (Source: {best_sl_candidate['source']}, Strength: {best_sl_candidate['strength']})")
             
             atr_data = self.get_indicator('atr'); atr_value = self._safe_get(atr_data, ['values', 'atr'], 0.0)
-            buffer = atr_value * 0.25 # Small volatility buffer
+            buffer = atr_value * 0.25
             structural_sl = best_sl_candidate['price'] - buffer if direction == 'BUY' else best_sl_candidate['price'] + buffer
 
             final_targets = self._calculate_dynamic_targets(direction, entry_price, structural_sl)
@@ -324,7 +313,6 @@ class BaseStrategy(ABC):
                 final_plan = self._finalize_risk_parameters(entry_price, structural_sl, final_targets, direction)
                 if final_plan: self.log_details["risk_trace"].append({"source": "Hybrid (Structural SL + Quantum TPs)", "quality_score": 100})
 
-        # Path B: Fallback if no structural SL was found
         if not final_plan:
             self._log_criteria("OHRE.SL_Engine", False, "No suitable structural SL found. Executing tactical fallback.")
             final_plan = self._build_plan_from_atr_fallback(direction, entry_price)
@@ -358,7 +346,7 @@ class BaseStrategy(ABC):
         elif adx_percentile >= percentile_thresholds['developing']: strength_key = 'developing'
         else: strength_key = 'weak'
         
-        sl_atr_buffer = 1.5 * strength_multipliers[strength_key] # Make SL also adaptive
+        sl_atr_buffer = 1.5 * strength_multipliers[strength_key]
         stop_loss = entry_price - (atr_value * sl_atr_buffer) if direction == 'BUY' else entry_price + (atr_value * sl_atr_buffer)
         
         risk_dist = abs(entry_price - stop_loss)
@@ -380,7 +368,6 @@ class BaseStrategy(ABC):
                                          tp_logic: Optional[Dict[str, Any]] = None,
                                          **kwargs) -> Dict[str, Any]:
         logger.warning(f"Strategy '{self.name}' is calling the DEPRECATED _calculate_smart_risk_management. Please upgrade to OHRE v3.0.")
-        # --- (The rest of the original function code remains unchanged) ---
         final_sl, final_targets = None, []
         if sl_params and tp_logic:
             final_sl = self._calculate_sl_from_blueprint(entry_price, direction, sl_params)
@@ -418,4 +405,3 @@ class BaseStrategy(ABC):
             self._log_criteria("Risk Management", False, "No valid take-profit targets found after filtering.")
             return {}
         return self._finalize_risk_parameters(entry_price, final_sl, valid_targets, direction)
-
