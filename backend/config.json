@@ -473,42 +473,28 @@
       "min_adx_percentile_for_trending": 70.0,
       "min_squeeze_score": 1,
       "weights_squeeze": {
-        "bollinger_breakout": {
-          "strong": 3,
-          "medium": 2
-        },
+        "bollinger_breakout": { "strong": 3, "medium": 2 },
         "momentum_confirmation": 3,
-        "momentum_rsi_thresholds": {
-          "buy": 52,
-          "sell": 48
-        },
+        "momentum_rsi_thresholds": { "buy": 52, "sell": 48 },
         "volume_spike_confirmation": 2,
         "htf_alignment": 2,
         "macd_aligned": 2
       },
       "min_ranging_score": 1,
-      "ranging_proximity_atr_mult": 0.10,
+      "ranging_proximity_atr_mult": 0.25,
       "weights_ranging": {
-        "rsi_reversal": 3,
+        "rsi_reversal": 4,
         "divergence_confirmation": 3,
         "volume_fade": 2,
-        "candlestick": {
-          "weak": 1,
-          "medium": 2,
-          "strong": 4
-        },
+        "candlestick": { "weak": 1, "medium": 2, "strong": 4 },
         "macd_aligned": 2
       },
-      "ranging_rsi_dynamic_enabled": true,
-      "ranging_rsi_lookback": 100,
-      "ranging_rsi_buy_percentile": 15,
-      "ranging_rsi_sell_percentile": 85,
-      "min_trending_score": 8,
+      "ranging_rsi_oversold": 35.0,
+      "ranging_rsi_overbought": 65.0,
+      "min_trending_score": 1,
       "trending_rsi_zones": {
-        "buy_min": 45,
-        "buy_max": 65,
-        "sell_min": 35,
-        "sell_max": 55
+        "buy_min": 45, "buy_max": 65,
+        "sell_min": 35, "sell_max": 55
       },
       "weights_trending": {
         "htf_alignment": 4,
@@ -518,26 +504,21 @@
         "macd_aligned": 2
       },
       "htf_confirmation_enabled": true,
-      "htf_map": {
-        "5m": "15m",
-        "15m": "1h",
-        "1h": "4h",
-        "4h": "1d"
-      },
+      "htf_map": { "5m": "15m", "15m": "1h", "1h": "4h", "4h": "1d" },
       "htf_confirmations": {
         "min_required_score": 2,
-        "adx": {
-          "weight": 1,
-          "min_percentile": 70.0
-        },
-        "supertrend": {
-          "weight": 1
-        }
+        "adx": { "weight": 1, "min_percentile": 70.0 },
+        "supertrend": { "weight": 1 }
       },
       "allow_mixed_mode": false,
       "ohre_engine": {
         "min_level_strength": 2,
-        "pivot_strength_map": { "S3": 1, "R3": 1, "S2": 2, "R2": 2, "S1": 3, "R1": 3, "P": 3 },
+        "pivot_strength_map": {
+          "S3": 1, "R3": 1,
+          "S2": 2, "R2": 2,
+          "S1": 3, "R1": 3,
+          "P": 3
+        },
         "magnet_proximity_percent": 0.5,
         "min_magnet_strength": 3,
         "percentile_thresholds": { "strong": 80, "developing": 40 },
