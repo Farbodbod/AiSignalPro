@@ -545,10 +545,16 @@
         "enabled": true,
         "min_conviction_score": 10,
         "weights": {
-          "macd_momentum": 4,
+          "macd_strong_momentum": 5,
           "htf_alignment": 4,
+          "ma_is_accelerating": 3,
           "rsi_room_to_run": 2
         }
+      },
+      "trend_health_shield":
+        "enabled": true,
+        "veto_on_exhausted": true,
+        "veto_on_overextended": true
       },
       "exhaustion_shield": {
         "enabled": true,
