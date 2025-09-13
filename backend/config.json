@@ -411,10 +411,10 @@
       "rsi_buy_percentile": 95,
       "rsi_sell_percentile": 5,
       "cooldown_bars": 5,
-      "min_momentum_score": { "low_tf": 14, "high_tf": 16 },
+      "min_momentum_score": { "low_tf": 15, "high_tf": 17 },
       "weights": {
         "momentum_acceleration": 5, "volume_catalyst": 4, "volatility_expansion": 3,
-        "macd_aligned": 2, "adx_strength": 2, "htf_alignment": 5, "candlestick": 1
+        "macd_aligned": 2, "adx_strength": 2, "htf_alignment": 4, "candlestick": 1
       },
       "volume_z_score_threshold": 2.0,
       "late_entry_atr_mult": 1.0,
