@@ -99,10 +99,10 @@
         "proximity_percent": 0.8
       },
       "confirmation_scoring": {
-        "min_score": 1,
+        "min_score": 7,
         "weights": {
           "climactic_volume": 4,
-          "candlestick_strong": 4,
+          "candlestick_strong": 3,
           "candlestick_medium": 2,
           "dual_oscillator_confirm": 3,
           "single_oscillator_confirm": 1
@@ -123,7 +123,7 @@
           "S1": 3, "R1": 3,
           "P": 3
         },
-        "magnet_proximity_percent": 0.5,
+        "magnet_proximity_percent": 0.75,
         "min_magnet_strength": 3,
         "percentile_thresholds": { "strong": 80, "developing": 40 },
         "atr_fallback_engine": {
