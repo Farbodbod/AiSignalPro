@@ -535,11 +535,11 @@
       "regime_adx_percentile_threshold": 70.0,
       "default_params": {
         "entry_trigger_type": "supertrend",
-        "min_adx_percentile": 55.0
+        "min_adx_percentile": 70.0
       },
       "timeframe_overrides": {
-        "5m": { "min_adx_percentile": 50.0 },
-        "1d": { "min_adx_percentile": 60.0 }
+        "5m": { "min_adx_percentile": 70.0 },
+        "1d": { "min_adx_percentile": 75.0 }
       },
       "conviction_scoring": {
         "enabled": true,
