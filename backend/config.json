@@ -535,11 +535,11 @@
       "regime_adx_percentile_threshold": 65.0,
       "default_params": {
         "entry_trigger_type": "supertrend",
-        "min_adx_percentile": 55.0
+        "min_adx_percentile": 65.0
       },
       "timeframe_overrides": {
-        "5m": { "min_adx_percentile": 50.0 },
-        "1d": { "min_adx_percentile": 60.0 }
+        "5m": { "min_adx_percentile": 60.0 },
+        "1d": { "min_adx_percentile": 65.0 }
       },
       "htf_confirmation_enabled": true,
       "htf_map": { "5m": "15m", "15m": "1h", "1h": "4h", "4h": "1d" },
