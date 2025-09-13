@@ -4,7 +4,7 @@
     "timeframes_to_analyze": ["5m", "15m", "1h", "4h", "1d"],
     "poll_interval_seconds": 300,
     "max_concurrent_tasks": 5,
-    "gemini_cooldown_seconds": 1200,
+    "gemini_cooldown_seconds": 300,
     "logging_focus_symbol": "BTC/USDT",
     "log_level": "INFO",
     "min_confluence_for_super_signal": 3,
@@ -543,7 +543,7 @@
       },
       "conviction_scoring": {
         "enabled": true,
-        "min_conviction_score": 8,
+        "min_conviction_score": 10,
         "weights": {
           "macd_momentum": 4,
           "htf_alignment": 4,
