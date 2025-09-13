@@ -1,4 +1,4 @@
-# backend/engines/strategies/quantum_channel_surfer.py - (v1.4 - The Final Harmonization)
+# backend/engines/strategies/quantum_channel_surfer.py - (v1.5 - The Sentinel Protocol)
 
 import logging
 from typing import Dict, Any, Optional, Tuple, ClassVar, List
@@ -9,12 +9,14 @@ logger = logging.getLogger(__name__)
 
 class QuantumChannelSurfer(BaseStrategy):
     """
-    Quantum Channel Surfer - (v1.4 - The Final Harmonization)
+    Quantum Channel Surfer - (v1.5 - The Sentinel Protocol)
     -----------------------------------------------------------------------------------------
-    This definitive version incorporates critical feedback from the operational environment.
-    The 'indicator_configs' structure has been flattened, removing the nested 'params'
-    object to ensure 100% compatibility and robustness with the system's configuration
-    parser. This represents the final architectural polish for flawless deployment.
+    This version applies a critical hotfix to the dynamic indicator builder. It ensures
+    that dynamically generated indicator configurations (for HTF analysis) are created
+    with the nested 'params' structure required by the BaseStrategy's get_indicator
+    method. This fixes the 'Indicators missing' bug and brings the strategy into
+    full compliance with the system's internal lookup protocol, making it truly
+    production-ready.
     """
     strategy_name: str = "QuantumChannelSurfer"
 
@@ -27,25 +29,11 @@ class QuantumChannelSurfer(BaseStrategy):
         "entry_confirmation": { "require_strong_stoch_cross": True, "min_macd_strength": 35 },
         "min_rr_ratio": 1.5,
         
-        # ✅ ARCHITECTURAL FIX: 'indicator_configs' now uses a flat structure.
+        # The static configs remain flat and explicit as per our architectural decision.
         "indicator_configs": {
-            "fast_ma": {
-                "name": "fast_ma",
-                "ma_type": "DEMA",
-                "period": 200
-            },
-            "stochastic": {
-                "name": "stochastic",
-                "k_period": 14,
-                "d_period": 3,
-                "smooth_k": 3
-            },
-            "macd": {
-                "name": "macd",
-                "fast_period": 12,
-                "slow_period": 26,
-                "signal_period": 9
-            }
+            "fast_ma":    { "name": "fast_ma", "ma_type": "DEMA", "period": 200 },
+            "stochastic": { "name": "stochastic", "k_period": 14, "d_period": 3, "smooth_k": 3 },
+            "macd":       { "name": "macd", "fast_period": 12, "slow_period": 26, "signal_period": 9 }
         }
     }
 
@@ -55,36 +43,40 @@ class QuantumChannelSurfer(BaseStrategy):
 
     def _build_dynamic_indicator_configs(self):
         """
-        ✅ UPGRADED: Now builds configs with the required flat structure.
+        ✅ CRITICAL HOTFIX: Builds dynamic configs with the nested 'params' structure
+        required by the BaseStrategy's get_indicator helper function.
         """
         htf_donchian_map = self.config.get("htf_donchian_map", {})
         target_tf = htf_donchian_map.get(self.primary_timeframe)
         
         if not target_tf and self.primary_timeframe == '1d':
-            target_tf = '1d'
-            logger.info(f"QCS on {self.primary_timeframe}: Activating 'Self-Reliant' mode.")
+            target_tf = '1d' 
+            logger.info(f"QCS on {self.primary_timeframe}: No higher map found. Activating 'Self-Reliant' mode.")
         
         if target_tf:
-            # Build with flat structure
+            # Build with the required nested 'params' structure
             self.indicator_configs['htf_donchian'] = { 
-                "name": "donchian_channel",
-                "period": 55,
-                "source_timeframe": target_tf
+                "name": "donchian_channel", 
+                "params": { 
+                    "period": 55, 
+                    "source_timeframe": target_tf 
+                }
             }
             self.indicator_configs['htf_adx'] = { 
-                "name": "adx",
-                "period": 14,
-                "timeframe": target_tf
+                "name": "adx", 
+                "params": { 
+                    "period": 14, 
+                    "timeframe": target_tf 
+                }
             }
         else:
             logger.warning(f"QCS on {self.primary_timeframe}: No HTF map defined. Strategy will be inactive.")
             self.indicator_configs.pop('htf_donchian', None)
             self.indicator_configs.pop('htf_adx', None)
     
-    # --- The check_signal function remains IDENTICAL ---
-    # It is already compatible with this superior configuration structure.
+    # The check_signal function remains IDENTICAL. No changes are needed here.
     def check_signal(self) -> Optional[Dict[str, Any]]:
-        # ... (این تابع هیچ تغییری نکرده و کد آن مانند نسخه قبل است) ...
+        # ... (کد این تابع بدون هیچ تغییری باقی می‌ماند) ...
         cfg = self.config
         required_names = ['fast_ma', 'htf_adx', 'htf_donchian', 'stochastic', 'macd', 'structure', 'pivots', 'atr']
         indicators = {name: self.get_indicator(name) for name in required_names}
