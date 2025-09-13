@@ -37,7 +37,7 @@ class MasterOrchestrator:
             TrendRiderPro, VwapMeanReversion, DivergenceSniperPro, PullbackSniperPro, RangeHunterPro, WhaleReversal,
             VolumeCatalystPro, BreakoutHunter, IchimokuHybridPro, ChandelierTrendRider,
             KeltnerMomentumBreakout, BollingerBandsDirectedMaestro, PivotConfluenceSniper, ConfluenceSniper,
-            EmaCrossoverStrategy, OracleXPro,
+            EmaCrossoverStrategy, OracleXPro, QuantumChannelSurfer,
         ]
         self.gemini_handler = GeminiHandler()
         self.news_fetcher = NewsFetcher()
