@@ -49,7 +49,7 @@
   "strategy_priority": [
     "SuperSignal Confluence", "QuantumChannelSurfer", "ConfluenceSniper", "DivergenceSniperPro", "PullbackSniperPro", "RangeHunterPro", "WhaleReversal",
     "VolumeCatalystPro", "PivotConfluenceSniper", "BreakoutHunter", "IchimokuHybridPro", "ChandelierTrendRider", "TrendRiderPro",
-    "KeltnerMomentumBreakout", "BollingerBandsDirectedMaestro", "VwapMeanReversion", "EmaCrossoverStrategy", "OracleXPro"
+    "KeltnerMomentumBreakout", "BollingerBandsDirectedMaestro", "VwapMeanReversion", "EmaCrossoverStrategy", "OracleXPro", "IchiMACDPro"
   ],
   "indicators": {
     "adx": { "enabled": true, "period": 14, "series_lookback": 5 },
