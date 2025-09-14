@@ -94,18 +94,18 @@
       },
       "htf_confirmations": {
         "adx": {
-          "min_percentile": 50.0
+          "min_percentile": 65.0
         },
         "donchian_channel": {
-          "buy_zone_max_percentile": 25.0,
-          "sell_zone_min_percentile": 75.0
+          "buy_zone_max_percentile": 15.0,
+          "sell_zone_min_percentile": 85.0
         }
       },
       "entry_confirmation": {
         "require_strong_stoch_cross": true,
-        "min_macd_strength": 35
+        "min_macd_strength": 45
       },
-      "min_rr_ratio": 1.5,
+      "min_rr_ratio": 2.0,
       "indicator_configs": {
         "fast_ma": {
           "name": "fast_ma",
@@ -133,7 +133,7 @@
         "percentile_thresholds": { "strong": 80, "developing": 40 },
         "atr_fallback_engine": {
           "strength_multipliers": { "strong": 1.75, "developing": 1.25, "weak": 1.0 },
-          "base_rr_multiples": [1.5, 2.0, 3.0]
+          "base_rr_multiples": [2.0, 3.0, 4.0]
         }
       }
     },
