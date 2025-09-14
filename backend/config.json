@@ -141,7 +141,7 @@
       "enabled": true,
       "htf_context_config": {
         "enabled": true,
-        "min_adx_percentile": 75.0
+        "min_adx_percentile": 80.0
       },
       "prz_config": {
         "use_fibonacci": true,
@@ -149,14 +149,14 @@
         "use_pivots": true,
         "pivot_levels": [ "R2", "R1", "P", "S1", "S2" ],
         "use_structure": true,
-        "min_structure_strength": 2,
-        "proximity_percent": 0.8
+        "min_structure_strength": 3,
+        "proximity_percent": 0.5
       },
       "confirmation_scoring": {
-        "min_score": 7,
+        "min_score": 9,
         "weights": {
-          "climactic_volume": 4,
-          "candlestick_strong": 3,
+          "climactic_volume": 5,
+          "candlestick_strong": 4,
           "candlestick_medium": 2,
           "dual_oscillator_confirm": 3,
           "single_oscillator_confirm": 1
