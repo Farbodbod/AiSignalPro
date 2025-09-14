@@ -32,7 +32,7 @@ class PullbackSniperPro(BaseStrategy):
             # ✅ UPGRADE: Pivot levels are now fully configurable.
             "pivot_levels": ["R3", "R2", "R1", "P", "S1", "S2", "S3"],
             "use_structure": True,
-            "min_structure_strength": 3,
+            "min_structure_strength": 2,
             "proximity_percent": 0.75 # Using the more balanced "Sniper Protocol"
         },
         
