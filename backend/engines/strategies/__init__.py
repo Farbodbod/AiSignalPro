@@ -23,6 +23,7 @@ from .volume_reversal import WhaleReversal
 from .vwap_reversion import VwapMeanReversion
 from .oracle_x_pro import OracleXPro
 from .quantum_channel_surfer import QuantumChannelSurfer
+from .ichimacdpro import IchiMACDPro
 # This is the definitive list of our world-class strategies.
 __all__ = [
     'BaseStrategy',
@@ -43,4 +44,5 @@ __all__ = [
     'VwapMeanReversion',
     'OracleXPro',
     'QuantumChannelSurfer',
+    'IchiMACDPro',
 ]
