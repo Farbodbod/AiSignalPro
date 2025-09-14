@@ -599,7 +599,7 @@
       "conviction_scoring": {
         "enabled": true,
         "min_conviction_score": 11,
-        "min_macd_strength": 40,
+        "min_macd_strength": 45,
         "weights": {
           "macd_strong_momentum": 4,
           "htf_alignment": 5,
