@@ -1,4 +1,4 @@
-# backend/engines/strategies/pullback_sniper.py (v2.1 - The Legendary Ghost)
+# backend/engines/strategies/pullback_sniper.py (v2.2 - The Ghost Protocol)
 
 import logging
 from typing import Dict, Any, Optional, List, Tuple, ClassVar
@@ -9,82 +9,106 @@ logger = logging.getLogger(__name__)
 
 class PullbackSniperPro(BaseStrategy):
     """
-    PullbackSniperPro - (v2.1 - The Legendary Ghost)
+    PullbackSniperPro - (v2.2 - The Ghost Protocol)
     -------------------------------------------------------------------------
-    This version applies the "Grandmaster's Final Polish" to the v2.0 engine,
-    elevating the commando to a legendary phantom of the battlefield.
-
-    🚀 FINAL POLISHES in v2.1:
-    1.  **Expanded Ambush Zone:** The PRZ engine now includes the 38.2% Fibonacci
-        level, enabling the sniper to engage in the strongest of trends.
-    2.  **Adaptive Standards:** The minimum confirmation score is now dynamic,
-        demanding a higher level of evidence for higher timeframe signals.
-    3.  **Optimized Reward Profile:** The minimum R/R ratio has been increased,
-        aligning the strategy's behavior with its "sniper" philosophy of
-        taking only high-quality, high-reward shots.
+    This version integrates the final Oracle-X calibrations and logical upgrades.
+    It introduces a fully adaptive, configurable, and intelligent PRZ engine
+    that understands the dynamic nature of support and resistance (S/R Flips),
+    elevating the strategy to its ultimate, legendary form.
     """
     strategy_name: str = "PullbackSniperPro"
 
+    # --- [ORACLE-X CALIBRATION v2.2] ---
+    # Final calibrations applied for The Ghost Protocol doctrine.
     default_config: ClassVar[Dict[str, Any]] = {
-        # --- Macro Trend Filters ---
         "trend_filter_enabled": True,
         "master_ma_indicator": "fast_ma",
         "htf_confirmation_enabled": True,
 
-        # --- G.1: PRZ Engine Config (✅ POLISHED) ---
         "prz_config": {
             "use_fibonacci": True,
-            "fib_levels": ["38.2%", "50.0%", "61.8%"], # Added 38.2% for strong trends
+            "fib_levels": ["38.2%", "50.0%", "61.8%"]
             "use_pivots": True,
+            # ✅ UPGRADE: Pivot levels are now fully configurable.
+            "pivot_levels": ["R3", "R2", "R1", "P", "S1", "S2", "S3"],
             "use_structure": True,
-            "min_structure_strength": 2,
-            "proximity_percent": 0.5
+            "min_structure_strength": 3,
+            "proximity_percent": 0.75 # Using the more balanced "Sniper Protocol"
         },
         
-        # --- G.2: Scoring Engine Config (✅ POLISHED) ---
         "confirmation_scoring": {
-            "min_score": {"low_tf": 8, "high_tf": 10}, # Made dynamic for different timeframes
+            "min_score": {"low_tf": 9, "high_tf": 11},
             "weights": {
-                "hidden_divergence": 4, "dual_oscillator": 3, "candlestick_strong": 3,
-                "volume_spike": 2, "candlestick_medium": 2, "single_oscillator": 1
+                "hidden_divergence": 5,
+                "dual_oscillator": 3,
+                "candlestick_strong": 3,
+                "volume_spike": 2,
+                "candlestick_medium": 2,
+                "single_oscillator": 1
             }
         },
 
-        # --- G.3: Risk Harmonization (✅ POLISHED) ---
-        "min_rr_ratio": 1.8, # Increased for higher quality sniper setups
+        "min_rr_ratio": 2.2,
         
-        # --- Standard HTF Config (✅ POLISHED) ---
         "htf_map": { "5m": "15m", "15m": "1h", "1h": "4h", "4h": "1d" },
         "htf_confirmations": {
             "min_required_score": 2,
-            "adx": {"weight": 1, "min_percentile": 65.0}, # Sniper Asymmetric Philosophy
+            "adx": {"weight": 1, "min_percentile": 70.0},
             "supertrend": {"weight": 1}
         }
     }
     
-    # --- Helper methods _find_pullback_prz and _calculate_confirmation_score are unchanged from v2.0 ---
     def _find_pullback_prz(self, direction: str, cfg: Dict, indicators: Dict) -> Optional[Dict]:
         current_price = self.price_data.get('close')
         if not self._is_valid_number(current_price): return None
+        
         fib_values = self._safe_get(indicators, ['fibonacci', 'values'], {})
         pivot_values = self._safe_get(indicators, ['pivots', 'values'], {})
         structure_values = self._safe_get(indicators, ['structure', 'values'], {})
+        
         fib_levels = {lvl['level']: lvl['price'] for lvl in fib_values.get('levels', [])} if cfg.get('use_fibonacci') else {}
-        pivot_levels = {lvl['level']: lvl['price'] for lvl in pivot_values.get('levels', [])} if cfg.get('use_pivots') else {}
         structure_key_levels = structure_values.get('key_levels', {}) if cfg.get('use_structure') else {}
         target_sr_zones = structure_key_levels.get('supports' if direction == "BUY" else 'resistances', [])
+        
         confluence_zones = []
         proximity_pct = cfg.get('proximity_percent', 0.5)
         all_levels = {}
+
         if cfg.get('use_fibonacci'):
             for lvl_str in cfg.get('fib_levels', []):
                 if lvl_str in fib_levels: all_levels[f"Fib {lvl_str}"] = fib_levels[lvl_str]
+
+        # --- [ORACLE-X UPGRADE v2.2: Intelligent, Configurable Pivot Logic] ---
+        # This section now reads the pivot levels from the config and applies
+        # the advanced S/R flip logic we developed.
         if cfg.get('use_pivots'):
-            pivot_list = pivot_values.get('levels', [])
-            for p_level in pivot_list:
-                lvl_str = p_level['level']
-                if (direction == "BUY" and lvl_str.startswith("S")) or (direction == "SELL" and lvl_str.startswith("R")):
-                     all_levels[f"Pivot {lvl_str}"] = p_level['price']
+            target_pivots = cfg.get('pivot_levels', [])
+            calculated_pivots = {lvl['level']: lvl['price'] for lvl in pivot_values.get('levels', [])}
+
+            for lvl_str in target_pivots:
+                if lvl_str not in calculated_pivots:
+                    continue
+                
+                lvl_price = calculated_pivots[lvl_str]
+                if not self._is_valid_number(lvl_price): continue
+
+                if direction == "BUY":
+                    # A level is support if it's a classic Support (S), a broken Resistance (R),
+                    # or the central Pivot (P) that the price is currently above.
+                    if lvl_str.startswith("S") or \
+                       (lvl_str.startswith("R") and current_price > lvl_price) or \
+                       (lvl_str == "P" and current_price > lvl_price):
+                        all_levels[f"Pivot {lvl_str} (as Support)"] = lvl_price
+                
+                elif direction == "SELL":
+                    # A level is resistance if it's a classic Resistance (R), a broken Support (S),
+                    # or the central Pivot (P) that the price is currently below.
+                    if lvl_str.startswith("R") or \
+                       (lvl_str.startswith("S") and current_price < lvl_price) or \
+                       (lvl_str == "P" and current_price < lvl_price):
+                        all_levels[f"Pivot {lvl_str} (as Resistance)"] = lvl_price
+        # --- End of Upgrade ---
+
         for sr_zone in target_sr_zones:
             if sr_zone.get('strength', 0) < cfg.get('min_structure_strength', 2): continue
             sr_price = sr_zone.get('price')
@@ -134,7 +158,6 @@ class PullbackSniperPro(BaseStrategy):
         if any(data is None for data in indicators.values()):
             self._log_criteria("Data Availability", False, "One or more required indicators are missing."); return None
         
-        # --- 1. Define Macro Trend (The Hunting Ground) ---
         current_price = self.price_data.get('close')
         master_ma_val = self._safe_get(indicators, ['fast_ma', 'values', 'ma_value'])
         if not self._is_valid_number(current_price, master_ma_val):
@@ -152,7 +175,6 @@ class PullbackSniperPro(BaseStrategy):
         self._log_criteria("Macro Trend Defined", macro_trend != "NEUTRAL", f"Macro trend identified as {macro_trend}.")
         if macro_trend == "NEUTRAL": self._log_final_decision("HOLD", "No clear macro trend."); return None
 
-        # --- 2. Identify Pullback Zone (The Ambush Point) ---
         signal_direction = "BUY" if macro_trend == "UP" else "SELL"
         prz_cfg = cfg.get('prz_config', {})
         best_prz = self._find_pullback_prz(signal_direction, prz_cfg, indicators)
@@ -163,18 +185,14 @@ class PullbackSniperPro(BaseStrategy):
         self._log_criteria("Price Test on PRZ", is_testing, f"Price is testing the PRZ at {best_prz['price']:.5f}.")
         if not is_testing: self._log_final_decision("HOLD", "Price has not entered the PRZ."); return None
         
-        # --- 3. Find Entry Trigger (The Fire Command) ---
         scoring_cfg = cfg.get('confirmation_scoring', {})
-        # ✅ POLISH: Use the base helper to get the correct min_score for the timeframe
         min_score = self._get_min_score_for_tf(scoring_cfg.get('min_score', {}))
         score, details = self._calculate_confirmation_score(signal_direction, scoring_cfg, indicators)
         score_is_ok = score >= min_score
         self._log_criteria("Confirmation Score", score_is_ok, f"Score={score} vs min={min_score}. Details: {', '.join(details)}")
         if not score_is_ok: self._log_final_decision("HOLD", "Confirmation score is too low."); return None
 
-        # --- 4. Engineer the Trade (OHRE v3.0) ---
         entry_price = self.price_data.get('close')
-        # ✅ POLISH: Use the strategy-specific min_rr_ratio for the OHRE check
         self.config['override_min_rr_ratio'] = cfg.get('min_rr_ratio', 1.5)
         
         risk_params = self._orchestrate_static_risk(
@@ -185,7 +203,6 @@ class PullbackSniperPro(BaseStrategy):
         if not risk_params:
             self._log_final_decision("HOLD", "OHRE v3.0 failed to generate a valid risk plan."); return None
         
-        # --- 5. Final Signal ---
         confirmations = {
             "macro_trend": macro_trend,
             "prz_components": best_prz['components'],
@@ -196,3 +213,4 @@ class PullbackSniperPro(BaseStrategy):
         }
         self._log_final_decision(signal_direction, "All criteria met. Pullback Sniper signal confirmed.")
         return { "direction": signal_direction, "entry_price": entry_price, **risk_params, "confirmations": confirmations }
+
