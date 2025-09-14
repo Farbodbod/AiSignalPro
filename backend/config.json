@@ -414,14 +414,15 @@
         "use_fibonacci": true,
         "fib_levels": ["38.2%", "50.0%", "61.8%"],
         "use_pivots": true,
+        "pivot_levels": ["R3", "R2", "R1", "P", "S1", "S2", "S3"],
         "use_structure": true,
         "min_structure_strength": 2,
-        "proximity_percent": 0.5
+        "proximity_percent": 0.75
       },
       "confirmation_scoring": {
-        "min_score": {"low_tf": 1, "high_tf": 1},
+        "min_score": {"low_tf": 9, "high_tf": 11},
         "weights": {
-          "hidden_divergence": 4,
+          "hidden_divergence": 5,
           "dual_oscillator": 3,
           "candlestick_strong": 3,
           "volume_spike": 2,
@@ -433,7 +434,7 @@
       "htf_map": { "5m": "15m", "15m": "1h", "1h": "4h", "4h": "1d" },
       "htf_confirmations": {
         "min_required_score": 2,
-        "adx": { "weight": 1, "min_percentile": 65.0 },
+        "adx": { "weight": 1, "min_percentile": 70.0 },
         "supertrend": { "weight": 1 }
       },
       "ohre_engine": {
@@ -444,12 +445,12 @@
           "S1": 3, "R1": 3,
           "P": 3
         },
-        "magnet_proximity_percent": 0.5,
+        "magnet_proximity_percent": 0.75,
         "min_magnet_strength": 3,
         "percentile_thresholds": { "strong": 80, "developing": 40 },
         "atr_fallback_engine": {
           "strength_multipliers": { "strong": 1.75, "developing": 1.25, "weak": 1.0 },
-          "base_rr_multiples": [ 1.8, 2.8, 4.5 ]
+          "base_rr_multiples": [ 2.2, 3.0, 4.2 ]
         }
       }
     },
