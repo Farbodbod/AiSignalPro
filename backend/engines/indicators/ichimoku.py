@@ -1,4 +1,4 @@
-# backend/engines/indicators/ichimoku.py (v6.0 - The Grandmaster Edition)
+# backend/engines/indicators/ichimoku.py (v6.1 - The Convergence Signal Edition)
 import pandas as pd
 import numpy as np
 import logging
@@ -10,12 +10,13 @@ logger = logging.getLogger(__name__)
 
 class IchimokuIndicator(BaseIndicator):
     """
-    Ichimoku Kinko Hyo - (v6.0 - The Grandmaster Edition)
+    Ichimoku Kinko Hyo - (v6.1 - The Convergence Signal Edition)
     --------------------------------------------------------------------------------
     This world-class version evolves into a true quant analysis engine. It introduces
     a dynamic Trend Confidence Score, combining all Ichimoku components into a
-    single, actionable metric. The architecture is now fully standardized with
-    dynamic column naming and a Sentinel-compliant output structure.
+    single, actionable metric. This update surgically adds a specialized crossover
+    detection between the Tenkan-sen and Senkou Span A, providing a powerful,
+    secondary momentum signal for advanced strategies.
     """
     dependencies: list = []
 
@@ -40,6 +41,7 @@ class IchimokuIndicator(BaseIndicator):
         self.senkou_b_col = f'ichi_senkou_b{suffix}'
 
     def calculate(self) -> 'IchimokuIndicator':
+        # --- This function remains unchanged ---
         if len(self.df) < self.senkou_b_period:
             logger.warning(f"Not enough data for Ichimoku on {self.timeframe or 'base'}.")
             for col in [self.tenkan_col, self.kijun_col, self.senkou_a_col, self.senkou_b_col, self.chikou_col]:
@@ -75,7 +77,7 @@ class IchimokuIndicator(BaseIndicator):
 
         last, prev = valid_df.iloc[-1], valid_df.iloc[-2]
         
-        # --- Component Analysis ---
+        # --- Component Analysis (Existing logic is untouched) ---
         kumo_top = max(last[self.senkou_a_col], last[self.senkou_b_col])
         kumo_bottom = min(last[self.senkou_a_col], last[self.senkou_b_col])
         price_pos = "Inside Kumo"
@@ -106,12 +108,20 @@ class IchimokuIndicator(BaseIndicator):
                     if chikou_price > past_candle['high'] and chikou_price > past_kumo_top: chikou_status = "Free (Bullish)"
                     elif chikou_price < past_candle['low'] and chikou_price < past_kumo_bottom: chikou_status = "Free (Bearish)"
 
-        # --- ✅ GRANDMASTER FEATURE: Dynamic Trend Confidence Score ---
+        # ✅ SURGICAL ADDITION v6.1: Tenkan-sen / Senkou Span A Crossover
+        tsa_cross = "Neutral"
+        if prev[self.tenkan_col] < prev[self.senkou_a_col] and last[self.tenkan_col] > last[self.senkou_a_col]:
+            tsa_cross = "Bullish Crossover"
+        elif prev[self.tenkan_col] > prev[self.senkou_a_col] and last[self.tenkan_col] < last[self.senkou_a_col]:
+            tsa_cross = "Bearish Crossover"
+
+        # --- Dynamic Trend Confidence Score (Existing logic is untouched) ---
         score = 0
         if price_pos == "Above Kumo": score += 3
         elif price_pos == "Below Kumo": score -= 3
         if "Strong Bullish" in tk_cross: score += 2
         elif "Strong Bearish" in tk_cross: score -= 2
+        # ... (rest of the scoring logic remains identical)
         if "Weak Bullish" in tk_cross: score += 1
         elif "Weak Bearish" in tk_cross: score -= 1
         if future_kumo_dir == "Bullish": score += 2
@@ -130,11 +140,15 @@ class IchimokuIndicator(BaseIndicator):
             "senkou_a": round(last[self.senkou_a_col], 5), "senkou_b": round(last[self.senkou_b_col], 5),
             "chikou_price": round(chikou_price, 5) if pd.notna(chikou_price) else None
         }
+        
         analysis_content = {
             "trend_summary": trend, "trend_score": score,
-            "price_position": price_pos, "tk_cross": tk_cross,
+            "price_position": price_pos, 
+            "tk_cross": tk_cross,
+            "tsa_cross": tsa_cross, # ✅ ADDED in v6.1: New signal is now part of the output
             "future_kumo_direction": future_kumo_dir,
-            "kumo_twist": kumo_twist, "chikou_status": chikou_status
+            "kumo_twist": kumo_twist, 
+            "chikou_status": chikou_status
         }
         
         return {
