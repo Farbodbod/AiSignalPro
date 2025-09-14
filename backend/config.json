@@ -103,7 +103,7 @@
       },
       "entry_confirmation": {
         "require_strong_stoch_cross": true,
-        "min_macd_strength": 35
+        "min_macd_strength": 40
       },
       "min_rr_ratio": 1.5,
       "indicator_configs": {
@@ -458,7 +458,7 @@
       "enabled": true,
       "market_regime_filter_enabled": true,
       "required_regime": "TRENDING",
-      "adx_percentile_threshold": 80,
+      "adx_percentile_threshold": 85,
       "outlier_candle_shield_enabled": true,
       "outlier_atr_multiplier": 3.2,
       "exhaustion_shield_enabled": true,
@@ -466,13 +466,13 @@
       "rsi_buy_percentile": 88,
       "rsi_sell_percentile": 12,
       "cooldown_bars": 3,
-      "min_momentum_score": { "low_tf": 20, "high_tf": 23 },
+      "min_momentum_score": { "low_tf": 12, "high_tf": 14 },
       "weights": {
-        "momentum_acceleration": 8, "volume_catalyst": 6, "volatility_expansion": 6,
+        "momentum_acceleration": 5, "volume_catalyst": 4, "volatility_expansion": 2,
         "macd_aligned": 3, "adx_strength": 1, "htf_alignment": 3, "candlestick": 1
       },
-      "volume_z_score_threshold": 1.8,
-      "late_entry_atr_mult": 1.0,
+      "volume_z_score_threshold": 2.0,
+      "late_entry_atr_mult": 0.9,
       "htf_confirmation_enabled": true,
       "htf_map": { "5m": "15m", "15m": "1h", "1h": "4h", "4h": "1d" },
       "htf_confirmations": {
@@ -587,19 +587,19 @@
       "enabled": true,
       "market_regime_filter_enabled": true,
       "required_regime": "TRENDING",
-      "regime_adx_percentile_threshold": 70.0,
+      "regime_adx_percentile_threshold": 75.0,
       "default_params": {
         "entry_trigger_type": "supertrend",
         "min_adx_percentile": 55.0
       },
       "timeframe_overrides": {
         "5m": { "min_adx_percentile": 55.0 },
-        "1d": { "min_adx_percentile": 65.0 }
+        "1d": { "min_adx_percentile": 60.0 }
       },
       "conviction_scoring": {
         "enabled": true,
         "min_conviction_score": 11,
-        "min_macd_strength": 45,
+        "min_macd_strength": 50,
         "weights": {
           "macd_strong_momentum": 4,
           "htf_alignment": 5,
@@ -614,7 +614,7 @@
       },
       "exhaustion_shield": {
         "enabled": true,
-        "rsi_lookback": 100,
+        "rsi_lookback": 120,
         "rsi_buy_percentile": 88,
         "rsi_sell_percentile": 12
       },
