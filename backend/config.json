@@ -149,8 +149,8 @@
         "use_pivots": true,
         "pivot_levels": [ "R2", "R1", "P", "S1", "S2" ],
         "use_structure": true,
-        "min_structure_strength": 3,
-        "proximity_percent": 0.5
+        "min_structure_strength": 2,
+        "proximity_percent": 0.75
       },
       "confirmation_scoring": {
         "min_score": 9,
@@ -658,20 +658,20 @@
       "enabled": true,
       "regime_filter": {
         "enabled": true,
-        "max_adx_percentile_for_range": 45.0,
+        "max_adx_percentile_for_range": 40.0,
         "bbw_squeeze_enabled": true,
-        "bbw_quantile": 0.40
+        "bbw_quantile": 0.30
       },
       "confirmation_scoring": {
-        "min_score": 2,
+        "min_score": 6,
         "weights": {
           "rsi_reversal": 3,
           "stochastic_reversal": 2,
-          "candlestick_strong": 3,
+          "candlestick_strong": 4,
           "candlestick_medium": 2
         },
-        "rsi_oversold_entry": 40.0,
-        "rsi_overbought_entry": 60.0
+        "rsi_oversold_entry": 30.0,
+        "rsi_overbought_entry": 70.0
       },
       "override_min_rr_ratio": 1.2,
       "ohre_engine": {
@@ -682,7 +682,7 @@
           "S1": 3, "R1": 3,
           "P": 3
         },
-        "magnet_proximity_percent": 0.5,
+        "magnet_proximity_percent": 0.75,
         "min_magnet_strength": 3,
         "percentile_thresholds": { "strong": 80, "developing": 40 },
         "atr_fallback_engine": {
