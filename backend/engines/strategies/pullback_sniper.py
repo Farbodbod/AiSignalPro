@@ -27,7 +27,7 @@ class PullbackSniperPro(BaseStrategy):
 
         "prz_config": {
             "use_fibonacci": True,
-            "fib_levels": ["38.2%", "50.0%", "61.8%"]
+            "fib_levels": ["38.2%", "50.0%", "61.8%"],
             "use_pivots": True,
             # ✅ UPGRADE: Pivot levels are now fully configurable.
             "pivot_levels": ["R3", "R2", "R1", "P", "S1", "S2", "S3"],
