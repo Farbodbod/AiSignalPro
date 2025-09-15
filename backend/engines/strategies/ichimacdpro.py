@@ -18,7 +18,7 @@ class IchiMACDPro(BaseStrategy):
     """
     strategy_name: str = "IchiMACDPro"
 
-    default_config: ClassVar[Dict, Any] = {
+    default_config: ClassVar[Dict[str, Any]] = {
         "market_regime_filter": {
             "enabled": True,
             "min_adx_percentile": 60.0
