@@ -471,10 +471,10 @@
       "operation_mode": "Regime-Aware",
       "market_regime_adx_percentile": 75,
       "penalty_pct_htf_conflict": 25,
-      "min_total_score_base": 68,
+      "min_total_score_base": 69,
       "min_total_score_breakout_base": 72,
       "min_score_pullback_base": 67,
-      "min_score_reversal_base": 68,
+      "min_score_reversal_base": 69,
       "weights_trending": {
         "price_vs_kumo": 2,
         "tk_cross_strong": 4,
