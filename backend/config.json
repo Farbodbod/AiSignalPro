@@ -154,8 +154,8 @@
           "min_percentile": 55
         },
         "donchian_channel": {
-          "buy_zone_max_percentile": 25,
-          "sell_zone_min_percentile": 75
+          "buy_zone_max_percentile": 30,
+          "sell_zone_min_percentile": 70
         }
       },
       "entry_confirmation": {
@@ -217,7 +217,7 @@
       "enabled": true,
       "htf_context_config": {
         "enabled": true,
-        "min_adx_percentile": 75
+        "min_adx_percentile": 70
       },
       "prz_config": {
         "use_fibonacci": true,
@@ -236,10 +236,10 @@
         ],
         "use_structure": true,
         "min_structure_strength": 2,
-        "proximity_percent": 0.75
+        "proximity_percent": 0.8
       },
       "confirmation_scoring": {
-        "min_score": 8,
+        "min_score": 7,
         "weights": {
           "climactic_volume": 5,
           "candlestick_strong": 4,
