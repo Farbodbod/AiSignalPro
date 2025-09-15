@@ -151,16 +151,16 @@
       },
       "htf_confirmations": {
         "adx": {
-          "min_percentile": 55
+          "min_percentile": 50
         },
         "donchian_channel": {
-          "buy_zone_max_percentile": 50,
-          "sell_zone_min_percentile": 50
+          "buy_zone_max_percentile": 30,
+          "sell_zone_min_percentile": 70
         }
       },
       "entry_confirmation": {
         "require_strong_stoch_cross": true,
-        "min_macd_strength": 40
+        "min_macd_strength": 35
       },
       "min_rr_ratio": 1.5,
       "indicator_configs": {
@@ -194,7 +194,7 @@
           "P": 3
         },
         "magnet_proximity_percent": 0.75,
-        "min_magnet_strength": 3,
+        "min_magnet_strength": 2,
         "percentile_thresholds": {
           "strong": 80,
           "developing": 40
@@ -599,7 +599,7 @@
           "P": 3
         },
         "magnet_proximity_percent": 0.75,
-        "min_magnet_strength": 3,
+        "min_magnet_strength": 2,
         "percentile_thresholds": {
           "strong": 80,
           "developing": 40
