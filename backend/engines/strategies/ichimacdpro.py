@@ -1,4 +1,4 @@
-# backend/engines/strategies/ichimacdpro.py (v1.1 - The Sentinel's Patch)
+# backend/engines/strategies/ichimacdpro.py (v2.0 - The Quantum Armored Legion)
 
 import logging
 from typing import Dict, Any, Optional, Tuple, ClassVar, List
@@ -9,93 +9,140 @@ logger = logging.getLogger(__name__)
 
 class IchiMACDPro(BaseStrategy):
     """
-    IchiMACDPro - (v1.1 - The Sentinel's Patch)
+    IchiMACDPro - (v2.0 - The Quantum Armored Legion)
     -----------------------------------------------------------------------------------------
-    This version incorporates a critical bug fix identified during the final quality
-    assurance review. The 'adx' indicator has been added to the required_names
-    list, as it is a vital dependency for the OHRE v3.0 risk management engine
-    in the BaseStrategy. This patch ensures the risk engine functions correctly
-    and the strategy can operate at its full potential.
+    Forged from a superior strategic doctrine, this version operates as an aggressive
+    vanguard unit. Its philosophy is to act decisively on predictive signals,
+    governed by a unified "War Council" (a conviction scoring engine) rather than
+    rigid sequential filters. Its only hard gatekeeper is the Exhaustion Shield,
+    preventing attacks when the army is fatigued. This creates a flexible, intelligent,
+    and brutally effective high-conviction momentum sniper.
     """
     strategy_name: str = "IchiMACDPro"
 
     default_config: ClassVar[Dict[str, Any]] = {
         "min_rr_ratio": 2.0,
+
+        # The Single Gatekeeper
+        "exhaustion_shield": {
+            "enabled": True,
+            "rsi_lookback": 120,
+            "rsi_buy_percentile": 88,
+            "rsi_sell_percentile": 12
+        },
+        
+        # HTF is now a weighted member of the War Council, not a hard filter
+        "htf_confirmation_enabled": True, 
+        "htf_map": { "5m": "15m", "15m": "1h", "1h": "4h", "4h": "1d" },
+        "htf_confirmations": { 
+            "min_required_score": 2,
+            "adx": {"weight": 1, "min_percentile": 70.0},
+            "supertrend": {"weight": 1}
+        },
+        
+        # The new, unified War Council
+        "conviction_scoring": {
+            "enabled": True,
+            "min_conviction_score": 13,
+            "weights": {
+                "ma_accelerating": 5,
+                "ichi_tsa_cross": 5,
+                "macd_confirm": 4,
+                "htf_alignment": 3
+            }
+        },
         
         "indicator_configs": {
-            "fast_ma": {
-                "name": "fast_ma",
-                "ma_type": "DEMA",
-                "period": 200
-            },
-            "ichimoku": {
-                "name": "ichimoku",
-                "tenkan_period": 9,
-                "kijun_period": 26,
-                "senkou_b_period": 52
-            },
-            "macd": {
-                "name": "macd",
-                "fast_period": 12,
-                "slow_period": 26,
-                "signal_period": 9
-            }
+            "fast_ma":    { "name": "fast_ma", "ma_type": "DEMA", "period": 200 },
+            "ichimoku":   { "name": "ichimoku" }, # Uses default params
+            "macd":       { "name": "macd" },     # Uses default params
+            "adx":        { "name": "adx" },      # Required for HTF
+            "rsi":        { "name": "rsi" },      # Required for Shield
+            "supertrend": { "name": "supertrend" } # Required for HTF
         }
     }
+
+    def _calculate_conviction_score(self, indicators: Dict) -> Tuple[int, List[str], Optional[str]]:
+        """The War Council: Assesses all evidence and returns a score, details, and the confirmed direction."""
+        cfg = self.config.get('conviction_scoring', {})
+        weights = cfg.get('weights', {})
+        score, details, confirmed_direction = 0, [], None
+
+        # 1. Macro Trend Acceleration (The most critical factor)
+        ma_analysis = self._safe_get(indicators['fast_ma'], ['analysis'], {})
+        if ma_analysis.get('strength') == 'Accelerating':
+            signal = ma_analysis.get('signal')
+            if signal == 'Buy':
+                confirmed_direction = "BUY"
+                score += weights.get('ma_accelerating', 0)
+                details.append("MA Accel+")
+            elif signal == 'Sell':
+                confirmed_direction = "SELL"
+                score += weights.get('ma_accelerating', 0)
+                details.append("MA Accel-")
+
+        # The council only proceeds if a primary direction is confirmed
+        if not confirmed_direction:
+            return 0, ["MA Not Accelerating"], None
+
+        # 2. Ichimoku Trigger
+        ichi_analysis = self._safe_get(indicators['ichimoku'], ['analysis'], {})
+        tsa_cross = ichi_analysis.get('tsa_cross')
+        if (confirmed_direction == "BUY" and tsa_cross == "Bullish Crossover") or \
+           (confirmed_direction == "SELL" and tsa_cross == "Bearish Crossover"):
+            score += weights.get('ichi_tsa_cross', 0)
+            details.append("Ichi Cross")
+
+        # 3. MACD Confirmation
+        macd_context = self._safe_get(indicators['macd'], ['analysis', 'context'], {})
+        hist_state = macd_context.get('histogram_state')
+        required_state = "Green" if confirmed_direction == "BUY" else "Red"
+        if hist_state == required_state:
+            score += weights.get('macd_confirm', 0)
+            details.append(f"MACD {hist_state}")
+            
+        # 4. HTF Alignment
+        if self.config.get('htf_confirmation_enabled'):
+            if self._get_trend_confirmation(confirmed_direction):
+                score += weights.get('htf_alignment', 0)
+                details.append("HTF Aligned")
+        
+        return score, details, confirmed_direction
 
     def check_signal(self) -> Optional[Dict[str, Any]]:
         cfg = self.config
         
-        # --- 1. Get All Required Indicators ---
-        # ✅ CRITICAL FIX v1.1: 'adx' is now included as a required indicator for the OHRE engine.
-        required_names = ['fast_ma', 'ichimoku', 'macd', 'structure', 'pivots', 'atr', 'adx']
+        required_names = ['fast_ma', 'ichimoku', 'macd', 'rsi', 'supertrend', 'structure', 'pivots', 'atr', 'adx']
         
         indicators = {name: self.get_indicator(name) for name in required_names}
         if any(data is None for data in indicators.values()):
             missing = [name for name, data in indicators.items() if data is None]
             self._log_final_decision("HOLD", f"Indicators missing: {', '.join(missing)}"); return None
 
-        # --- STAGE 1: The Strategic Filter (Macro Trend Health) ---
-        ma_analysis = self._safe_get(indicators['fast_ma'], ['analysis'], {})
-        ma_signal = ma_analysis.get('signal')
-        ma_strength = ma_analysis.get('strength')
+        # --- STAGE 1: THE GATEKEEPER (Exhaustion Shield) ---
+        shield_cfg = cfg.get('exhaustion_shield', {})
+        if shield_cfg.get('enabled'):
+            # Temporarily determine direction for the shield
+            temp_direction = "BUY" if self._safe_get(indicators['fast_ma'], ['analysis', 'signal']) == 'Buy' else "SELL"
+            if self._is_trend_exhausted_dynamic(direction=temp_direction, **shield_cfg):
+                self._log_final_decision("HOLD", "Vetoed by Exhaustion Shield: Army is fatigued."); return None
         
-        allowed_direction = None
-        if ma_signal == 'Buy' and ma_strength == 'Accelerating':
-            allowed_direction = "BUY"
-        elif ma_signal == 'Sell' and ma_strength == 'Accelerating':
-            allowed_direction = "SELL"
-        
-        if not allowed_direction:
-            self._log_final_decision("HOLD", f"Macro trend is not strong and accelerating. (Signal: {ma_signal}, Strength: {ma_strength})")
-            return None
-        self._log_criteria("Macro Trend Filter", True, f"Validated Accelerating Trend. Allowed Direction: {allowed_direction}")
+        self._log_criteria("Defensive Shield", True, "Army has sufficient stamina for an attack.")
 
-        # --- STAGE 2: The Entry Trigger (Ichimoku Convergence) ---
-        ichi_analysis = self._safe_get(indicators['ichimoku'], ['analysis'], {})
-        tsa_cross = ichi_analysis.get('tsa_cross')
-        
-        trigger_ok = (allowed_direction == "BUY" and tsa_cross == "Bullish Crossover") or \
-                     (allowed_direction == "SELL" and tsa_cross == "Bearish Crossover")
-        
-        if not trigger_ok:
-            self._log_final_decision("HOLD", f"Ichimoku trigger not found or not aligned. (TSA Cross: {tsa_cross})")
-            return None
-        self._log_criteria("Entry Trigger (Ichimoku)", True, f"Found aligned '{tsa_cross}' signal.")
-        
-        # --- STAGE 3: The Qualitative Confirmation (MACD Power) ---
-        macd_context = self._safe_get(indicators['macd'], ['analysis', 'context'], {})
-        histogram_state = macd_context.get('histogram_state')
-        
-        required_state = "Green" if allowed_direction == "BUY" else "Red"
-        
-        if histogram_state != required_state:
-            self._log_final_decision("HOLD", f"MACD confirmation failed. Required state '{required_state}', but got '{histogram_state}'.")
-            return None
-        self._log_criteria("Qualitative Confirmation (MACD)", True, f"MACD state is '{histogram_state}', confirming high-conviction momentum.")
-        
-        # --- STAGE 4: Risk Orchestration & Execution ---
-        signal_direction = allowed_direction
+        # --- STAGE 2: THE WAR COUNCIL (Conviction Scoring) ---
+        scoring_cfg = cfg.get('conviction_scoring', {})
+        if scoring_cfg.get('enabled'):
+            min_score = scoring_cfg.get('min_conviction_score', 13)
+            conviction_score, score_details, signal_direction = self._calculate_conviction_score(indicators)
+            
+            if not signal_direction or conviction_score < min_score:
+                self._log_final_decision("HOLD", f"War council did not reach consensus. Score {conviction_score}/{min_score}. Details: {', '.join(score_details)}")
+                return None
+            self._log_criteria("War Council Consensus", True, f"Score: {conviction_score}/{min_score}. Details: {', '.join(score_details)}")
+        else:
+             self._log_final_decision("HOLD", "Conviction scoring is disabled."); return None
+
+        # --- STAGE 3: RISK ORCHESTRATION & EXECUTION ---
         entry_price = self._safe_get(self.price_data, ['close'])
         
         self.config['override_min_rr_ratio'] = cfg.get('min_rr_ratio', 2.0)
@@ -106,12 +153,10 @@ class IchiMACDPro(BaseStrategy):
             self._log_final_decision("HOLD", "OHRE engine failed to generate a valid risk plan."); return None
             
         confirmations = {
-            "macro_trend": f"Accelerating {ma_signal} (DEMA 200)",
-            "entry_trigger": tsa_cross,
-            "momentum_confirmation": f"MACD State: {histogram_state} (Strength: {self._safe_get(indicators['macd'], ['analysis', 'strength'])})",
+            "conviction_score": f"{conviction_score}/17 ({', '.join(score_details)})",
             "risk_engine": self.log_details["risk_trace"][-1].get("source", "OHRE v3.0"),
             "risk_reward": risk_params.get('risk_reward_ratio'),
         }
-        self._log_final_decision(signal_direction, "IchiMACDPro Convergence signal confirmed.")
+        self._log_final_decision(signal_direction, "IchiMACDPro signal confirmed by the Quantum Legion.")
         
         return {"direction": signal_direction, "entry_price": entry_price, **risk_params, "confirmations": confirmations}
