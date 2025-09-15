@@ -85,6 +85,10 @@
     },
     "IchiMACDPro": {
       "enabled": true,
+      "market_regime_filter": {
+        "enabled": true,
+        "min_adx_percentile": 60.0
+      },
       "min_rr_ratio": 2.0,
       "exhaustion_shield": {
         "enabled": true,
@@ -92,56 +96,18 @@
         "rsi_buy_percentile": 88,
         "rsi_sell_percentile": 12
       },
-      "htf_confirmation_enabled": true,
-      "htf_map": {
-        "5m": "15m",
-        "15m": "1h",
-        "1h": "4h",
-        "4h": "1d"
-      },
-      "htf_confirmations": {
-        "min_required_score": 2,
-        "adx": {
-          "weight": 1,
-          "min_percentile": 70.0
-        },
-        "supertrend": {
-          "weight": 1
-        }
-      },
-      "conviction_scoring": {
-        "enabled": true,
-        "min_conviction_score": 13,
-        "weights": {
-          "ma_accelerating": 5,
-          "ichi_tsa_cross": 5,
-          "macd_confirm": 4,
-          "htf_alignment": 3
-        }
-      },
       "indicator_configs": {
-        "fast_ma": {
-          "name": "fast_ma",
-          "ma_type": "DEMA",
-          "period": 200
-        },
         "ichimoku": {
           "name": "ichimoku"
         },
         "macd": {
-          "name": "macd",
-          "fast_period": 12,
-          "slow_period": 26,
-          "signal_period": 9
-        },
-        "adx": {
-          "name": "adx"
+          "name": "macd"
         },
         "rsi": {
           "name": "rsi"
         },
-        "supertrend": {
-          "name": "supertrend"
+        "adx": {
+          "name": "adx"
         }
       },
       "ohre_engine": {
