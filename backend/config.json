@@ -1050,12 +1050,12 @@
           "min_adx_percentile": 55
         },
         "1d": {
-          "min_adx_percentile": 60
+          "min_adx_percentile": 70
         }
       },
       "conviction_scoring": {
         "enabled": true,
-        "min_conviction_score": 11,
+        "min_conviction_score": 13,
         "min_macd_strength": 50,
         "weights": {
           "macd_strong_momentum": 4,
