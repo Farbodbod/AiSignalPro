@@ -1,4 +1,4 @@
-# backend/engines/strategies/ichimacdpro.py (v2.0 - The Quantum Armored Legion)
+# backend/engines/strategies/ichimacdpro.py (v2.1 - The Protocol Patch)
 
 import logging
 from typing import Dict, Any, Optional, Tuple, ClassVar, List
@@ -9,21 +9,19 @@ logger = logging.getLogger(__name__)
 
 class IchiMACDPro(BaseStrategy):
     """
-    IchiMACDPro - (v2.0 - The Quantum Armored Legion)
+    IchiMACDPro - (v2.1 - The Protocol Patch)
     -----------------------------------------------------------------------------------------
-    Forged from a superior strategic doctrine, this version operates as an aggressive
-    vanguard unit. Its philosophy is to act decisively on predictive signals,
-    governed by a unified "War Council" (a conviction scoring engine) rather than
-    rigid sequential filters. Its only hard gatekeeper is the Exhaustion Shield,
-    preventing attacks when the army is fatigued. This creates a flexible, intelligent,
-    and brutally effective high-conviction momentum sniper.
+    This version applies a critical hotfix to resolve a TypeError. The call to the
+    _is_trend_exhausted_dynamic helper function has been corrected to pass only the
+    expected keyword arguments, excluding the 'enabled' flag. This ensures perfect
+    compliance with the BaseStrategy's function signatures and guarantees stable,
+    error-free execution of the Exhaustion Shield.
     """
     strategy_name: str = "IchiMACDPro"
 
     default_config: ClassVar[Dict[str, Any]] = {
         "min_rr_ratio": 2.0,
 
-        # The Single Gatekeeper
         "exhaustion_shield": {
             "enabled": True,
             "rsi_lookback": 120,
@@ -31,7 +29,6 @@ class IchiMACDPro(BaseStrategy):
             "rsi_sell_percentile": 12
         },
         
-        # HTF is now a weighted member of the War Council, not a hard filter
         "htf_confirmation_enabled": True, 
         "htf_map": { "5m": "15m", "15m": "1h", "1h": "4h", "4h": "1d" },
         "htf_confirmations": { 
@@ -40,7 +37,6 @@ class IchiMACDPro(BaseStrategy):
             "supertrend": {"weight": 1}
         },
         
-        # The new, unified War Council
         "conviction_scoring": {
             "enabled": True,
             "min_conviction_score": 13,
@@ -54,21 +50,19 @@ class IchiMACDPro(BaseStrategy):
         
         "indicator_configs": {
             "fast_ma":    { "name": "fast_ma", "ma_type": "DEMA", "period": 200 },
-            "ichimoku":   { "name": "ichimoku" }, # Uses default params
-            "macd":       { "name": "macd" },     # Uses default params
-            "adx":        { "name": "adx" },      # Required for HTF
-            "rsi":        { "name": "rsi" },      # Required for Shield
-            "supertrend": { "name": "supertrend" } # Required for HTF
+            "ichimoku":   { "name": "ichimoku" },
+            "macd":       { "name": "macd" },
+            "adx":        { "name": "adx" },
+            "rsi":        { "name": "rsi" },
+            "supertrend": { "name": "supertrend" }
         }
     }
 
     def _calculate_conviction_score(self, indicators: Dict) -> Tuple[int, List[str], Optional[str]]:
-        """The War Council: Assesses all evidence and returns a score, details, and the confirmed direction."""
+        # --- This function remains unchanged ---
         cfg = self.config.get('conviction_scoring', {})
         weights = cfg.get('weights', {})
         score, details, confirmed_direction = 0, [], None
-
-        # 1. Macro Trend Acceleration (The most critical factor)
         ma_analysis = self._safe_get(indicators['fast_ma'], ['analysis'], {})
         if ma_analysis.get('strength') == 'Accelerating':
             signal = ma_analysis.get('signal')
@@ -80,33 +74,24 @@ class IchiMACDPro(BaseStrategy):
                 confirmed_direction = "SELL"
                 score += weights.get('ma_accelerating', 0)
                 details.append("MA Accel-")
-
-        # The council only proceeds if a primary direction is confirmed
         if not confirmed_direction:
             return 0, ["MA Not Accelerating"], None
-
-        # 2. Ichimoku Trigger
         ichi_analysis = self._safe_get(indicators['ichimoku'], ['analysis'], {})
         tsa_cross = ichi_analysis.get('tsa_cross')
         if (confirmed_direction == "BUY" and tsa_cross == "Bullish Crossover") or \
            (confirmed_direction == "SELL" and tsa_cross == "Bearish Crossover"):
             score += weights.get('ichi_tsa_cross', 0)
             details.append("Ichi Cross")
-
-        # 3. MACD Confirmation
         macd_context = self._safe_get(indicators['macd'], ['analysis', 'context'], {})
         hist_state = macd_context.get('histogram_state')
         required_state = "Green" if confirmed_direction == "BUY" else "Red"
         if hist_state == required_state:
             score += weights.get('macd_confirm', 0)
             details.append(f"MACD {hist_state}")
-            
-        # 4. HTF Alignment
         if self.config.get('htf_confirmation_enabled'):
             if self._get_trend_confirmation(confirmed_direction):
                 score += weights.get('htf_alignment', 0)
                 details.append("HTF Aligned")
-        
         return score, details, confirmed_direction
 
     def check_signal(self) -> Optional[Dict[str, Any]]:
@@ -121,10 +106,20 @@ class IchiMACDPro(BaseStrategy):
 
         # --- STAGE 1: THE GATEKEEPER (Exhaustion Shield) ---
         shield_cfg = cfg.get('exhaustion_shield', {})
-        if shield_cfg.get('enabled'):
-            # Temporarily determine direction for the shield
+        if shield_cfg.get('enabled', True):
+            # ✅ SURGICAL FIX v2.1: Create a clean dictionary for the function call,
+            # excluding the 'enabled' key to prevent the TypeError.
+            shield_params = {
+                "rsi_lookback": shield_cfg.get('rsi_lookback', 120),
+                "rsi_buy_percentile": shield_cfg.get('rsi_buy_percentile', 88),
+                "rsi_sell_percentile": shield_cfg.get('rsi_sell_percentile', 12)
+            }
+            
+            # Determine direction for the shield check
             temp_direction = "BUY" if self._safe_get(indicators['fast_ma'], ['analysis', 'signal']) == 'Buy' else "SELL"
-            if self._is_trend_exhausted_dynamic(direction=temp_direction, **shield_cfg):
+            
+            # Call the function with the cleaned, correct parameters
+            if self._is_trend_exhausted_dynamic(direction=temp_direction, **shield_params):
                 self._log_final_decision("HOLD", "Vetoed by Exhaustion Shield: Army is fatigued."); return None
         
         self._log_criteria("Defensive Shield", True, "Army has sufficient stamina for an attack.")
