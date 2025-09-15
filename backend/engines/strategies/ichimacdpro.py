@@ -1,4 +1,4 @@
-# backend/engines/strategies/ichimacdpro.py (v2.1 - The Protocol Patch)
+# backend/engines/strategies/ichimacdpro.py (v3.2 - The Asymmetrical Shield)
 
 import logging
 from typing import Dict, Any, Optional, Tuple, ClassVar, List
@@ -9,137 +9,105 @@ logger = logging.getLogger(__name__)
 
 class IchiMACDPro(BaseStrategy):
     """
-    IchiMACDPro - (v2.1 - The Protocol Patch)
+    IchiMACDPro - (v3.2 - The Asymmetrical Shield)
     -----------------------------------------------------------------------------------------
-    This version applies a critical hotfix to resolve a TypeError. The call to the
-    _is_trend_exhausted_dynamic helper function has been corrected to pass only the
-    expected keyword arguments, excluding the 'enabled' flag. This ensures perfect
-    compliance with the BaseStrategy's function signatures and guarantees stable,
-    error-free execution of the Exhaustion Shield.
+    This version implements a critical philosophical and logical upgrade to the defensive
+    shield. The RSI Exhaustion shield now operates asymmetrically: it only blocks
+    BUY signals when the market is overbought, and only blocks SELL signals when the
+    market is oversold. This resolves a strategic paradox and perfectly aligns the
+    defensive systems with the strategy's momentum-reversal core logic.
     """
     strategy_name: str = "IchiMACDPro"
 
     default_config: ClassVar[Dict[str, Any]] = {
+        "market_regime_filter": {
+            "enabled": True,
+            "min_adx_percentile": 60.0
+        },
         "min_rr_ratio": 2.0,
-
         "exhaustion_shield": {
             "enabled": True,
             "rsi_lookback": 120,
             "rsi_buy_percentile": 88,
             "rsi_sell_percentile": 12
         },
-        
-        "htf_confirmation_enabled": True, 
-        "htf_map": { "5m": "15m", "15m": "1h", "1h": "4h", "4h": "1d" },
-        "htf_confirmations": { 
-            "min_required_score": 2,
-            "adx": {"weight": 1, "min_percentile": 70.0},
-            "supertrend": {"weight": 1}
-        },
-        
-        "conviction_scoring": {
-            "enabled": True,
-            "min_conviction_score": 13,
-            "weights": {
-                "ma_accelerating": 5,
-                "ichi_tsa_cross": 5,
-                "macd_confirm": 4,
-                "htf_alignment": 3
-            }
-        },
-        
         "indicator_configs": {
-            "fast_ma":    { "name": "fast_ma", "ma_type": "DEMA", "period": 200 },
-            "ichimoku":   { "name": "ichimoku" },
-            "macd":       { "name": "macd" },
-            "adx":        { "name": "adx" },
-            "rsi":        { "name": "rsi" },
-            "supertrend": { "name": "supertrend" }
+            "ichimoku": { "name": "ichimoku" },
+            "macd":     { "name": "macd" },
+            "rsi":      { "name": "rsi" },
+            "adx":      { "name": "adx" } 
         }
     }
-
-    def _calculate_conviction_score(self, indicators: Dict) -> Tuple[int, List[str], Optional[str]]:
-        # --- This function remains unchanged ---
-        cfg = self.config.get('conviction_scoring', {})
-        weights = cfg.get('weights', {})
-        score, details, confirmed_direction = 0, [], None
-        ma_analysis = self._safe_get(indicators['fast_ma'], ['analysis'], {})
-        if ma_analysis.get('strength') == 'Accelerating':
-            signal = ma_analysis.get('signal')
-            if signal == 'Buy':
-                confirmed_direction = "BUY"
-                score += weights.get('ma_accelerating', 0)
-                details.append("MA Accel+")
-            elif signal == 'Sell':
-                confirmed_direction = "SELL"
-                score += weights.get('ma_accelerating', 0)
-                details.append("MA Accel-")
-        if not confirmed_direction:
-            return 0, ["MA Not Accelerating"], None
-        ichi_analysis = self._safe_get(indicators['ichimoku'], ['analysis'], {})
-        tsa_cross = ichi_analysis.get('tsa_cross')
-        if (confirmed_direction == "BUY" and tsa_cross == "Bullish Crossover") or \
-           (confirmed_direction == "SELL" and tsa_cross == "Bearish Crossover"):
-            score += weights.get('ichi_tsa_cross', 0)
-            details.append("Ichi Cross")
-        macd_context = self._safe_get(indicators['macd'], ['analysis', 'context'], {})
-        hist_state = macd_context.get('histogram_state')
-        required_state = "Green" if confirmed_direction == "BUY" else "Red"
-        if hist_state == required_state:
-            score += weights.get('macd_confirm', 0)
-            details.append(f"MACD {hist_state}")
-        if self.config.get('htf_confirmation_enabled'):
-            if self._get_trend_confirmation(confirmed_direction):
-                score += weights.get('htf_alignment', 0)
-                details.append("HTF Aligned")
-        return score, details, confirmed_direction
 
     def check_signal(self) -> Optional[Dict[str, Any]]:
         cfg = self.config
         
-        required_names = ['fast_ma', 'ichimoku', 'macd', 'rsi', 'supertrend', 'structure', 'pivots', 'atr', 'adx']
+        required_names = ['ichimoku', 'macd', 'rsi', 'adx', 'structure', 'pivots', 'atr']
         
         indicators = {name: self.get_indicator(name) for name in required_names}
         if any(data is None for data in indicators.values()):
             missing = [name for name, data in indicators.items() if data is None]
             self._log_final_decision("HOLD", f"Indicators missing: {', '.join(missing)}"); return None
 
-        # --- STAGE 1: THE GATEKEEPER (Exhaustion Shield) ---
+        # --- STAGE 1: MARKET REGIME FILTER ---
+        regime_cfg = cfg.get('market_regime_filter', {})
+        if regime_cfg.get('enabled', True):
+            adx_percentile = self._safe_get(indicators['adx'], ['analysis', 'adx_percentile'], 0.0)
+            min_percentile = regime_cfg.get('min_adx_percentile', 60.0)
+            if adx_percentile < min_percentile:
+                self._log_final_decision("HOLD", f"Market is not trending. ADX Percentile {adx_percentile:.2f}% < {min_percentile}%.")
+                return None
+        self._log_criteria("Market Regime Filter", True, "Market is in a trending state.")
+
+        # --- STAGE 2: ENTRY TRIGGER ---
+        ichi_analysis = self._safe_get(indicators['ichimoku'], ['analysis'], {})
+        tsa_cross = ichi_analysis.get('tsa_cross')
+        
+        signal_direction = None
+        if tsa_cross == "Bullish Crossover": signal_direction = "BUY"
+        elif tsa_cross == "Bearish Crossover": signal_direction = "SELL"
+
+        if not signal_direction: return None
+        self._log_criteria("Entry Trigger (Ichimoku)", True, f"Found potential '{tsa_cross}' signal.")
+        
+        # --- STAGE 3: THE ASYMMETRICAL DEFENSIVE SHIELD ---
         shield_cfg = cfg.get('exhaustion_shield', {})
         if shield_cfg.get('enabled', True):
-            # ✅ SURGICAL FIX v2.1: Create a clean dictionary for the function call,
-            # excluding the 'enabled' key to prevent the TypeError.
-            shield_params = {
-                "rsi_lookback": shield_cfg.get('rsi_lookback', 120),
-                "rsi_buy_percentile": shield_cfg.get('rsi_buy_percentile', 88),
-                "rsi_sell_percentile": shield_cfg.get('rsi_sell_percentile', 12)
-            }
-            
-            # Determine direction for the shield check
-            temp_direction = "BUY" if self._safe_get(indicators['fast_ma'], ['analysis', 'signal']) == 'Buy' else "SELL"
-            
-            # Call the function with the cleaned, correct parameters
-            if self._is_trend_exhausted_dynamic(direction=temp_direction, **shield_params):
-                self._log_final_decision("HOLD", "Vetoed by Exhaustion Shield: Army is fatigued."); return None
+            rsi_data = indicators.get('rsi')
+            rsi_col = next((col for col in self.df.columns if col.startswith('RSI_')), None)
+            if rsi_data and rsi_col and rsi_col in self.df.columns:
+                rsi_series = self.df[rsi_col].dropna()
+                rsi_lookback = shield_cfg.get('rsi_lookback', 120)
+                if len(rsi_series) >= rsi_lookback:
+                    window = rsi_series.tail(rsi_lookback)
+                    current_rsi = rsi_series.iloc[-1]
+                    
+                    if signal_direction == "BUY":
+                        buy_percentile = shield_cfg.get('rsi_buy_percentile', 88)
+                        high_threshold = window.quantile(buy_percentile / 100.0)
+                        if current_rsi >= high_threshold:
+                            self._log_final_decision("HOLD", f"Vetoed by Shield: BUY signal while RSI is Overbought ({current_rsi:.2f} >= {high_threshold:.2f})")
+                            return None
+                    elif signal_direction == "SELL":
+                        sell_percentile = shield_cfg.get('rsi_sell_percentile', 12)
+                        low_threshold = window.quantile(sell_percentile / 100.0)
+                        if current_rsi <= low_threshold:
+                            self._log_final_decision("HOLD", f"Vetoed by Shield: SELL signal while RSI is Oversold ({current_rsi:.2f} <= {low_threshold:.2f})")
+                            return None
+        self._log_criteria("Defensive Shield", True, "Signal passed asymmetrical exhaustion check.")
+
+        # --- STAGE 4: QUALITATIVE CONFIRMATION (MACD) ---
+        macd_context = self._safe_get(indicators['macd'], ['analysis', 'context'], {})
+        histogram_state = macd_context.get('histogram_state')
+        required_state = "Green" if signal_direction == "BUY" else "Red"
         
-        self._log_criteria("Defensive Shield", True, "Army has sufficient stamina for an attack.")
-
-        # --- STAGE 2: THE WAR COUNCIL (Conviction Scoring) ---
-        scoring_cfg = cfg.get('conviction_scoring', {})
-        if scoring_cfg.get('enabled'):
-            min_score = scoring_cfg.get('min_conviction_score', 13)
-            conviction_score, score_details, signal_direction = self._calculate_conviction_score(indicators)
-            
-            if not signal_direction or conviction_score < min_score:
-                self._log_final_decision("HOLD", f"War council did not reach consensus. Score {conviction_score}/{min_score}. Details: {', '.join(score_details)}")
-                return None
-            self._log_criteria("War Council Consensus", True, f"Score: {conviction_score}/{min_score}. Details: {', '.join(score_details)}")
-        else:
-             self._log_final_decision("HOLD", "Conviction scoring is disabled."); return None
-
-        # --- STAGE 3: RISK ORCHESTRATION & EXECUTION ---
+        if histogram_state != required_state:
+            self._log_final_decision("HOLD", f"MACD confirmation failed. Required '{required_state}', got '{histogram_state}'.")
+            return None
+        self._log_criteria("Qualitative Confirmation (MACD)", True, f"MACD state '{histogram_state}' confirms momentum.")
+        
+        # --- STAGE 5: RISK ORCHESTRATION ---
         entry_price = self._safe_get(self.price_data, ['close'])
-        
         self.config['override_min_rr_ratio'] = cfg.get('min_rr_ratio', 2.0)
         risk_params = self._orchestrate_static_risk(direction=signal_direction, entry_price=entry_price)
         self.config.pop('override_min_rr_ratio', None)
@@ -148,10 +116,11 @@ class IchiMACDPro(BaseStrategy):
             self._log_final_decision("HOLD", "OHRE engine failed to generate a valid risk plan."); return None
             
         confirmations = {
-            "conviction_score": f"{conviction_score}/17 ({', '.join(score_details)})",
+            "entry_trigger": tsa_cross,
+            "momentum_confirmation": f"MACD State: {histogram_state} (Strength: {self._safe_get(indicators['macd'], ['analysis', 'strength'])})",
             "risk_engine": self.log_details["risk_trace"][-1].get("source", "OHRE v3.0"),
             "risk_reward": risk_params.get('risk_reward_ratio'),
         }
-        self._log_final_decision(signal_direction, "IchiMACDPro signal confirmed by the Quantum Legion.")
+        self._log_final_decision(signal_direction, "IchiMACD Striker signal confirmed.")
         
         return {"direction": signal_direction, "entry_price": entry_price, **risk_params, "confirmations": confirmations}
