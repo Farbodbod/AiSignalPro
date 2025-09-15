@@ -840,7 +840,7 @@
       "enabled": true,
       "market_regime_filter_enabled": true,
       "required_regime": "TRENDING",
-      "adx_percentile_threshold": 85,
+      "adx_percentile_threshold": 80,
       "outlier_candle_shield_enabled": true,
       "outlier_atr_multiplier": 3.2,
       "exhaustion_shield_enabled": true,
@@ -849,13 +849,13 @@
       "rsi_sell_percentile": 12,
       "cooldown_bars": 3,
       "min_momentum_score": {
-        "low_tf": 12,
-        "high_tf": 14
+        "low_tf": 26,
+        "high_tf": 26
       },
       "weights": {
-        "momentum_acceleration": 5,
-        "volume_catalyst": 4,
-        "volatility_expansion": 2,
+        "momentum_acceleration": 10,
+        "volume_catalyst": 9,
+        "volatility_expansion": 7,
         "macd_aligned": 3,
         "adx_strength": 1,
         "htf_alignment": 3,
@@ -920,7 +920,7 @@
           "P": 3
         },
         "magnet_proximity_percent": 0.75,
-        "min_magnet_strength": 3,
+        "min_magnet_strength": 2,
         "percentile_thresholds": {
           "strong": 80,
           "developing": 40
@@ -1018,7 +1018,7 @@
           "P": 3
         },
         "magnet_proximity_percent": 0.75,
-        "min_magnet_strength": 3,
+        "min_magnet_strength": 2,
         "percentile_thresholds": {
           "strong": 80,
           "developing": 40
@@ -1234,20 +1234,20 @@
     },
     "VwapMeanReversion": {
       "enabled": true,
-      "max_adx_for_reversion": 21,
-      "oscillator_logic": "AND",
+      "max_adx_for_reversion": 22,
+      "oscillator_logic": "OR",
       "use_rsi": true,
-      "rsi_oversold": 30,
-      "rsi_overbought": 70,
+      "rsi_oversold": 25,
+      "rsi_overbought": 75,
       "use_williams_r": true,
-      "williams_r_oversold": -80,
-      "williams_r_overbought": -20,
+      "williams_r_oversold": -85,
+      "williams_r_overbought": -15,
       "require_candle_confirmation": true,
-      "min_stretch_atr": 1.2,
+      "min_stretch_atr": 1.5,
       "min_sl_pct": 0.1,
       "atr_sl_multiplier": 1,
       "min_rr_ratio": 1.5,
-      "htf_confirmation_enabled": true,
+      "htf_confirmation_enabled": false,
       "htf_map": {
         "5m": "15m",
         "15m": "1h",
@@ -1258,7 +1258,7 @@
         "min_required_score": 1,
         "adx": {
           "weight": 1,
-          "min_strength": 25
+          "min_strength": 
         }
       }
     }
