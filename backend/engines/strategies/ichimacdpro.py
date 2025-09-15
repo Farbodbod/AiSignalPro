@@ -1,4 +1,4 @@
-# backend/engines/strategies/ichimacdpro.py (v3.2 - The Asymmetrical Shield)
+# backend/engines/strategies/ichimacdpro.py (v3.4 - The Verbose Striker)
 
 import logging
 from typing import Dict, Any, Optional, Tuple, ClassVar, List
@@ -9,17 +9,16 @@ logger = logging.getLogger(__name__)
 
 class IchiMACDPro(BaseStrategy):
     """
-    IchiMACDPro - (v3.2 - The Asymmetrical Shield)
+    IchiMACDPro - (v3.4 - The Verbose Striker)
     -----------------------------------------------------------------------------------------
-    This version implements a critical philosophical and logical upgrade to the defensive
-    shield. The RSI Exhaustion shield now operates asymmetrically: it only blocks
-    BUY signals when the market is overbought, and only blocks SELL signals when the
-    market is oversold. This resolves a strategic paradox and perfectly aligns the
-    defensive systems with the strategy's momentum-reversal core logic.
+    This version applies a critical logging discipline fix. It removes a "silent exit"
+    path by adding a final decision log when the primary Ichimoku trigger is not found.
+    This ensures that every execution path concludes with a clear, logged reason,
+    eliminating any ambiguity in the strategy's decision-making process.
     """
     strategy_name: str = "IchiMACDPro"
 
-    default_config: ClassVar[Dict[str, Any]] = {
+    default_config: ClassVar[Dict, Any] = {
         "market_regime_filter": {
             "enabled": True,
             "min_adx_percentile": 60.0
@@ -67,7 +66,10 @@ class IchiMACDPro(BaseStrategy):
         if tsa_cross == "Bullish Crossover": signal_direction = "BUY"
         elif tsa_cross == "Bearish Crossover": signal_direction = "SELL"
 
-        if not signal_direction: return None
+        if not signal_direction:
+            # ✅ SURGICAL FIX v3.3: Added a log before the silent exit.
+            self._log_final_decision("HOLD", "Market is trending, but no IchiMACD trigger was found.")
+            return None
         self._log_criteria("Entry Trigger (Ichimoku)", True, f"Found potential '{tsa_cross}' signal.")
         
         # --- STAGE 3: THE ASYMMETRICAL DEFENSIVE SHIELD ---
@@ -81,7 +83,6 @@ class IchiMACDPro(BaseStrategy):
                 if len(rsi_series) >= rsi_lookback:
                     window = rsi_series.tail(rsi_lookback)
                     current_rsi = rsi_series.iloc[-1]
-                    
                     if signal_direction == "BUY":
                         buy_percentile = shield_cfg.get('rsi_buy_percentile', 88)
                         high_threshold = window.quantile(buy_percentile / 100.0)
@@ -92,8 +93,8 @@ class IchiMACDPro(BaseStrategy):
                         sell_percentile = shield_cfg.get('rsi_sell_percentile', 12)
                         low_threshold = window.quantile(sell_percentile / 100.0)
                         if current_rsi <= low_threshold:
-                            self._log_final_decision("HOLD", f"Vetoed by Shield: SELL signal while RSI is Oversold ({current_rsi:.2f} <= {low_threshold:.2f})")
-                            return None
+                           self._log_final_decision("HOLD", f"Vetoed by Shield: SELL signal while RSI is Oversold ({current_rsi:.2f} <= {low_threshold:.2f})")
+                           return None
         self._log_criteria("Defensive Shield", True, "Signal passed asymmetrical exhaustion check.")
 
         # --- STAGE 4: QUALITATIVE CONFIRMATION (MACD) ---
