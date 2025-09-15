@@ -154,8 +154,8 @@
           "min_percentile": 55
         },
         "donchian_channel": {
-          "buy_zone_max_percentile": 30,
-          "sell_zone_min_percentile": 70
+          "buy_zone_max_percentile": 50,
+          "sell_zone_min_percentile": 50
         }
       },
       "entry_confirmation": {
