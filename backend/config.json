@@ -1159,7 +1159,7 @@
       "regime_filter": {
         "enabled": true,
         "max_adx_percentile_for_range": 45,
-        "bbw_squeeze_enabled": true,
+        "bbw_squeeze_enabled": true
       },
       "confirmation_scoring": {
         "min_score": 5,
