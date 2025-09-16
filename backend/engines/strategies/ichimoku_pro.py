@@ -1,225 +1,325 @@
-# backend/engines/strategies/BollingerBandsDirectedMaestro.py (v16.4 - The Gold Standard Edition)
+# backend/engines/strategies/ichimoku_pro.py - (v25.0 - The Final OHRE v3.0 Integration)
 
+from __future__ import annotations
 import logging
-from typing import Dict, Any, Optional, ClassVar, List
+import pandas as pd
+from typing import Dict, Any, Optional, List, Tuple, ClassVar
 
 from .base_strategy import BaseStrategy
 
 logger = logging.getLogger(__name__)
 
-class BollingerBandsDirectedMaestro(BaseStrategy):
+class IchimokuHybridPro(BaseStrategy):
     """
-    BollingerBandsDirectedMaestro - (v16.4 - The Gold Standard Edition)
+    IchimokuHybridPro - (v25.0 - The Final OHRE v3.0 Integration)
     -------------------------------------------------------------------------
-    This definitive version elevates the strategy to the project's gold
-    standard for robustness and transparency, inspired by the IchimokuHybridPro
-    architecture. It eliminates all "silent exit" bugs by ensuring every
-    exit path is logged. Furthermore, it implements granular, criterion-by-criterion
-    logging for all scoring components, providing maximum visibility into the
-    strategy's decision-making process. The logic is now considered flawless
-    and fully production-ready.
+    This version completes the full architectural harmonization with BaseStrategy v25.0.
+    The strategy's powerful, multi-trigger signal engine is now perfectly paired with
+    the new OHRE v3.0 ("The Maestro Engine"). All internal, custom SL logic has been
+    removed, fully delegating the responsibility of finding the optimal structural SL
+    and calculating quantum targets to the BaseStrategy. This simplifies the strategy's
+    code while significantly upgrading its risk management capabilities to the project's
+    gold standard.
     """
-    strategy_name: "BollingerBandsDirectedMaestro"
+    strategy_name: str = "IchimokuHybridPro"
     
+    # --- Default config cleaned of all obsolete risk parameters ---
     default_config: ClassVar[Dict[str, Any]] = {
-      "enabled": True, "direction": 0,
-      "ranging_trigger_proximity_atr_mult": 0.75,
-      "indicator_configs": {
-        "ranging_divergence": { "name": "divergence", "dependencies": { "zigzag": { "deviation": 1.0 } } }
+      "operation_mode": "Regime-Aware",
+      "market_regime_adx_percentile": 70.0,
+      "penalty_pct_htf_conflict": 35.0,
+      "min_total_score_base": 68.0,
+      "min_total_score_breakout_base": 70.0,
+      "min_score_pullback_base": 75.0,
+      "min_score_reversal_base": 72.0,
+
+      "weights_trending": { "price_vs_kumo": 2, "tk_cross_strong": 3, "tk_cross_medium": 2, "future_kumo": 1, "chikou_free": 2, "kumo_twist": 1, "volume_spike": 2, "volatility_filter": -5, "leading_timing_confirm": 2, "macd_aligned": 2 },
+      "weights_ranging": { "price_vs_kumo": 1, "tk_cross_strong": 3, "tk_cross_medium": 2, "future_kumo": 1, "chikou_free": 2, "kumo_twist": 4, "volume_spike": 2, "volatility_filter": -5, "leading_timing_confirm": 2, "macd_aligned": 2 },
+      "weights_breakout": { "price_vs_kumo": 4, "chikou_free": 3, "future_kumo": 1, "volume_spike": 3, "kumo_twist": 1, "macd_aligned": 3 },
+      "weights_reversal": { "kumo_rejection_candle": 5, "volume_spike": 3, "future_kumo_aligned": 2, "macd_aligned": 3 },
+      
+      "weights_pullback": { "pullback_to_key_level": 5, "chikou_free": 3, "future_kumo": 2, "volume_spike": 3, "leading_timing_confirm": 2, "macd_aligned": 3 },
+      "pullback_config": { "enabled": True, "candle_reliability": "Medium" },
+
+      "htf_quality_scoring": {
+        "enabled": True,
+        "weights_htf": { "price_vs_kumo": 4, "chikou_free": 3, "future_kumo_aligned": 2, "supertrend_aligned": 3, "adx_strong": 2, "macd_aligned": 2 },
+        "min_score_levels": { "weak": 30.0, "normal": 50.0, "strong": 70.0 },
+        "strict_mode_requires_quality": "normal",
+        "adx_min_percentile_for_htf": 75.0
       },
-      "max_adx_percentile_for_ranging": 45.0,
-      "min_adx_percentile_for_trending": 70.0,
-      "min_squeeze_score": 6,
-      "weights_squeeze": {
-          "bollinger_breakout": {"strong": 3, "medium": 2}, "momentum_confirmation": 3,
-          "volume_spike_confirmation": 2, "htf_alignment": 2, "macd_aligned": 2
-      },
-      "min_ranging_score": 7,
-      "weights_ranging": {
-          "rsi_reversal": 4, "divergence_confirmation": 3, "volume_fade": 2,
-          "candlestick": {"weak": 1, "medium": 2, "strong": 4}, "macd_aligned": 2
-      },
-      "ranging_rsi_oversold": 35.0, "ranging_rsi_overbought": 65.0,
-      "min_trending_score": 10,
-      "weights_trending": {
-          "htf_alignment": 4, "rsi_cooldown": 3, "adx_acceleration_confirmation": 2,
-          "adx_strength": 1, "macd_aligned": 2
-      },
-      "trending_rsi_zones": {"buy_min": 45, "buy_max": 65, "sell_min": 35, "sell_max": 55},
-      "htf_confirmation_enabled": True,
-      "htf_map": { "5m": "15m", "15m": "1h", "1h": "4h", "4h": "1d" },
-      "htf_confirmations": { "min_required_score": 2, "adx": {"weight": 1, "min_percentile": 70.0},"supertrend": {"weight": 1}},
-      "allow_mixed_mode": False
+      
+      "timing_and_exhaustion_engine": { "enabled": True, "timing_confirm_enabled": True, "timing_mode": "dynamic", "timing_apply_to_tk_cross": True, "timing_apply_to_breakout": False, "timing_dynamic_rsi_lookback": 100, "timing_dynamic_rsi_buy_percentile": 30, "timing_dynamic_rsi_sell_percentile": 70, "exhaustion_shield_enabled": True, "exhaustion_mode": "dynamic", "exhaustion_dynamic_rsi_lookback": 100, "exhaustion_dynamic_overbought_percentile": 90, "exhaustion_dynamic_oversold_percentile": 10 },
+      "kumo_reversal_engine": { "enabled": True, "min_reliability": "Medium" },
+      "signal_grading_thresholds": { "strong": 80.0, "normal": 60.0 },
+      "high_quality_score_threshold": 74.0, "min_rr_ratio": 1.5,
+      "volume_z_relax_threshold": 1.5,
+      "cooldown_bars": 3, "outlier_candle_shield": True, "outlier_atr_mult": 3.5,
+      "late_entry_atr_threshold": 1.2,
+      "htf_confirmation_enabled": True, "htf_map": { "5m": "15m", "15m": "1h", "1h": "4h", "4h": "1d" },
+      "score_weight_primary": 0.75, "score_weight_htf": 0.25,
+      "htf_conflict_dampen_weight": 0.15, "htf_breakout_context_filter_enabled": True,
+      "htf_breakout_context_levels": ["kumo", "kijun"]
     }
 
-    # ✅ LOGGING UPGRADE: Helper function for detailed, criterion-by-criterion logging.
-    def _check_and_score(self, component_name: str, weight_key: str, condition: bool, reason: str, score_ref: List[int], weights: Dict):
-        self._log_criteria(f"Score: {component_name}", condition, reason)
-        if condition:
-            score_ref[0] += weights.get(weight_key, 0)
+    # --- Helper methods integral to the strategy's unique logic (Unchanged) ---
+    def _indicator_ok(self, d: Optional[Dict]) -> bool:
+        # ... (code remains unchanged)
+        return isinstance(d, dict) and (d.get('values') or d.get('analysis'))
 
+    def _grade_signal(self, score: float) -> str:
+        # ... (code remains unchanged)
+        thresholds = self.config.get('signal_grading_thresholds', {})
+        if score >= thresholds.get('strong', 80.0): return "Strong"
+        if score >= thresholds.get('normal', 60.0): return "Normal"
+        return "Weak"
+
+    def _generate_signal_narrative(self, direction: str, grade: str, mode: str, base_score: float, penalties: List[Dict], final_score: float, htf_details: str, htf_grade: str) -> str:
+        # ... (code remains unchanged)
+        base = f"{direction} signal ({mode} Mode, {grade} grade)"
+        score_str = f"Base Score: {base_score:.2f}"
+        if penalties: penalty_parts = [f"-{p['value_pct']:.2f}% ({p['reason']})" for p in penalties]; penalties_str = "Penalties: " + " , ".join(penalty_parts)
+        else: penalties_str = ""
+        htf_str = f"HTF Quality: {htf_grade} ({htf_details})" if htf_details != "N/A" else ""
+        final_str = f"Final: {final_score:.2f}"
+        parts = [base, score_str, htf_str, penalties_str, final_str]
+        return ". ".join(filter(None, parts))
+
+    def _check_htf_breakout_context(self, direction: str) -> bool:
+        # ... (code remains unchanged)
+        if not self.htf_analysis: return True
+        htf_ichi_data = self.get_indicator('ichimoku', analysis_source=self.htf_analysis)
+        if not self._indicator_ok(htf_ichi_data): return True
+        htf_analysis = self._safe_get(htf_ichi_data, ['analysis'], {}); htf_values = self._safe_get(htf_ichi_data, ['values'], {})
+        htf_price = self._safe_get(self.htf_analysis, ['price_data', 'close'])
+        if not self._is_valid_number(htf_price): return True
+        context_ok = False; check_levels = self.config.get('htf_breakout_context_levels', []); htf_kijun = htf_values.get('kijun')
+        if direction == "BUY": context_ok = ("kumo" in check_levels and htf_analysis.get('price_position') == "Above Kumo") or ("kijun" in check_levels and self._is_valid_number(htf_kijun) and htf_price > htf_kijun)
+        else: context_ok = ("kumo" in check_levels and htf_analysis.get('price_position') == "Below Kumo") or ("kijun" in check_levels and self._is_valid_number(htf_kijun) and htf_price < htf_kijun)
+        return context_ok
+
+    def _score_and_normalize(self, direction: str, analysis_data: Dict, weights: Dict, trigger_type: str) -> Tuple[float, List[str], List[Dict]]:
+        # ... (code remains unchanged)
+        self._log_criteria(f"Path Check: Scoring Engine", True, f"Calculating base score for trigger '{trigger_type}'.")
+        positive_score, confirmations, penalties = 0, [], []
+        positive_weights = {k: v for k, v in weights.items() if v > 0}
+        penalty_weights = {k: v for k, v in weights.items() if v < 0}
+        max_positive_score = sum(positive_weights.values())
+        component_results = {}
+        def check(name: str, weight_key: str, condition: bool):
+            nonlocal positive_score, confirmations
+            component_results[name] = (condition, weight_key)
+            if condition and weight_key in positive_weights:
+                positive_score += positive_weights[weight_key]
+                confirmations.append(name)
+        ichi_data = self.get_indicator('ichimoku', analysis_source=analysis_data)
+        if not self._indicator_ok(ichi_data): return 0.0, [], []
+        analysis = ichi_data.get('analysis', {})
+        is_above_kumo = analysis.get('price_position') == "Above Kumo"
+        is_below_kumo = analysis.get('price_position') == "Below Kumo"
+        check("Price>Kumo", 'price_vs_kumo', (direction == "BUY" and is_above_kumo) or (direction == "SELL" and is_below_kumo))
+        tk_cross = str(analysis.get('tk_cross', "")).lower()
+        is_strong_cross = "strong" in tk_cross
+        is_tk_aligned = ("bullish" in tk_cross and direction == "BUY") or ("bearish" in tk_cross and direction == "SELL")
+        if is_tk_aligned:
+            check("Strong TK Cross", 'tk_cross_strong', is_strong_cross)
+            check("Medium TK Cross", 'tk_cross_medium', not is_strong_cross)
+        future_kumo_raw = str(analysis.get('future_kumo_direction', '')).strip().lower()
+        future_kumo_mapped = "BUY" if future_kumo_raw == 'bullish' else "SELL" if future_kumo_raw == 'bearish' else None
+        check("Future Kumo Aligned", 'future_kumo', future_kumo_mapped is not None and future_kumo_mapped == direction)
+        chikou_status = analysis.get('chikou_status', "")
+        check("Chikou Free", 'chikou_free', "Free" in chikou_status and (("Bullish" in chikou_status and direction == "BUY") or ("Bearish" in chikou_status and direction == "SELL")))
+        kumo_twist = analysis.get('kumo_twist', "")
+        check("Kumo Twist Aligned", 'kumo_twist', (kumo_twist == "Bullish Twist" and direction == "BUY") or (kumo_twist == "Bearish Twist" and direction == "SELL"))
+        volume_data = self.get_indicator('volume', analysis_source=analysis_data)
+        is_climactic = self._safe_get(volume_data, ['analysis', 'is_climactic_volume'], False)
+        zscore = self._safe_get(volume_data, ['values', 'z_score'])
+        is_z_spike = self._is_valid_number(zscore) and zscore >= self.config.get('volume_z_relax_threshold', 1.5)
+        check("Volume Spike", 'volume_spike', is_climactic or is_z_spike)
+        macd_data = self.get_indicator('macd', analysis_source=analysis_data)
+        macd_context = self._safe_get(macd_data, ['analysis', 'context'], {})
+        macd_ok = (direction == "BUY" and macd_context.get('momentum') == "Increasing" and macd_context.get('trend') == "Uptrend") or \
+                  (direction == "SELL" and macd_context.get('momentum') == "Increasing" and macd_context.get('trend') == "Downtrend")
+        check("MACD Aligned", 'macd_aligned', macd_ok)
+        if trigger_type == 'KUMO_REVERSAL': check("Kumo Rejection Candle", 'kumo_rejection_candle', True)
+        if trigger_type == 'PULLBACK': check("Pullback to Key Level", 'pullback_to_key_level', True)
+        engine_cfg = self.config.get('timing_and_exhaustion_engine', {})
+        apply_timing = 'timing_apply_to_tk_cross' if trigger_type in ['TK_CROSS', 'PULLBACK'] else 'timing_apply_to_breakout'
+        if engine_cfg.get('enabled', True) and engine_cfg.get('timing_confirm_enabled', True) and engine_cfg.get(apply_timing, False):
+            is_timing_ok = not self._is_trend_exhausted_dynamic(
+                direction=direction, 
+                rsi_lookback=engine_cfg.get('timing_dynamic_rsi_lookback', 100), 
+                rsi_buy_percentile=engine_cfg.get('timing_dynamic_rsi_sell_percentile', 70), 
+                rsi_sell_percentile=engine_cfg.get('timing_dynamic_rsi_buy_percentile', 30)
+            )
+            check("Timing Confirmed (Dynamic)", "leading_timing_confirm", is_timing_ok)
+        for key, raw_points in penalty_weights.items():
+            vol_state = str(self._safe_get(self.get_indicator('keltner_channel', analysis_source=analysis_data), ['analysis', 'volatility_state'], '')).lower()
+            if key == 'volatility_filter' and vol_state in ('squeeze', 'compression', 'low'):
+                penalties.append({'reason': f"Volatility Filter ({vol_state})", 'value_pct': abs(raw_points)})
+        normalized_score = round((positive_score / max_positive_score) * 100, 2) if max_positive_score > 0 else 0.0
+        passed_confirmations = confirmations
+        failed_confirmations = [name for name, (status, w_key) in component_results.items() if not status and w_key in positive_weights]
+        log_msg = (f"Trigger: '{trigger_type}', Score: {normalized_score:.2f}. Confirms: {passed_confirmations}. Fails: {failed_confirmations}.")
+        self._log_criteria("Scoring Result", normalized_score > 0, log_msg)
+        return normalized_score, confirmations, penalties
+
+    def _evaluate_htf(self, trigger_type: str, direction: str) -> Tuple[bool, str, float, List[Dict], str]:
+        # ... (code remains unchanged)
+        htf_cfg = self.config.get('htf_quality_scoring', {})
+        if not htf_cfg.get('enabled', True) or not self.htf_analysis: 
+            return True, "Disabled", 100.0, [], "N/A"
+        htf_weights = htf_cfg.get('weights_htf', {}).copy()
+        if trigger_type == 'KUMO_REVERSAL' and 'price_vs_kumo' in htf_weights:
+            del htf_weights['price_vs_kumo']
+        max_score = sum(htf_weights.values())
+        current_score = 0
+        confirmations = []
+        component_results = {}
+        def check(name: str, weight_key: str, condition: bool):
+            nonlocal current_score
+            component_results[name] = (condition, weight_key)
+            if condition and weight_key in htf_weights:
+                current_score += htf_weights[weight_key]
+                confirmations.append(name)
+        htf_ichi = self.get_indicator('ichimoku', analysis_source=self.htf_analysis)
+        htf_adx = self.get_indicator('adx', analysis_source=self.htf_analysis)
+        htf_st = self.get_indicator('supertrend', analysis_source=self.htf_analysis)
+        htf_macd = self.get_indicator('macd', analysis_source=self.htf_analysis)
+        ichi_analysis = self._safe_get(htf_ichi, ['analysis'], {})
+        ichi_dir_is_aligned = (self._safe_get(ichi_analysis, ['trend_score'], 0) > 0 and direction == "BUY") or \
+                              (self._safe_get(ichi_analysis, ['trend_score'], 0) < 0 and direction == "SELL")
+        price_pos_ok = self._safe_get(ichi_analysis, ['price_position']) not in ["Inside Kumo"] and ichi_dir_is_aligned
+        check("HTF Price vs Kumo", 'price_vs_kumo', price_pos_ok)
+        chikou_ok = "Free" in self._safe_get(ichi_analysis, ['chikou_status'], '')
+        check("HTF Chikou Free", 'chikou_free', chikou_ok)
+        future_kumo_raw = str(self._safe_get(ichi_analysis, ['future_kumo_direction'], '')).strip().lower()
+        future_kumo_mapped = "BUY" if future_kumo_raw == 'bullish' else "SELL" if future_kumo_raw == 'bearish' else None
+        future_kumo_ok = future_kumo_mapped is not None and future_kumo_mapped == direction
+        check("HTF Future Kumo", 'future_kumo_aligned', future_kumo_ok)
+        adx_percentile_htf = self._safe_get(htf_adx, ['analysis', 'adx_percentile'])
+        min_percentile_htf = htf_cfg.get('adx_min_percentile_for_htf', 75.0)
+        adx_ok = self._is_valid_number(adx_percentile_htf) and adx_percentile_htf >= min_percentile_htf
+        check("HTF ADX Strong (Adaptive)", 'adx_strong', adx_ok)
+        st_trend = self._safe_get(htf_st, ['analysis', 'trend'], '').upper()
+        st_ok = st_trend == direction
+        check("HTF SuperTrend Aligned", 'supertrend_aligned', st_ok)
+        macd_context = self._safe_get(htf_macd, ['analysis', 'context'], {})
+        macd_ok = macd_context.get('trend', '').upper() == direction and macd_context.get('momentum') == "Increasing"
+        check("HTF MACD Aligned", 'macd_aligned', macd_ok)
+        norm_htf_score = round((current_score / max_score) * 100, 2) if max_score > 0 else 0
+        levels = htf_cfg.get('min_score_levels', {}); grade = "Fail"
+        if norm_htf_score >= levels.get('strong', 70.0): grade = "Strong"
+        elif norm_htf_score >= levels.get('normal', 50.0): grade = "Normal"
+        elif norm_htf_score >= levels.get('weak', 30.0): grade = "Weak"
+        required_quality = htf_cfg.get('strict_mode_requires_quality', 'normal')
+        quality_map = {"Fail": 0, "Weak": 1, "Normal": 2, "Strong": 3}
+        is_quality_ok = quality_map.get(grade, 0) >= quality_map.get(required_quality, 2)
+        passed_confirmations = confirmations
+        failed_confirmations = [name for name, (status, w_key) in component_results.items() if not status and w_key in htf_weights]
+        log_msg = (f"Score: {norm_htf_score:.2f}, Grade: {grade}. Confirms: {passed_confirmations}. Fails: {failed_confirmations}.")
+        self._log_criteria("HTF Evaluation Result", is_quality_ok, log_msg)
+        details_for_narrative = f"Score: {norm_htf_score:.2f}, Grade: {grade}"
+        return is_quality_ok, details_for_narrative, norm_htf_score, [], grade
+
+    # --- Custom SL logic is now removed as OHRE v3.0 handles it ---
+    # def _calculate_stop_loss(...)
+    
     def check_signal(self) -> Optional[Dict[str, Any]]:
-        # ✅ ROBUSTNESS FIX: Added log calls to all early exit points.
-        if not self.price_data:
-            self._log_final_decision("HOLD", "Price data is not available for this candle."); return None
-            
-        current_price = self.price_data.get('close')
-        if not self._is_valid_number(current_price) or current_price <= 0:
-            self._log_final_decision("HOLD", f"Invalid current_price: {current_price}"); return None
-        
-        required = ['bollinger', 'rsi', 'adx', 'patterns', 'volume', 'atr', 'divergence', 'macd', 'pivots', 'structure', 'supertrend', 'ranging_divergence']
-        indicators = {name: self.get_indicator(name) for name in set(required)}
-        
-        if any(data is None for data in indicators.values()):
-            missing = [name for name, data in indicators.items() if data is None]
-            self._log_final_decision("HOLD", f"Required indicators missing: {', '.join(missing)}"); return None
-        
-        squeeze_signal = self._check_squeeze_front(current_price, indicators)
-        if squeeze_signal: return squeeze_signal
-        
-        adx_percentile = self._safe_get(indicators.get('adx'), ['analysis', 'adx_percentile'], 0.0)
-        max_pct_ranging = self.config.get('max_adx_percentile_for_ranging', 45.0)
-        min_pct_trending = self.config.get('min_adx_percentile_for_trending', 70.0)
-        
-        market_regime = "RANGING" if adx_percentile <= max_pct_ranging else "TRENDING" if adx_percentile >= min_pct_trending else "UNCERTAIN"
-        self._log_criteria("Path Check: Market Regime", market_regime != "UNCERTAIN", f"ADX Percentile={adx_percentile:.2f}% -> Regime: {market_regime}")
-        
-        if market_regime == "RANGING":
-            return self._check_ranging_front(current_price, indicators)
-        elif market_regime == "TRENDING":
-            return self._check_trending_front(current_price, indicators)
-        
-        self._log_final_decision("HOLD", f"Market regime is '{market_regime}', no actionable setup found."); return None
-
-    def _check_squeeze_front(self, current_price: float, indicators: Dict) -> Optional[Dict[str, Any]]:
-        cfg = self.config; is_squeeze = self._safe_get(indicators, ['bollinger', 'analysis', 'is_squeeze_release'], False)
-        self._log_criteria("Path Check: Squeeze", is_squeeze, f"Squeeze Release detected: {is_squeeze}")
-        if not is_squeeze: return None
-        
-        score_ref, weights, min_score = [0], cfg.get('weights_squeeze',{}), cfg.get('min_squeeze_score', 6)
-        bollinger_analysis = self._safe_get(indicators, ['bollinger', 'analysis'], {})
-        trade_signal = self._safe_get(bollinger_analysis, ['trade_signal'], '').lower()
-        temp_direction = "BUY" if "bullish" in trade_signal else "SELL" if "bearish" in trade_signal else None
-        if not temp_direction: self._log_final_decision("HOLD", "Squeeze release detected but direction unclear."); return None
-
-        self._check_and_score("Bollinger Breakout", "bollinger_breakout", True, f"Strength: {bollinger_analysis.get('strength', 'N/A')}", score_ref, weights.get('bollinger_breakout', {}))
-        
-        rsi_analysis = self._safe_get(indicators, ['rsi', 'analysis'], {})
-        crossover_signal = rsi_analysis.get('crossover_signal')
-        rsi_cond = (temp_direction == "BUY" and crossover_signal == "Bullish Crossover") or (temp_direction == "SELL" and crossover_signal == "Bearish Crossover")
-        self._check_and_score("RSI Crossover", "momentum_confirmation", rsi_cond, f"Signal: {crossover_signal}", score_ref, weights)
-
-        volume_cond = self._safe_get(indicators, ['volume', 'analysis', 'is_climactic_volume'], False)
-        self._check_and_score("Volume Spike", "volume_spike_confirmation", volume_cond, f"Climactic Volume: {volume_cond}", score_ref, weights)
-            
-        htf_cond = self._get_trend_confirmation(temp_direction)
-        self._check_and_score("HTF Alignment", "htf_alignment", htf_cond, f"HTF Aligned: {htf_cond}", score_ref, weights)
-        
-        macd_analysis = self._safe_get(indicators, ['macd', 'analysis'], {})
-        hist_state = self._safe_get(macd_analysis, ['context', 'histogram_state'])
-        macd_cond = (temp_direction == "BUY" and hist_state == "Green") or (temp_direction == "SELL" and hist_state == "Red")
-        self._check_and_score("MACD Acceleration", "macd_aligned", macd_cond, f"Hist State: {hist_state}", score_ref, weights)
-
-        final_score = score_ref[0]
-        if final_score >= min_score:
-            risk_params = self._orchestrate_static_risk(temp_direction, current_price)
-            if risk_params:
-                self._log_final_decision(temp_direction, f"Squeeze Breakout triggered (Score: {final_score})")
-                risk_params["confirmations"] = {"final_score": final_score, "trade_mode": "Squeeze Breakout"}
-                return { "direction": temp_direction, "entry_price": current_price, **risk_params }
-        
-        self._log_final_decision("HOLD", f"Squeeze conditions not met (Score: {final_score} < {min_score})."); return None
-
-    def _check_ranging_front(self, current_price: float, indicators: Dict) -> Optional[Dict[str, Any]]:
         cfg = self.config
-        lower_band, upper_band, atr_value = (self._safe_get(indicators, ['bollinger', 'values', 'lower_band']), self._safe_get(indicators, ['bollinger', 'values', 'upper_band']), self._safe_get(indicators, ['atr', 'values', 'atr']))
-        if not all(self._is_valid_number(v) for v in [lower_band, upper_band, atr_value]):
-             self._log_final_decision("HOLD", "Missing values for Ranging check."); return None
         
-        proximity = atr_value * cfg.get('ranging_trigger_proximity_atr_mult', 0.75)
-        price_low, price_high = self.price_data.get('low'), self.price_data.get('high')
-        temp_direction = "BUY" if price_low <= (lower_band + proximity) else "SELL" if price_high >= (upper_band - proximity) else None
+        if not self.price_data or not isinstance(self.df, pd.DataFrame) or self.df.empty: return None
+        if (len(self.df) - 1 - getattr(self, "last_signal_bar", -10**9)) < cfg.get('cooldown_bars', 3): return None
         
-        self._log_criteria("Path Check: Ranging Trigger", temp_direction is not None, f"Direction: {temp_direction}")
-        if temp_direction and cfg.get('direction', 0) in [0, 1 if temp_direction == "BUY" else -1]:
-            score_ref, weights, min_score = [0], cfg.get('weights_ranging',{}), cfg.get('min_ranging_score', 7)
-            
-            rsi_val, rsi_analysis = self._safe_get(indicators, ['rsi', 'values', 'rsi']), self._safe_get(indicators, ['rsi', 'analysis'], {})
-            crossover_signal = rsi_analysis.get('crossover_signal')
-            oversold_thresh, overbought_thresh = cfg.get('ranging_rsi_oversold', 35.0), cfg.get('ranging_rsi_overbought', 65.0)
-            if self._is_valid_number(rsi_val):
-                rsi_cond = (temp_direction == "BUY" and crossover_signal == "Bullish Crossover" and rsi_val <= oversold_thresh) or \
-                           (temp_direction == "SELL" and crossover_signal == "Bearish Crossover" and rsi_val >= overbought_thresh)
-                self._check_and_score("RSI Reversal", "rsi_reversal", rsi_cond, f"Signal: {crossover_signal}, Value: {rsi_val:.2f}", score_ref, weights)
+        # UPGRADED: Added dependencies for OHRE v3.0
+        required = ['ichimoku', 'adx', 'atr', 'volume', 'keltner_channel', 'rsi', 'patterns', 'macd', 'supertrend', 'pivots', 'structure']
+        indicators = {name: self.get_indicator(name) for name in required}
+        if any(not self._indicator_ok(data) for data in indicators.values()): return None
+        if cfg.get('outlier_candle_shield', True) and self._is_outlier_candle(atr_multiplier=cfg.get('outlier_atr_mult', 3.5)): return None
 
-            div_analysis = self._safe_get(indicators, ['ranging_divergence', 'analysis'], {})
-            div_cond = (temp_direction == "BUY" and div_analysis.get('has_regular_bullish_divergence')) or (temp_direction == "SELL" and div_analysis.get('has_regular_bearish_divergence'))
-            self._check_and_score("Divergence", "divergence_confirmation", div_cond, f"Bullish: {div_analysis.get('has_regular_bullish_divergence')}, Bearish: {div_analysis.get('has_regular_bearish_divergence')}", score_ref, weights)
+        # --- The multi-trigger signal detection logic is 100% preserved ---
+        potential_signals = []
+        ichi_analysis = self._safe_get(indicators, ['ichimoku', 'analysis'], {}); ichi_values = self._safe_get(indicators, ['ichimoku', 'values'], {})
+        price_pos = ichi_analysis.get('price_position', '')
+        pullback_cfg = cfg.get('pullback_config', {})
+        if pullback_cfg.get('enabled', True) and price_pos in ["Above Kumo", "Below Kumo"]:
+            direction = "BUY" if price_pos == "Above Kumo" else "SELL"
+            price_low, price_high = self.price_data.get('low'), self.price_data.get('high')
+            kijun = ichi_values.get('kijun')
+            is_pullback = (direction == "BUY" and self._is_valid_number(price_low, kijun) and price_low <= kijun) or \
+                          (direction == "SELL" and self._is_valid_number(price_high, kijun) and price_high >= kijun)
+            if is_pullback and self._get_candlestick_confirmation(direction, min_reliability=pullback_cfg.get('candle_reliability', 'Medium')):
+                score, confirms, penalties = self._score_and_normalize(direction, self.analysis, cfg.get('weights_pullback', {}), "PULLBACK")
+                potential_signals.append({'score': score, 'direction': direction, 'trigger': 'PULLBACK', 'confirms': confirms, 'penalties': penalties})
+        tk_cross = str(ichi_analysis.get('tk_cross', "")).lower()
+        tk_cross_direction = "BUY" if "bullish" in tk_cross else "SELL" if "bearish" in tk_cross else None
+        if tk_cross_direction:
+            adx_data = indicators.get('adx')
+            adx_percentile = self._safe_get(adx_data, ['analysis', 'adx_percentile'], 0.0)
+            regime = "TRENDING" if adx_percentile >= cfg.get('market_regime_adx_percentile', 70.0) else "RANGING"
+            if price_pos == "Inside Kumo": regime = "RANGING"
+            weights = cfg.get('weights_trending' if regime == "TRENDING" else 'weights_ranging', {})
+            score, confirms, penalties = self._score_and_normalize(tk_cross_direction, self.analysis, weights, "TK_CROSS")
+            potential_signals.append({'score': score, 'direction': tk_cross_direction, 'trigger': 'TK_CROSS', 'regime': regime, 'confirms': confirms, 'penalties': penalties})
+        s_a, s_b = ichi_values.get('senkou_a'), ichi_values.get('senkou_b')
+        breakout_direction = "BUY" if price_pos == "Above Kumo" and self._is_valid_number(s_a, s_b) and s_a > s_b else "SELL" if price_pos == "Below Kumo" and self._is_valid_number(s_a, s_b) and s_a < s_b else None
+        if breakout_direction:
+            score, confirms, penalties = self._score_and_normalize(breakout_direction, self.analysis, cfg.get('weights_breakout', {}), "CLOUD_BREAKOUT")
+            potential_signals.append({'score': score, 'direction': breakout_direction, 'trigger': 'CLOUD_BREAKOUT', 'regime': 'BREAKOUT', 'confirms': confirms, 'penalties': penalties})
+        reversal_cfg = cfg.get('kumo_reversal_engine', {})
+        if reversal_cfg.get('enabled', False) and price_pos == "Inside Kumo":
+            for d in ["BUY", "SELL"]:
+                if self._get_candlestick_confirmation(direction=d, min_reliability=reversal_cfg.get('min_reliability', 'Medium')):
+                    score, confirms, penalties = self._score_and_normalize(d, self.analysis, cfg.get('weights_reversal', {}), "KUMO_REVERSAL")
+                    potential_signals.append({'score': score, 'direction': d, 'trigger': 'KUMO_REVERSAL', 'regime': 'REVERSAL', 'confirms': confirms, 'penalties': penalties})
 
-            volume_cond = self._safe_get(indicators, ['volume', 'analysis', 'is_below_average'], False)
-            self._check_and_score("Volume Fade", "volume_fade", volume_cond, f"Below Average: {volume_cond}", score_ref, weights)
-                
-            candle_info = self._get_candlestick_confirmation(temp_direction, min_reliability='Medium')
-            self._check_and_score("Candlestick", "candlestick", candle_info is not None, f"Pattern: {candle_info['name'] if candle_info else 'None'}", score_ref, weights.get('candlestick', {}))
-            
-            macd_analysis = self._safe_get(indicators, ['macd', 'analysis'], {})
-            hist_state = self._safe_get(macd_analysis, ['context', 'histogram_state'])
-            macd_cond = (temp_direction == "BUY" and hist_state == "White_Up") or (temp_direction == "SELL" and hist_state == "White_Down")
-            self._check_and_score("MACD Deceleration", "macd_aligned", macd_cond, f"Hist State: {hist_state}", score_ref, weights)
-
-            final_score = score_ref[0]
-            if final_score >= min_score:
-                risk_params = self._orchestrate_static_risk(temp_direction, current_price)
-                if risk_params:
-                    self._log_final_decision(temp_direction, f"Mean Reversion triggered (Score: {final_score})")
-                    risk_params["confirmations"] = {"final_score": final_score, "trade_mode": "Mean Reversion"}
-                    return { "direction": temp_direction, "entry_price": current_price, **risk_params }
-            
-            self._log_final_decision("HOLD", f"Ranging conditions not met (Score: {final_score} < {min_score})."); return None
+        if not potential_signals: self._log_final_decision("HOLD", "No actionable trigger found."); return None
         
-        self._log_final_decision("HOLD", "Ranging trigger conditions not met."); return None
-
-    def _check_trending_front(self, current_price: float, indicators: Dict) -> Optional[Dict[str, Any]]:
-        cfg = self.config; middle_band = self._safe_get(indicators, ['bollinger', 'values', 'middle_band'])
-        price_low, price_high = self.price_data.get('low'), self.price_data.get('high')
-        temp_direction = None
-        if middle_band:
-            if self._get_trend_confirmation("BUY") and price_low <= middle_band and current_price > middle_band: temp_direction = "BUY"
-            elif self._get_trend_confirmation("SELL") and price_high >= middle_band and current_price < middle_band: temp_direction = "SELL"
+        best_signal = max(potential_signals, key=lambda x: x['score'])
+        signal_direction, trigger_type, market_regime, base_score, _, intrinsic_penalties = best_signal['direction'], best_signal['trigger'], best_signal.get('regime', 'PULLBACK'), best_signal['score'], best_signal['confirms'], best_signal['penalties']
+        engine_cfg = cfg.get('timing_and_exhaustion_engine', {})
+        if engine_cfg.get('enabled', True) and engine_cfg.get('exhaustion_shield_enabled', True):
+            if self._is_trend_exhausted_dynamic(direction=signal_direction, rsi_lookback=engine_cfg.get('exhaustion_dynamic_rsi_lookback', 100), rsi_buy_percentile=engine_cfg.get('exhaustion_dynamic_overbought_percentile', 90), rsi_sell_percentile=engine_cfg.get('exhaustion_dynamic_oversold_percentile', 10)):
+                self._log_final_decision("HOLD", "Signal blocked by Trend Exhaustion Shield."); return None
+        operation_mode = cfg.get('operation_mode', 'Regime-Aware'); effective_mode = 'Strict' if operation_mode == 'Regime-Aware' and market_regime in ['TRENDING','BREAKOUT','PULLBACK'] else 'Adaptive'
+        is_htf_ok, htf_details, _, _, htf_quality_grade = self._evaluate_htf(trigger_type, signal_direction)
+        adaptive_penalties = []
+        if not is_htf_ok:
+            if effective_mode == 'Strict': self._log_final_decision("HOLD", f"Strict Mode blocked by HTF failure ({htf_details})."); return None
+            adaptive_penalties.append({'reason': 'HTF Conflict', 'value_pct': cfg.get('penalty_pct_htf_conflict', 35.0)})
+        final_score = base_score
+        total_penalties = intrinsic_penalties + adaptive_penalties
+        for p in total_penalties: final_score -= p.get('value_pct', 0.0)
+        final_score = max(0.0, min(100.0, final_score))
+        min_score_map = {'PULLBACK': 'min_score_pullback_base', 'CLOUD_BREAKOUT': 'min_total_score_breakout_base', 'KUMO_REVERSAL': 'min_score_reversal_base'}
+        min_score_key = min_score_map.get(trigger_type, 'min_total_score_base')
+        min_score = cfg.get(min_score_key, 68.0)
+        if final_score < min_score: self._log_final_decision("HOLD", f"Final score {final_score:.2f} is below minimum required {min_score:.2f}."); return None
         
-        self._log_criteria("Path Check: Trending Trigger", temp_direction is not None, f"Direction: {temp_direction}")
-        if temp_direction and cfg.get('direction', 0) in [0, 1 if temp_direction == "BUY" else -1]:
-            score_ref, weights, min_score = [0], cfg.get('weights_trending',{}), cfg.get('min_trending_score', 10)
-            
-            self._check_and_score("HTF Alignment", "htf_alignment", True, "HTF Confirmed by trigger", score_ref, weights)
-            
-            rsi_val = self._safe_get(indicators, ['rsi', 'values', 'rsi'])
-            rsi_zones = cfg.get('trending_rsi_zones', {})
-            rsi_cond = self._is_valid_number(rsi_val) and ((temp_direction == "BUY" and rsi_zones.get('buy_min', 45) < rsi_val < rsi_zones.get('buy_max', 65)) or \
-               (temp_direction == "SELL" and rsi_zones.get('sell_min', 35) < rsi_val < rsi_zones.get('sell_max', 55)))
-            self._check_and_score("RSI Cooldown", "rsi_cooldown", rsi_cond, f"RSI Value: {rsi_val:.2f}", score_ref, weights)
+        # --- ✅ RISK MANAGEMENT UPGRADE ---
+        entry_price = self.price_data.get('close')
+        
+        # 1. Preserve the dynamic R:R logic by setting an override for the OHRE
+        rr_needed = 2.0 if final_score >= cfg.get('high_quality_score_threshold', 74.0) else cfg.get('min_rr_ratio', 1.5)
+        self.config['override_min_rr_ratio'] = rr_needed
+        
+        # 2. Delegate fully to the OHRE v3.0
+        risk_params = self._orchestrate_static_risk(
+            direction=signal_direction,
+            entry_price=entry_price
+        )
 
-            adx_series = self._safe_get(indicators, ['adx', 'series'], [])
-            adx_accel_cond = len(adx_series) >= 3 and adx_series[-1] > adx_series[-3]
-            self._check_and_score("ADX Acceleration", "adx_acceleration_confirmation", adx_accel_cond, f"ADX Series: ...{adx_series[-3:]}", score_ref, weights)
-                
-            adx_percentile = self._safe_get(indicators.get('adx'), ['analysis', 'adx_percentile'], 0.0)
-            adx_strength_cond = adx_percentile >= cfg.get('min_adx_percentile_for_trending', 70.0)
-            self._check_and_score("ADX Strength", "adx_strength", adx_strength_cond, f"Percentile: {adx_percentile:.2f}%", score_ref, weights)
-            
-            macd_analysis = self._safe_get(indicators, ['macd', 'analysis'], {})
-            hist_state = self._safe_get(macd_analysis, ['context', 'histogram_state'])
-            macd_cond = (temp_direction == "BUY" and hist_state == "Green") or (temp_direction == "SELL" and hist_state == "Red")
-            self._check_and_score("MACD Acceleration", "macd_aligned", macd_cond, f"Hist State: {hist_state}", score_ref, weights)
+        # 3. Clean up the temporary override
+        self.config.pop('override_min_rr_ratio', None)
 
-            final_score = score_ref[0]
-            if final_score >= min_score:
-                risk_params = self._orchestrate_static_risk(temp_direction, current_price)
-                if risk_params:
-                    self._log_final_decision(temp_direction, f"Pullback triggered (Score: {final_score})")
-                    risk_params["confirmations"] = {"final_score": final_score, "trade_mode": "Pullback"}
-                    return { "direction": temp_direction, "entry_price": current_price, **risk_params }
+        if not risk_params: 
+            self._log_final_decision("HOLD", f"OHRE v3.0 failed to generate a valid risk plan (min R:R needed: {rr_needed})."); return None
 
-            self._log_final_decision("HOLD", f"Trending conditions not met (Score: {final_score} < {min_score})."); return None
-            
-        self._log_final_decision("HOLD", "Trending trigger conditions not met."); return None
+        # --- Final signal construction is preserved ---
+        self.last_signal_bar = len(self.df) - 1
+        signal_grade = self._grade_signal(final_score)
+        narrative = self._generate_signal_narrative(signal_direction, signal_grade, effective_mode, base_score, total_penalties, final_score, htf_details, htf_quality_grade)
+        confirmations = {"total_score": round(final_score, 2), "signal_grade": signal_grade, "narrative": narrative}
+        
+        self._log_final_decision(signal_direction, narrative)
+        return {"direction": signal_direction, "entry_price": entry_price, **risk_params, "confirmations": confirmations}
