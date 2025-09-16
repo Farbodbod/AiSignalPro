@@ -21,7 +21,7 @@ class RangeHunterPro(BaseStrategy):
     """
     strategy_name: str = "RangeHunterPro"
 
-    default_config: ClassVar[Dict, Any] = {
+    default_config: ClassVar[Dict[str, Any]] = {
         "regime_filter": {
             "enabled": True,
             "max_adx_percentile_for_range": 45.0,
