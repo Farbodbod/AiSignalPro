@@ -87,7 +87,7 @@
       "enabled": true,
       "market_regime_filter": {
         "enabled": true,
-        "min_adx_percentile": 60.0
+        "min_adx_percentile": 70.0
       },
       "min_rr_ratio": 1.5,
       "exhaustion_shield": {
@@ -122,7 +122,7 @@
           "P": 3
         },
         "magnet_proximity_percent": 0.75,
-        "min_magnet_strength": 2,
+        "min_magnet_strength": 3,
         "percentile_thresholds": {
           "strong": 80,
           "developing": 40
