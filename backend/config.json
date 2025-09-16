@@ -1160,20 +1160,19 @@
         "enabled": true,
         "max_adx_percentile_for_range": 45,
         "bbw_squeeze_enabled": true,
-        "bbw_quantile": 0.3
       },
       "confirmation_scoring": {
-        "min_score": 6,
+        "min_score": 5,
         "weights": {
           "rsi_reversal": 3,
           "stochastic_reversal": 2,
           "candlestick_strong": 4,
           "candlestick_medium": 2
         },
-        "rsi_oversold_entry": 30,
-        "rsi_overbought_entry": 70
+        "rsi_oversold_entry": 40,
+        "rsi_overbought_entry": 60
       },
-      "override_min_rr_ratio": 1.5,
+      "override_min_rr_ratio": 1.2,
       "ohre_engine": {
         "min_level_strength": 2,
         "pivot_strength_map": {
@@ -1186,7 +1185,7 @@
           "P": 3
         },
         "magnet_proximity_percent": 0.75,
-        "min_magnet_strength": 3,
+        "min_magnet_strength": 2,
         "percentile_thresholds": {
           "strong": 80,
           "developing": 40
@@ -1198,9 +1197,9 @@
             "weak": 1
           },
           "base_rr_multiples": [
-            1.5,
-            2,
-            3
+            1.2,
+            1.8,
+            2.5
           ]
         }
       }
