@@ -1,4 +1,4 @@
-# backend/engines/strategies/oracle_x_pro.py (v2.0 - The OHRE v3.0 Harmonization)
+# backend/engines/strategies/oracle_x_pro.py (v2.1 - The OHRE v3.0 Harmonization)
 
 import logging
 from typing import Dict, Any, Optional, List, ClassVar, Tuple
@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 
 class OracleXPro(BaseStrategy):
     """
-    Oracle-X Pro - (v2.0 - The OHRE v3.0 Harmonization)
+    Oracle-X Pro - (v2.1 - The OHRE v3.0 Harmonization)
     -------------------------------------------------------------------
     This version represents a full architectural upgrade to harmonize the strategy
     with the BaseStrategy v25.0 and its definitive OHRE v3.0 engine.
@@ -196,7 +196,8 @@ class OracleXPro(BaseStrategy):
             self._log_final_decision("HOLD", "OHRE v3.0 failed to generate a valid risk plan."); return None
 
         # --- Final Blueprint Generation ---
-        confirmations = { "final_score": score, "details": ", ".join(details), "prz_components": best_prz['components'], "htf_bias": htf_bias }
+        confirmations = {"final_score": score,"details": ", ".join(details),"prz_components": best_prz['components'],"htf_bias": htf_bias,"risk_engine": self.log_details["risk_trace"][-1].get("source", "OHRE v3.0"),"risk_reward": risk_params.get('risk_reward_ratio')}
+
         self._log_final_decision(direction, f"Oracle-X Pro signal confirmed. Score: {score}. Firing.")
 
         return { "direction": direction, "entry_price": entry_price, **risk_params, "confirmations": confirmations }
