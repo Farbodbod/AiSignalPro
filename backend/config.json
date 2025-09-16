@@ -943,7 +943,7 @@
       "enabled": true,
       "direction": 0,
       "max_adx_percentile_for_ranging": 45,
-      "min_adx_percentile_for_trending": 70,
+      "min_adx_percentile_for_trending": 55,
       "min_squeeze_score": 7,
       "weights_squeeze": {
         "bollinger_breakout": {
