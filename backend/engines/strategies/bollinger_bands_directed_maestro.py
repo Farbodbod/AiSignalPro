@@ -1,4 +1,4 @@
-# backend/engines/strategies/BollingerBandsDirectedMaestro.py (v16.4 - The Gold Standard Edition)
+# backend/engines/strategies/BollingerBandsDirectedMaestro.py (v16.5 - The Gold Standard Edition)
 
 import logging
 from typing import Dict, Any, Optional, ClassVar, List
@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 
 class BollingerBandsDirectedMaestro(BaseStrategy):
     """
-    BollingerBandsDirectedMaestro - (v16.4 - The Gold Standard Edition)
+    BollingerBandsDirectedMaestro - (v16.5 - The Gold Standard Edition)
     -------------------------------------------------------------------------
     This definitive version elevates the strategy to the project's gold
     standard for robustness and transparency, inspired by the IchimokuHybridPro
@@ -19,7 +19,7 @@ class BollingerBandsDirectedMaestro(BaseStrategy):
     strategy's decision-making process. The logic is now considered flawless
     and fully production-ready.
     """
-    strategy_name: "BollingerBandsDirectedMaestro"
+    strategy_name: str = "BollingerBandsDirectedMaestro"
     
     default_config: ClassVar[Dict[str, Any]] = {
       "enabled": True, "direction": 0,
