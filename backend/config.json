@@ -942,6 +942,17 @@
     "BollingerBandsDirectedMaestro": {
       "enabled": true,
       "direction": 0,
+      "indicator_configs": {
+        "ranging_divergence": {
+          "name": "divergence",
+          "dependencies": {
+            "zigzag": {
+              "deviation": 1.0
+            }
+          }
+        }
+      },
+      "ranging_trigger_proximity_atr_mult": 0.75,
       "max_adx_percentile_for_ranging": 45,
       "min_adx_percentile_for_trending": 55,
       "min_squeeze_score": 7,
@@ -951,16 +962,11 @@
           "medium": 2
         },
         "momentum_confirmation": 3,
-        "momentum_rsi_thresholds": {
-          "buy": 52,
-          "sell": 48
-        },
         "volume_spike_confirmation": 2,
         "htf_alignment": 3,
         "macd_aligned": 2
       },
       "min_ranging_score": 8,
-      "ranging_proximity_atr_mult": 0.25,
       "weights_ranging": {
         "rsi_reversal": 4,
         "divergence_confirmation": 4,
