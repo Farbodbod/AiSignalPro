@@ -84,7 +84,7 @@
       "enabled": true
     },
     "IchiMACDPro": {
-      "enabled": true,
+      "enabled": false,
       "market_regime_filter": {
         "enabled": true,
         "min_adx_percentile": 70.0
