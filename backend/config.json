@@ -956,14 +956,14 @@
       "max_adx_percentile_for_ranging": 45,
       "min_adx_percentile_for_trending": 70,
       "squeeze_max_bw_percentile": 25,
-      "min_squeeze_score": 9,
+      "min_squeeze_score": 1,
       "weights_squeeze": {
         "momentum_confirmation": 4,
         "volume_spike_confirmation": 3,
         "htf_alignment": 2,
         "macd_aligned": 5
       },
-      "min_ranging_score": 7,
+      "min_ranging_score": 1,
       "weights_ranging": {
         "rsi_reversal": 4,
         "divergence_confirmation": 3,
