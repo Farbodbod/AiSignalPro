@@ -963,7 +963,7 @@
         "htf_alignment": 2,
         "macd_aligned": 5
       },
-      "min_ranging_score": 1,
+      "min_ranging_score": 10,
       "weights_ranging": {
         "rsi_reversal": 4,
         "divergence_confirmation": 3,
