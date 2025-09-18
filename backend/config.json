@@ -850,7 +850,7 @@
       "cooldown_bars": 3,
       "min_momentum_score": {
         "low_tf": 12,
-        "high_tf": 
+        "high_tf": 15
       },
       "weights": {
         "momentum_acceleration": 4,
