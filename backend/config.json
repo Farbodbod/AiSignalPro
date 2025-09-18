@@ -955,7 +955,7 @@
       "ranging_trigger_proximity_atr_mult": 0.75,
       "max_adx_percentile_for_ranging": 40,
       "min_adx_percentile_for_trending": 65,
-      "min_squeeze_score": 10,
+      "min_squeeze_score": 9,
       "weights_squeeze": {
         "bollinger_breakout": {
           "strong": 3,
@@ -968,7 +968,7 @@
       },
       "min_ranging_score": 9,
       "weights_ranging": {
-        "rsi_reversal": 4,
+        "rsi_reversal": 5,
         "divergence_confirmation": 4,
         "volume_fade": 2,
         "candlestick": {
@@ -976,11 +976,11 @@
           "medium": 2,
           "strong": 4
         },
-        "macd_aligned": 5
+        "macd_aligned": 4
       },
       "ranging_rsi_oversold": 35,
       "ranging_rsi_overbought": 65,
-      "min_trending_score": 12,
+      "min_trending_score": 10,
       "trending_rsi_zones": {
         "buy_min": 45,
         "buy_max": 65,
@@ -989,7 +989,7 @@
       },
       "weights_trending": {
         "htf_alignment": 5,
-        "rsi_cooldown": 3,
+        "rsi_cooldown": 4,
         "adx_acceleration_confirmation": 2,
         "adx_strength": 1,
         "macd_aligned": 4
@@ -1023,7 +1023,7 @@
           "R1": 3,
           "P": 3
         },
-        "magnet_proximity_percent": 0.75,
+        "magnet_proximity_percent": 1.5,
         "min_magnet_strength": 2,
         "percentile_thresholds": {
           "strong": 80,
