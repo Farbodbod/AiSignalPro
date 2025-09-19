@@ -667,7 +667,7 @@
         "min_required_score": 2,
         "adx": {
           "weight": 1,
-          "min_percentile": 70
+          "min_percentile": 50
         },
         "supertrend": {
           "weight": 1
@@ -817,7 +817,7 @@
           "P": 3
         },
         "magnet_proximity_percent": 0.75,
-        "min_magnet_strength": 3,
+        "min_magnet_strength": 2,
         "percentile_thresholds": {
           "strong": 80,
           "developing": 40
@@ -829,9 +829,9 @@
             "weak": 1
           },
           "base_rr_multiples": [
-            1.5,
-            2,
-            3
+            1.8,
+            2.5,
+            3.5
           ]
         }
       }
@@ -844,7 +844,7 @@
       "outlier_candle_shield_enabled": true,
       "outlier_atr_multiplier": 3.5,
       "exhaustion_shield_enabled": true,
-      "rsi_exhaustion_lookback": 240,
+      "rsi_exhaustion_lookback": 100,
       "rsi_buy_percentile": 88,
       "rsi_sell_percentile": 12,
       "cooldown_bars": 3,
@@ -884,13 +884,13 @@
         "keltner_channel": {
           "name": "keltner_channel",
           "ema_period": 20,
-          "atr_multiplier": 2.25,
-          "volatility_period": 200,
+          "atr_multiplier": 2.0,
+          "volatility_period": 100,
           "squeeze_percentile": 20,
           "expansion_percentile": 80,
           "dependencies": {
             "atr": {
-              "period": 14
+              "period": 10
             }
           }
         },
