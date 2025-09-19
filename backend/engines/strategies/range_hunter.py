@@ -1,4 +1,4 @@
-# backend/engines/strategies/range_hunter.py (v4.1 - The Gold Standard Polish)
+# backend/engines/strategies/range_hunter.py (v4.3 - The Ultimate Data Shield)
 
 import logging
 from typing import Dict, Any, Optional, List, Tuple, ClassVar
@@ -10,33 +10,26 @@ logger = logging.getLogger(__name__)
 
 class RangeHunterPro(BaseStrategy):
     """
-    RangeHunterPro - (v4.1 - The Gold Standard Polish)
+    RangeHunterPro - (v4.3 - The Ultimate Data Shield)
     -------------------------------------------------------------------------
-    This version applies the final gold-standard polish. It fixes a critical
-    "silent exit" bug and upgrades the internal scoring engine to provide
-    granular, criterion-by-criterion logging for maximum transparency. The
-    strategy is now considered complete, robust, and fully production-ready.
+    This version incorporates an intelligent suggestion to harden the data
+    validation shield. The initial indicator check now verifies that each
+    indicator provides either a valid 'values' OR a valid 'analysis' dictionary,
+    ensuring maximum robustness against incomplete data from any source.
     """
     strategy_name: str = "RangeHunterPro"
 
     default_config: ClassVar[Dict[str, Any]] = {
         "regime_filter": {
-            "enabled": True,
-            "mode": "ADX_ONLY", # "ADX_ONLY" or "ADX_AND_SQUEEZE"
-            "max_adx_percentile_for_range": 40.0,
+            "enabled": True, "mode": "ADX_ONLY", "max_adx_percentile_for_range": 40.0,
         },
         "confirmation_scoring": {
             "min_score": 8,
             "weights": {
-                "rsi_reversal": 4,
-                "stochastic_reversal": 2,
-                "divergence_confirmation": 4,
-                "macd_deceleration": 5,
-                "candlestick_strong": 3,
-                "candlestick_medium": 2
+                "rsi_reversal": 4, "stochastic_reversal": 2, "divergence_confirmation": 4,
+                "macd_deceleration": 5, "candlestick_strong": 3, "candlestick_medium": 2
             },
-            "rsi_oversold_entry": 35.0,
-            "rsi_overbought_entry": 65.0
+            "rsi_oversold_entry": 35.0, "rsi_overbought_entry": 65.0
         },
         "override_min_rr_ratio": 1.5,
         "indicator_configs": {
@@ -96,10 +89,16 @@ class RangeHunterPro(BaseStrategy):
 
         required_names = ['bollinger', 'adx', 'rsi', 'atr', 'stochastic', 'patterns', 'structure', 'pivots', 'macd', 'ranging_divergence']
         indicators = {name: self.get_indicator(name) for name in required_names}
-        if any(data is None or not data.get('values') for data in indicators.values()):
-            self._log_final_decision("HOLD", "One or more required indicators are missing/invalid.")
+        
+        missing_indicators = [
+            name for name, data in indicators.items()
+            if data is None or (not data.get('values') and not data.get('analysis'))
+        ]
+        if missing_indicators:
+            self._log_final_decision("HOLD", f"Required indicators missing/invalid: {', '.join(missing_indicators)}")
             return None
 
+        current_price = self.price_data.get('close')
         regime_cfg = cfg.get('regime_filter', {})
         if regime_cfg.get('enabled'):
             adx_percentile = self._safe_get(indicators, ['adx', 'analysis', 'adx_percentile'], 100.0)
@@ -145,10 +144,9 @@ class RangeHunterPro(BaseStrategy):
         confirmations = {
             "market_regime": f"RANGING (Mode: {regime_cfg.get('mode')})",
             "final_score": score,
-            "details": details_list, # ✅ POLISH: Use the list of dicts directly
+            "details": details_list,
             "risk_engine": self.log_details["risk_trace"][-1].get("source", "OHRE v3.0"),
             "rr_check": f"Passed (R/R: {risk_params.get('risk_reward_ratio')})"
         }
         self._log_final_decision(signal_direction, "All criteria met. Range Hunter Pro signal confirmed.")
         return { "direction": signal_direction, "entry_price": entry_price, **risk_params, "confirmations": confirmations }
-
