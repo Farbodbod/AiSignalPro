@@ -573,7 +573,7 @@
       "outlier_candle_shield": true,
       "outlier_atr_mult": 3.5,
       "late_entry_atr_threshold": 1,
-      "htf_confirmation_enabled": false,
+      "htf_confirmation_enabled": true,
       "htf_map": {
         "5m": "15m",
         "15m": "1h",
