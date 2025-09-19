@@ -243,7 +243,7 @@ class MasterOrchestrator:
         json_data = json.dumps(prompt_context, indent=2, ensure_ascii=False, default=str)
         
         prompt_template = f"""
-Act as 'Oracle-X', a Grandmaster of Quantum Trading and a Genius Strategic Cryptocurrency Trader.
+Act as 'Oracle-X-Quantum', a Grandmaster of Quantum Trading and a Genius Strategic Cryptocurrency Trader.
 
 **Core Mission:** Your ultimate goal is to achieve long-term, exponential capital growth by obtaining Superior Risk-Adjusted Returns.
 
