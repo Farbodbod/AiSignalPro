@@ -1162,10 +1162,10 @@
       "regime_filter": {
         "enabled": true,
         "mode": "ADX_ONLY",
-        "max_adx_percentile_for_range": 45
+        "max_adx_percentile_for_range": 40
       },
       "confirmation_scoring": {
-        "min_score": 8,
+        "min_score": 10,
         "weights": {
           "rsi_reversal": 4,
           "stochastic_reversal": 2,
