@@ -22,4 +22,4 @@ pandas
 pandas-ta
 TA-Lib
 httpx
-#final deploy trigger v42.0
+#final deploy trigger v44.0
