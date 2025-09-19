@@ -1165,17 +1165,17 @@
         "max_adx_percentile_for_range": 40
       },
       "confirmation_scoring": {
-        "min_score": 10,
+        "min_score": 9,
         "weights": {
-          "rsi_reversal": 4,
-          "stochastic_reversal": 2,
-          "divergence_confirmation": 4,
-          "macd_deceleration": 5,
+          "rsi_reversal": 3,
+          "stochastic_reversal": 4,
+          "divergence_confirmation": 5,
+          "macd_deceleration": 3,
           "candlestick_strong": 3,
           "candlestick_medium": 2
         },
-        "rsi_oversold_entry": 35,
-        "rsi_overbought_entry": 65
+        "rsi_oversold_entry": 32,
+        "rsi_overbought_entry": 68
       },
       "override_min_rr_ratio": 1.5,
       "indicator_configs": {
