@@ -952,44 +952,44 @@
           }
         }
       },
-      "ranging_trigger_proximity_atr_mult": 0.75,
+      "ranging_trigger_proximity_atr_mult": 0.65,
       "max_adx_percentile_for_ranging": 40,
       "min_adx_percentile_for_trending": 75,
-      "squeeze_max_bw_percentile": 30,
-      "min_squeeze_score": 6,
+      "squeeze_max_bw_percentile": 25,
+      "min_squeeze_score": 10,
       "weights_squeeze": {
-        "momentum_confirmation": 4,
-        "volume_spike_confirmation": 3,
-        "htf_alignment": 2,
-        "macd_aligned": 5
+        "momentum_confirmation": 3,
+        "volume_spike_confirmation": 4,
+        "htf_alignment": 5,
+        "macd_aligned": 4
       },
-      "min_ranging_score": 8,
+      "min_ranging_score": 9,
       "weights_ranging": {
-        "rsi_reversal": 4,
-        "divergence_confirmation": 3,
+        "rsi_reversal": 3,
+        "divergence_confirmation": 5,
         "volume_fade": 2,
         "candlestick": {
-          "weak": 0,
+          "weak": 1,
           "medium": 2,
-          "strong": 4
+          "strong": 3
         },
-        "macd_aligned": 2
+        "macd_aligned": 3
       },
-      "ranging_rsi_oversold": 35,
-      "ranging_rsi_overbought": 65,
-      "min_trending_score": 12,
+      "ranging_rsi_oversold": 30,
+      "ranging_rsi_overbought": 70,
+      "min_trending_score": 11,
       "trending_rsi_zones": {
-        "buy_min": 45,
-        "buy_max": 65,
-        "sell_min": 35,
-        "sell_max": 55
+        "buy_min": 40,
+        "buy_max": 60,
+        "sell_min": 40,
+        "sell_max": 60
       },
       "weights_trending": {
-        "htf_alignment": 5,
-        "rsi_cooldown": 4,
-        "adx_acceleration_confirmation": 2,
+        "htf_alignment": 3,
+        "rsi_cooldown": 3,
+        "adx_acceleration_confirmation": 4,
         "adx_strength": 1,
-        "macd_aligned": 4
+        "macd_aligned": 5
       },
       "htf_confirmation_enabled": true,
       "htf_map": {
@@ -1002,7 +1002,7 @@
         "min_required_score": 2,
         "adx": {
           "weight": 1,
-          "min_percentile": 75
+          "min_percentile": 50
         },
         "supertrend": {
           "weight": 1
