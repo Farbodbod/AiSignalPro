@@ -384,7 +384,7 @@
         "min_required_score": 2,
         "adx": {
           "weight": 1,
-          "min_percentile": 70
+          "min_percentile": 50
         },
         "supertrend": {
           "weight": 1
@@ -402,7 +402,7 @@
           "P": 3
         },
         "magnet_proximity_percent": 0.75,
-        "min_magnet_strength": 3,
+        "min_magnet_strength": 2,
         "percentile_thresholds": {
           "strong": 80,
           "developing": 40
@@ -414,9 +414,9 @@
             "weak": 1
           },
           "base_rr_multiples": [
-            1.5,
-            2,
-            3
+            1.8,
+            2.5,
+            3.5
           ]
         }
       }
@@ -697,7 +697,7 @@
             "weak": 1
           },
           "base_rr_multiples": [
-            1.5,
+            1.8,
             2,
             3
           ]
