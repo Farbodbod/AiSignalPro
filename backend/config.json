@@ -874,7 +874,7 @@
         "min_required_score": 2,
         "adx": {
           "weight": 1,
-          "min_percentile": 50
+          "min_percentile": 70
         },
         "supertrend": {
           "weight": 1
@@ -885,7 +885,7 @@
           "name": "keltner_channel",
           "ema_period": 20,
           "atr_multiplier": 2.0,
-          "volatility_period": 100,
+          "volatility_period": 200,
           "squeeze_percentile": 20,
           "expansion_percentile": 80,
           "dependencies": {
@@ -1002,7 +1002,7 @@
         "min_required_score": 2,
         "adx": {
           "weight": 1,
-          "min_percentile": 50
+          "min_percentile": 70
         },
         "supertrend": {
           "weight": 1
