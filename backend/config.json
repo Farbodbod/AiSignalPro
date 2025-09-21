@@ -845,20 +845,20 @@
       "outlier_atr_multiplier": 3.5,
       "exhaustion_shield_enabled": true,
       "rsi_exhaustion_lookback": 120,
-      "rsi_buy_percentile": 95,
-      "rsi_sell_percentile": 5,
+      "rsi_buy_percentile": 92,
+      "rsi_sell_percentile": 8,
       "cooldown_bars": 3,
       "min_momentum_score": {
-        "low_tf": 19,
-        "high_tf": 19
+        "low_tf": 24,
+        "high_tf": 24
       },
       "weights": {
-        "momentum_acceleration": 6,
-        "volume_catalyst": 5,
-        "volatility_expansion": 4,
-        "macd_aligned": 5,
+        "momentum_acceleration": 10,
+        "volume_catalyst": 8,
+        "volatility_expansion": 6,
+        "macd_aligned": 3,
         "adx_strength": 1,
-        "htf_alignment": 4,
+        "htf_alignment": 3,
         "candlestick": 1
       },
       "volume_z_score_threshold": 1.75,
@@ -874,7 +874,7 @@
         "min_required_score": 2,
         "adx": {
           "weight": 1,
-          "min_percentile": 60
+          "min_percentile": 55
         },
         "supertrend": {
           "weight": 1
@@ -952,32 +952,32 @@
           }
         }
       },
-      "ranging_trigger_proximity_atr_mult": 0.65,
-      "max_adx_percentile_for_ranging": 40,
-      "min_adx_percentile_for_trending": 60,
+      "ranging_trigger_proximity_atr_mult": 0.75,
+      "max_adx_percentile_for_ranging": 45,
+      "min_adx_percentile_for_trending": 55,
       "squeeze_max_bw_percentile": 25,
-      "min_squeeze_score": 7,
+      "min_squeeze_score": 4,
       "weights_squeeze": {
-        "momentum_confirmation": 3,
-        "volume_spike_confirmation": 4,
-        "htf_alignment": 5,
-        "macd_aligned": 4
+        "momentum_confirmation": 2,
+        "volume_spike_confirmation": 1,
+        "htf_alignment": 1,
+        "macd_aligned": 1
       },
-      "min_ranging_score": 9,
+      "min_ranging_score": 16,
       "weights_ranging": {
-        "rsi_reversal": 3,
+        "rsi_reversal": 6,
         "divergence_confirmation": 5,
-        "volume_fade": 2,
+        "volume_fade": 3,
         "candlestick": {
           "weak": 1,
           "medium": 2,
           "strong": 3
         },
-        "macd_aligned": 3
+        "macd_aligned": 5
       },
       "ranging_rsi_oversold": 30,
       "ranging_rsi_overbought": 70,
-      "min_trending_score": 12,
+      "min_trending_score": 8,
       "trending_rsi_zones": {
         "buy_min": 45,
         "buy_max": 65,
@@ -985,11 +985,11 @@
         "sell_max": 55
       },
       "weights_trending": {
-        "htf_alignment": 5,
-        "rsi_cooldown": 4,
-        "adx_acceleration_confirmation": 3,
+        "htf_alignment": 4,
+        "rsi_cooldown": 1,
+        "adx_acceleration_confirmation": 1,
         "adx_strength": 1,
-        "macd_aligned": 2
+        "macd_aligned": 4
       },
       "htf_confirmation_enabled": true,
       "htf_map": {
@@ -1002,7 +1002,7 @@
         "min_required_score": 2,
         "adx": {
           "weight": 1,
-          "min_percentile": 60
+          "min_percentile": 55
         },
         "supertrend": {
           "weight": 1
