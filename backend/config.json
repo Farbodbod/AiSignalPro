@@ -953,8 +953,8 @@
         }
       },
       "ranging_trigger_proximity_atr_mult": 0.65,
-      "max_adx_percentile_for_ranging": 45,
-      "min_adx_percentile_for_trending": 55,
+      "max_adx_percentile_for_ranging": 40,
+      "min_adx_percentile_for_trending": 60,
       "squeeze_max_bw_percentile": 25,
       "min_squeeze_score": 7,
       "weights_squeeze": {
@@ -985,11 +985,11 @@
         "sell_max": 55
       },
       "weights_trending": {
-        "htf_alignment": 3,
-        "rsi_cooldown": 3,
+        "htf_alignment": 4,
+        "rsi_cooldown": 4,
         "adx_acceleration_confirmation": 4,
         "adx_strength": 1,
-        "macd_aligned": 5
+        "macd_aligned": 4
       },
       "htf_confirmation_enabled": true,
       "htf_map": {
