@@ -985,11 +985,11 @@
         "sell_max": 55
       },
       "weights_trending": {
-        "htf_alignment": 4,
+        "htf_alignment": 5,
         "rsi_cooldown": 4,
-        "adx_acceleration_confirmation": 4,
+        "adx_acceleration_confirmation": 3,
         "adx_strength": 1,
-        "macd_aligned": 4
+        "macd_aligned": 2
       },
       "htf_confirmation_enabled": true,
       "htf_map": {
