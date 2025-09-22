@@ -1041,31 +1041,31 @@
       }
     },
     "TrendRiderPro": {
-      "enabled": false,
+      "enabled": true,
       "market_regime_filter_enabled": true,
       "required_regime": "TRENDING",
-      "regime_adx_percentile_threshold": 55,
+      "regime_adx_percentile_threshold": 70,
       "default_params": {
         "entry_trigger_type": "supertrend",
-        "min_adx_percentile": 55
+        "min_adx_percentile": 70
       },
       "timeframe_overrides": {
         "5m": {
-          "min_adx_percentile": 55
+          "min_adx_percentile": 60
         },
         "1d": {
-          "min_adx_percentile": 60
+          "min_adx_percentile": 70
         }
       },
       "conviction_scoring": {
         "enabled": true,
-        "min_conviction_score": 11,
-        "min_macd_strength": 35,
+        "min_conviction_score": 4,
+        "min_macd_strength": 40,
         "weights": {
-          "macd_strong_momentum": 4,
-          "htf_alignment": 5,
-          "ma_is_accelerating": 4,
-          "rsi_room_to_run": 2
+          "macd_strong_momentum": 1,
+          "htf_alignment": 1,
+          "ma_is_accelerating": 1,
+          "rsi_room_to_run": 1
         }
       },
       "trend_health_shield": {
