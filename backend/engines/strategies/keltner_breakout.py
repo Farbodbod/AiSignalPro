@@ -1,4 +1,4 @@
-# backend/engines/strategies/KeltnerMomentumBreakout.py - (v14.0 - The Gold Standard Upgrade)
+# backend/engines/strategies/KeltnerMomentumBreakout.py - (v14.1 - Strategic MACD Alignment)
 
 import logging
 from typing import Dict, Any, Optional, List, Tuple, ClassVar
@@ -9,21 +9,20 @@ logger = logging.getLogger(__name__)
 
 class KeltnerMomentumBreakout(BaseStrategy):
     """
-    KeltnerMomentumBreakout - (v14.0 - The Gold Standard Upgrade)
+    KeltnerMomentumBreakout - (v14.1 - Strategic MACD Alignment)
     -------------------------------------------------------------------------
-    This version injects the full "Bollinger Experience" into the Keltner
-    strategy, elevating it to the project's gold standard.
+    This version refines the "Gold Standard" logic by strategically adjusting
+    the MACD confirmation. It shifts from a strict "acceleration-only"
+    check ('Green'/'Red' states) to a more robust and responsive "alignment"
+    check (histogram > 0 or < 0). This change is designed to reduce signal
+    lag and capture valid breakouts earlier without sacrificing the core
+    strength of the strategy's other filters.
 
-    🚀 KEY EVOLUTIONS in v14.0:
-    1.  **Smart MACD Integration:** The naive histogram check has been upgraded to
-        use the advanced 4-state machine from the MACD indicator, ensuring
-        trades are only confirmed during true momentum acceleration ('Green'/'Red' states).
-    2.  **Signal Intelligence:** The final signal output now includes a rich,
-        detailed 'confirmations' dictionary, providing a transparent "Signal ID"
-        with the exact values and reasons for each confirmation, matching the
-        gold standard for transparency and analysis.
-    3.  **Strategic Recalibration:** All weights and minimum scores have been
-        re-calibrated from first principles to align with the new, smarter logic.
+    🚀 KEY EVOLUTIONS in v14.1:
+    1.  **Optimized MACD Logic:** The MACD confirmation is specialized to confirm
+        short-term momentum alignment, allowing for faster entries. The role of
+        verifying trend *strength* is now delegated entirely to more suitable
+        indicators like ADX and Volume, creating a more efficient system.
     """
     strategy_name: str = "KeltnerMomentumBreakout"
 
@@ -33,7 +32,6 @@ class KeltnerMomentumBreakout(BaseStrategy):
         "exhaustion_shield_enabled": True, "rsi_exhaustion_lookback": 200, "rsi_buy_percentile": 90, "rsi_sell_percentile": 10,
         "cooldown_bars": 3,
         
-        # ✅ RECALIBRATION: Weights and scores are re-calibrated for the new smarter logic.
         "min_momentum_score": {"low_tf": 13, "high_tf": 13},
         "weights": { 
             "momentum_acceleration": 4, "volume_catalyst": 3, "volatility_expansion": 2,
@@ -51,7 +49,6 @@ class KeltnerMomentumBreakout(BaseStrategy):
         }
     }
     
-    # ✅ UPGRADE: The scoring engine is rewritten for enhanced transparency and smarter logic.
     def _calculate_momentum_score(self, direction: str, indicators: Dict) -> Tuple[int, List[Dict]]:
         weights, score = self.config.get('weights', {}), 0
         confirmation_details = [] # This will hold the rich confirmation data.
@@ -70,7 +67,7 @@ class KeltnerMomentumBreakout(BaseStrategy):
         volume_values = self._safe_get(indicators, ['volume', 'values'], {})
         keltner_analysis = self._safe_get(indicators, ['keltner_channel', 'analysis'], {})
         adx_analysis = self._safe_get(indicators, ['adx', 'analysis'], {})
-        macd_analysis = self._safe_get(indicators, ['macd', 'analysis'], {})
+        # macd_analysis = self._safe_get(indicators, ['macd', 'analysis'], {}) # No longer needed for logic, but can be kept for logging if desired
 
         # --- Scoring Criteria ---
         mom_state = cci_analysis.get('momentum_state', '')
@@ -78,11 +75,13 @@ class KeltnerMomentumBreakout(BaseStrategy):
                        (direction == "SELL" and mom_state == 'Accelerating Bearish')
         check_and_log("Momentum Acceleration (CCI)", "momentum_acceleration", is_cci_accel, f"State: {mom_state}")
 
-        # ✅ SMART INDICATOR UPGRADE: Use the 4-state machine instead of a simple histogram check.
-        hist_state = self._safe_get(macd_analysis, ['context', 'histogram_state'])
-        is_macd_accel = (direction == "BUY" and hist_state == "Green") or \
-                        (direction == "SELL" and hist_state == "Red")
-        check_and_log("MACD Acceleration", "macd_aligned", is_macd_accel, f"State: {hist_state}")
+        # ✅ SURGICAL PATCH v14.1: Shift from "Acceleration" to "Alignment" for earlier entries.
+        macd_values = self._safe_get(indicators, ['macd', 'values'], {})
+        last_hist = macd_values.get('histogram', 0.0)
+
+        is_macd_aligned = (direction == "BUY" and last_hist > 0) or \
+                          (direction == "SELL" and last_hist < 0)
+        check_and_log("MACD Aligned", "macd_aligned", is_macd_aligned, f"Histogram: {last_hist:.5f}")
 
         z_score_thresh = self.config.get('volume_z_score_threshold', 1.75)
         current_z_score = volume_values.get('z_score', 0.0)
@@ -108,7 +107,7 @@ class KeltnerMomentumBreakout(BaseStrategy):
         return score, confirmation_details
 
     def check_signal(self) -> Optional[Dict[str, Any]]:
-        # ... [The conductor logic is already robust and remains largely unchanged] ...
+        # ... [The conductor logic remains unchanged] ...
         cfg = self.config
         
         if self.df is None or self.df.empty: self._log_final_decision("HOLD", "DataFrame missing."); return None
@@ -173,7 +172,6 @@ class KeltnerMomentumBreakout(BaseStrategy):
             
         self.last_signal_bar = current_bar
         
-        # ✅ UPGRADE: Build the rich, gold-standard confirmations dictionary.
         confirmations_dict = {
             "final_score": momentum_score, 
             "details": confirmation_details,
@@ -183,4 +181,3 @@ class KeltnerMomentumBreakout(BaseStrategy):
         self._log_final_decision(signal_direction, f"Keltner Momentum Breakout confirmed. Score: {momentum_score}.")
         
         return { "direction": signal_direction, "entry_price": entry_price, **risk_params, "confirmations": confirmations_dict }
-
