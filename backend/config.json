@@ -289,7 +289,7 @@
     },
     "ChandelierTrendRider": {
       "enabled": true,
-      "min_score": 7,
+      "min_score": 10,
       "weights": {
         "htf_alignment": 4,
         "adx_dmi": 3,
