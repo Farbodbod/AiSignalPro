@@ -288,7 +288,7 @@
       }
     },
     "ChandelierTrendRider": {
-      "enabled": true,
+      "enabled": false,
       "min_score": 10,
       "weights": {
         "htf_alignment": 4,
