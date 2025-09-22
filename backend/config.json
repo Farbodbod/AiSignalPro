@@ -237,10 +237,10 @@
         ],
         "use_structure": true,
         "min_structure_strength": 2,
-        "proximity_percent": 0.4
+        "proximity_percent": 0.75
       },
       "confirmation_scoring": {
-        "min_score": 8,
+        "min_score": 7,
         "weights": {
           "climactic_volume": 5,
           "candlestick_strong": 4,
@@ -280,9 +280,9 @@
             "weak": 1
           },
           "base_rr_multiples": [
-            1.8,
-            2.5,
-            3
+            1.5,
+            2.0,
+            3.0
           ]
         }
       }
@@ -361,7 +361,7 @@
     },
     "BreakoutHunter": {
       "enabled": true,
-      "min_breakout_score": 7,
+      "min_breakout_score": 6,
       "rr_config": {
         "low_score_threshold": 10,
         "high_rr": 3,
@@ -414,9 +414,9 @@
             "weak": 1
           },
           "base_rr_multiples": [
-            1.8,
-            2.5,
-            3.5
+            1.5,
+            2.0,
+            3.0
           ]
         }
       }
@@ -469,12 +469,12 @@
     "IchimokuHybridPro": {
       "enabled": true,
       "operation_mode": "Regime-Aware",
-      "market_regime_adx_percentile": 55,
+      "market_regime_adx_percentile": 60,
       "penalty_pct_htf_conflict": 25,
-      "min_total_score_base": 65,
-      "min_total_score_breakout_base": 65,
-      "min_score_pullback_base": 65,
-      "min_score_reversal_base": 65,
+      "min_total_score_base": 70,
+      "min_total_score_breakout_base": 70,
+      "min_score_pullback_base": 70,
+      "min_score_reversal_base": 70,
       "weights_trending": {
         "price_vs_kumo": 4,
         "tk_cross_strong": 3,
@@ -482,7 +482,7 @@
         "future_kumo": 3,
         "chikou_free": 3,
         "kumo_twist": 1,
-        "volume_spike": 1,
+        "volume_spike": 2,
         "volatility_filter": -4,
         "leading_timing_confirm": 2,
         "macd_aligned": 2
@@ -494,7 +494,7 @@
         "future_kumo": 2,
         "chikou_free": 2,
         "kumo_twist": 2,
-        "volume_spike": 1,
+        "volume_spike": 2,
         "volatility_filter": -4,
         "leading_timing_confirm": 4,
         "macd_aligned": 2
@@ -620,7 +620,7 @@
       }
     },
     "EmaCrossoverStrategy": {
-      "enabled": true,
+      "enabled": false,
       "market_regime_filter": {
         "enabled": true,
         "required_regime": "TRENDING",
@@ -730,7 +730,7 @@
         },
         "1d": {
           "confluence_proximity_percent": 1,
-          "min_rr_ratio": 2
+          "min_rr_ratio": 1.5
         }
       },
       "htf_confirmation_enabled": true,
@@ -772,15 +772,15 @@
         ],
         "use_structure": true,
         "min_structure_strength": 2,
-        "proximity_percent": 0.4
+        "proximity_percent": 0.75
       },
       "confirmation_scoring": {
         "min_score": {
-          "low_tf": 8,
-          "high_tf": 10
+          "low_tf": 6,
+          "high_tf": 8
         },
         "weights": {
-          "hidden_divergence": 5,
+          "hidden_divergence": 6,
           "dual_oscillator": 3,
           "candlestick_strong": 3,
           "volume_spike": 2,
@@ -796,10 +796,10 @@
         "4h": "1d"
       },
       "htf_confirmations": {
-        "min_required_score": 2,
+        "min_required_score": 1,
         "adx": {
-          "weight": 1,
-          "min_percentile": 60
+          "weight": 0,
+          "min_percentile": 50
         },
         "supertrend": {
           "weight": 1
@@ -829,9 +829,9 @@
             "weak": 1
           },
           "base_rr_multiples": [
-            1.8,
-            2.5,
-            3.5
+            1.5,
+            2.0,
+            3.0
           ]
         }
       }
@@ -840,7 +840,7 @@
       "enabled": true,
       "market_regime_filter_enabled": true,
       "required_regime": "TRENDING",
-      "adx_percentile_threshold": 45,
+      "adx_percentile_threshold": 50,
       "outlier_candle_shield_enabled": true,
       "outlier_atr_multiplier": 3.5,
       "exhaustion_shield_enabled": true,
@@ -884,7 +884,7 @@
         "keltner_channel": {
           "name": "keltner_channel",
           "ema_period": 20,
-          "atr_multiplier": 2.0,
+          "atr_multiplier": 1.8,
           "volatility_period": 100,
           "squeeze_percentile": 20,
           "expansion_percentile": 80,
@@ -947,7 +947,7 @@
           "name": "divergence",
           "dependencies": {
             "zigzag": {
-              "deviation": 1.5
+              "deviation": 1.0
             }
           }
         }
@@ -955,25 +955,25 @@
       "ranging_trigger_proximity_atr_mult": 0.75,
       "max_adx_percentile_for_ranging": 45,
       "min_adx_percentile_for_trending": 55,
-      "squeeze_max_bw_percentile": 25,
-      "min_squeeze_score": 4,
+      "squeeze_max_bw_percentile": 30,
+      "min_squeeze_score": 3,
       "weights_squeeze": {
         "momentum_confirmation": 2,
         "volume_spike_confirmation": 1,
         "htf_alignment": 1,
         "macd_aligned": 1
       },
-      "min_ranging_score": 16,
+      "min_ranging_score": 8,
       "weights_ranging": {
-        "rsi_reversal": 6,
-        "divergence_confirmation": 5,
-        "volume_fade": 3,
+        "rsi_reversal": 3,
+        "divergence_confirmation": 2,
+        "volume_fade": 1,
         "candlestick": {
           "weak": 1,
           "medium": 2,
           "strong": 3
         },
-        "macd_aligned": 5
+        "macd_aligned": 2
       },
       "ranging_rsi_oversold": 30,
       "ranging_rsi_overbought": 70,
@@ -1041,7 +1041,7 @@
       }
     },
     "TrendRiderPro": {
-      "enabled": true,
+      "enabled": false,
       "market_regime_filter_enabled": true,
       "required_regime": "TRENDING",
       "regime_adx_percentile_threshold": 55,
@@ -1129,7 +1129,7 @@
       }
     },
     "VolumeCatalystPro": {
-      "enabled": true,
+      "enabled": false,
       "min_quality_score": 10,
       "weights": {
         "volume_catalyst_strength": 4,
@@ -1183,7 +1183,7 @@
           "name": "divergence",
           "dependencies": {
             "zigzag": {
-              "deviation": 1.0
+              "deviation": 1.5
             }
           }
         }
@@ -1212,15 +1212,15 @@
             "weak": 1
           },
           "base_rr_multiples": [
-            1.8,
-            2.5,
+            1.5,
+            2.0,
             3.0
           ]
         }
       }
     },
     "WhaleReversal": {
-      "enabled": true,
+      "enabled": false,
       "min_reversal_score": 1,
       "weights": {
         "whale_intensity": 4,
