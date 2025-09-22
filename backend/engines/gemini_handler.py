@@ -30,7 +30,7 @@ class GeminiHandler:
         random.shuffle(self.api_keys)
         self.current_key_index = 0
         # FIX 1: Using the correct, latest model name
-        self.model_names = ['gemini-2.0-flash'] 
+        self.model_names = ['gemini-2.5-flash'] 
         
         if self.api_keys:
             logger.info(f"GeminiHandler initialized successfully with {len(self.api_keys)} API keys and model '{self.model_names[0]}'.")
