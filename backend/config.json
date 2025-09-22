@@ -845,8 +845,8 @@
       "outlier_atr_multiplier": 3.5,
       "exhaustion_shield_enabled": true,
       "rsi_exhaustion_lookback": 120,
-      "rsi_buy_percentile": 95,
-      "rsi_sell_percentile": 5,
+      "rsi_buy_percentile": 88,
+      "rsi_sell_percentile": 12,
       "cooldown_bars": 3,
       "min_momentum_score": {
         "low_tf": 24,
@@ -855,7 +855,7 @@
       "weights": {
         "momentum_acceleration": 10,
         "volume_catalyst": 8,
-        "volatility_expansion": 7,
+        "volatility_expansion": 6,
         "macd_aligned": 3,
         "adx_strength": 1,
         "htf_alignment": 3,
@@ -947,7 +947,7 @@
           "name": "divergence",
           "dependencies": {
             "zigzag": {
-              "deviation": 1.0
+              "deviation": 1.5
             }
           }
         }
@@ -999,10 +999,10 @@
         "4h": "1d"
       },
       "htf_confirmations": {
-        "min_required_score": 2,
+        "min_required_score": 1,
         "adx": {
-          "weight": 1,
-          "min_percentile": 55
+          "weight": 0,
+          "min_percentile": 50
         },
         "supertrend": {
           "weight": 1
