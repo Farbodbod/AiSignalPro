@@ -940,7 +940,7 @@
       }
     },
     "BollingerBandsDirectedMaestro": {
-      "enabled": true,
+      "enabled": false,
       "direction": 0,
       "indicator_configs": {
         "ranging_divergence": {
