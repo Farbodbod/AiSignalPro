@@ -153,10 +153,10 @@ class MasterOrchestrator:
         return {"status": "SUCCESS", "symbol": symbol, "timeframe": timeframe, "base_signal": best_signal, "ai_confirmation": ai_confirmation, "full_analysis": primary_analysis, "engine_version": self.ENGINE_VERSION}
 
     # ✅ SURGICAL UPGRADE: The entire method is rebuilt to create the Quantum Dashboard.
+    # ✅ SURGICAL FIX v36.3: Replaced self._safe_get with standard python .get() to fix AttributeError
     def _create_ai_mission_briefing(self, analysis: Dict[str, Any], htf_context: Dict[str, Any], timeframe: str, base_signal: Dict[str, Any]) -> Dict[str, Any]:
         briefing = {}
         
-        # --- Helper function to safely get indicator data ---
         def get_indicator_data(source_analysis, indicator_name):
             indicator_map = source_analysis.get('_indicator_map', {})
             if key := indicator_map.get(indicator_name):
@@ -165,40 +165,32 @@ class MasterOrchestrator:
 
         # --- Primary Timeframe Analysis ---
         primary_ctx = {}
-        
-        # ADX
         if adx := get_indicator_data(analysis, 'adx'):
             adx_analysis = adx.get('analysis', {})
             primary_ctx['ADX'] = {'summary': adx_analysis.get('summary'), 'percentile': adx_analysis.get('adx_percentile')}
-        # MACD
         if macd := get_indicator_data(analysis, 'macd'):
             macd_analysis = macd.get('analysis', {}).get('context', {})
             primary_ctx['MACD'] = {'state': macd_analysis.get('histogram_state'), 'trend': macd_analysis.get('trend')}
-        # RSI
         if rsi := get_indicator_data(analysis, 'rsi'):
             rsi_analysis = rsi.get('analysis', {})
             primary_ctx['RSI'] = {'position': rsi_analysis.get('position'), 'crossover': rsi_analysis.get('crossover_signal')}
-        # Stochastic
         if stoch := get_indicator_data(analysis, 'stochastic'):
             stoch_analysis = stoch.get('analysis', {})
             primary_ctx['Stochastic'] = {'position': stoch_analysis.get('position'), 'crossover': stoch_analysis.get('crossover_signal', {}).get('direction')}
-        # Bollinger Bands
         if bollinger := get_indicator_data(analysis, 'bollinger'):
             bollinger_values = bollinger.get('values', {})
             primary_ctx['Bollinger'] = {'position': bollinger.get('analysis', {}).get('position'), 'bw_percentile': bollinger_values.get('width_percentile')}
-        # Volume
         if volume := get_indicator_data(analysis, 'volume'):
             volume_analysis = volume.get('analysis', {})
             primary_ctx['Volume'] = {'z_score': volume_analysis.get('z_score'), 'regime': volume_analysis.get('volume_regime')}
-        # Structure
         if structure := get_indicator_data(analysis, 'structure'):
-             prox = structure.get('analysis', {}).get('analysis', {}).get('proximity', {})
-             primary_ctx['Structure'] = {'position': structure.get('analysis', {}).get('analysis', {}).get('position'), 'testing_support': prox.get('is_testing_support'), 'testing_resistance': prox.get('is_testing_resistance')}
+             struct_analysis = structure.get('analysis', {}).get('analysis', {})
+             prox = struct_analysis.get('proximity', {})
+             primary_ctx['Structure'] = {'position': struct_analysis.get('position'), 'testing_support': prox.get('is_testing_support'), 'testing_resistance': prox.get('is_testing_resistance')}
         
         briefing[f'Primary_TF'] = primary_ctx
         
         # --- Higher Timeframe Analysis ---
-        # ✅ ARCHITECTURE FIX: Get htf_map from the actual strategy that generated the signal
         strategy_name = base_signal.get("strategy_name")
         htf_map = self.config.get("strategies", {}).get(strategy_name, {}).get("htf_map", {})
         target_htf = htf_map.get(timeframe)
@@ -206,25 +198,22 @@ class MasterOrchestrator:
         if target_htf and target_htf in htf_context:
             htf_analysis = htf_context[target_htf]
             htf_ctx = {}
-            # Ichimoku
             if ichi := get_indicator_data(htf_analysis, 'ichimoku'):
                 ichi_analysis = ichi.get('analysis', {})
                 htf_ctx['Ichimoku'] = {'summary': ichi_analysis.get('trend_summary'), 'position': ichi_analysis.get('price_position')}
-            # Supertrend
             if st := get_indicator_data(htf_analysis, 'supertrend'):
                 htf_ctx['Supertrend'] = {'trend': st.get('analysis', {}).get('trend')}
-            # Stochastic
             if stoch := get_indicator_data(htf_analysis, 'stochastic'):
                 stoch_analysis = stoch.get('analysis', {})
                 htf_ctx['Stochastic'] = {'position': stoch_analysis.get('position'), 'crossover': stoch_analysis.get('crossover_signal', {}).get('direction')}
-            # Structure
             if structure := get_indicator_data(htf_analysis, 'structure'):
                 struct_analysis = structure.get('analysis', {}).get('analysis', {})
-                htf_ctx['Structure'] = {'position': struct_analysis.get('position'), 'nearest_support': self._safe_get(struct_analysis, ['proximity', 'nearest_support_details']), 'nearest_resistance': self._safe_get(struct_analysis, ['proximity', 'nearest_resistance_details'])}
-            # Pivots
+                # ✅ FIX: Replaced self._safe_get with standard chained .get()
+                htf_ctx['Structure'] = {'position': struct_analysis.get('position'), 
+                                        'nearest_support': struct_analysis.get('proximity', {}).get('nearest_support_details'), 
+                                        'nearest_resistance': struct_analysis.get('proximity', {}).get('nearest_resistance_details')}
             if pivots := get_indicator_data(htf_analysis, 'pivots'):
                  htf_ctx['Pivots'] = {'position': pivots.get('analysis', {}).get('position')}
-            # Divergence
             if div := get_indicator_data(htf_analysis, 'divergence'):
                 div_analysis = div.get('analysis', {})
                 reg_bull = div_analysis.get('has_regular_bullish_divergence')
@@ -236,10 +225,10 @@ class MasterOrchestrator:
                     'hidden': 'Bullish' if hid_bull else 'Bearish' if hid_bear else 'None'
                 }
                 htf_ctx['Divergence'] = div_summary
-
             briefing[f'Higher_TF_{target_htf}'] = htf_ctx
             
         return briefing
+
 
     async def _get_ai_confirmation(self, signal: Dict[str, Any], primary_analysis: Dict, htf_context: Dict, symbol: str, timeframe: str) -> Optional[Dict[str, Any]]:
         # --- This method is 100% UNCHANGED, except for passing the base_signal to the briefing method ---
