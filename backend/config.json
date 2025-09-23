@@ -754,7 +754,7 @@
       "master_ma_indicator": "fast_ma",
       "htf_confirmation_enabled": true,
       "prz_config": {
-        "use_fibonacci": false,
+        "use_fibonacci": true,
         "fib_levels": [
           "38.2%",
           "50.0%",
@@ -840,7 +840,7 @@
       "enabled": true,
       "market_regime_filter_enabled": true,
       "required_regime": "TRENDING",
-      "adx_percentile_threshold": 50,
+      "adx_percentile_threshold": 45,
       "outlier_candle_shield_enabled": true,
       "outlier_atr_multiplier": 3.5,
       "exhaustion_shield_enabled": true,
@@ -871,9 +871,9 @@
         "4h": "1d"
       },
       "htf_confirmations": {
-        "min_required_score": 1,
+        "min_required_score": 2,
         "adx": {
-          "weight": 0,
+          "weight": 1,
           "min_percentile": 50
         },
         "supertrend": {
@@ -884,7 +884,7 @@
         "keltner_channel": {
           "name": "keltner_channel",
           "ema_period": 20,
-          "atr_multiplier": 1.8,
+          "atr_multiplier": 2.0,
           "volatility_period": 100,
           "squeeze_percentile": 20,
           "expansion_percentile": 80,
@@ -999,9 +999,9 @@
         "4h": "1d"
       },
       "htf_confirmations": {
-        "min_required_score": 1,
+        "min_required_score": 2,
         "adx": {
-          "weight": 0,
+          "weight": 1,
           "min_percentile": 50
         },
         "supertrend": {
