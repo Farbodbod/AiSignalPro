@@ -1,4 +1,4 @@
-# backend/engines/master_orchestrator.py (v36.1 - Blueprint Processor Fix)
+# backend/engines/master_orchestrator.py (v36.2 - The Quantum Briefing Upgrade)
 
 import pandas as pd
 import logging
@@ -20,19 +20,21 @@ logger = logging.getLogger(__name__)
 
 class MasterOrchestrator:
     """
-    The strategic mastermind of AiSignalPro (v36.1 - Blueprint Processor Fix).
-    -------------------------------------------------------------------------
-    This version introduces a critical fix to the strategy pipeline to correctly
-    process both legacy signals and modern "Trade Blueprints". It now intelligently
-    detects blueprints, invokes the BaseStrategy's risk calculation engine to
-    transform them into complete signals, and prepares a clean, standardized
-    signal package for the AI, ensuring seamless operation for all strategy types.
+    The strategic mastermind of AiSignalPro (v36.2 - The Quantum Briefing Upgrade).
+    --------------------------------------------------------------------------------
+    This version surgically upgrades the AI mission briefing engine. The
+    `_create_ai_mission_briefing` method has been completely rebuilt to provide
+    the AI with a "Quantum Dashboard" of curated, high-impact analytical data
+    from a wide range of key indicators on both primary and higher timeframes.
+    This provides the AI with maximum strategic context for superior
+    decision-making, while all other functionalities of the orchestrator remain
+    100% preserved.
     """
 
     def __init__(self, config: Dict[str, Any], telegram_handler: TelegramHandler):
+        # --- This method is 100% UNCHANGED ---
         self.config = config
         self.telegram_handler = telegram_handler
-        
         self._strategy_classes: List[Type[BaseStrategy]] = [
             TrendRiderPro, VwapMeanReversion, DivergenceSniperPro, PullbackSniperPro, RangeHunterPro, WhaleReversal,
             VolumeCatalystPro, BreakoutHunter, IchimokuHybridPro, ChandelierTrendRider,
@@ -42,37 +44,26 @@ class MasterOrchestrator:
         self.gemini_handler = GeminiHandler()
         self.news_fetcher = NewsFetcher()
         self.last_gemini_call_times: Dict[Tuple[str, str], float] = {}
-        self.ENGINE_VERSION = "36.1.0" # Version updated
-        logger.info(f"MasterOrchestrator v{self.ENGINE_VERSION} (Blueprint Processor Fix) initialized.")
+        self.ENGINE_VERSION = "36.2.0" # Version updated
+        logger.info(f"MasterOrchestrator v{self.ENGINE_VERSION} (Quantum Briefing Upgrade) initialized.")
 
     async def run_analysis_pipeline(
         self, df: pd.DataFrame, symbol: str, timeframe: str, previous_df: Optional[pd.DataFrame] = None,
     ) -> Tuple[Optional[Dict[str, Any]], Optional[pd.DataFrame]]:
+        # --- This method is 100% UNCHANGED ---
         try:
             required_cols = ['open', 'high', 'low', 'close', 'volume']
             missing_cols = [c for c in required_cols if c not in df.columns]
             if missing_cols:
                 logger.error(f"DataFrame for {symbol}@{timeframe} missing required columns: {missing_cols}. Skipping analysis.")
                 return None, previous_df
-            
             if df[required_cols].isnull().values.any():
                 nan_info = df[required_cols].isnull().sum()
                 logger.error(f"CORRUPT DATA DETECTED for {symbol}@{timeframe}. Contains NaN values. NaN counts: {nan_info.to_dict()}")
                 return None, previous_df
-
             indicators_config = self.config.get("indicators", {})
             strategies_config = self.config.get("strategies", {})
-            
-            analyzer = IndicatorAnalyzer(
-                df, 
-                indicators_config, 
-                strategies_config, 
-                self._strategy_classes,
-                timeframe, 
-                symbol, 
-                previous_df
-            )
-            
+            analyzer = IndicatorAnalyzer(df, indicators_config, strategies_config, self._strategy_classes, timeframe, symbol, previous_df)
             await analyzer.calculate_all()
             primary_analysis = await analyzer.get_analysis_summary()
             return primary_analysis, analyzer.final_df
@@ -83,17 +74,16 @@ class MasterOrchestrator:
     async def run_strategy_pipeline(
         self, primary_analysis: Dict[str, Any], htf_context: Dict[str, Any], symbol: str, timeframe: str,
     ) -> Optional[Dict[str, Any]]:
+        # --- This method is 100% UNCHANGED ---
         if not isinstance(primary_analysis, dict):
             logger.error(f"Primary analysis for {symbol}@{timeframe} is invalid (not a dict). Skipping strategies.")
             return {"status": "NEUTRAL", "message": "Invalid primary analysis package."}
-
         valid_signals = []
         strategies_config = self.config.get("strategies", {})
         for sc in self._strategy_classes:
             strategy_name = sc.strategy_name
             strategy_config = strategies_config.get(strategy_name, {})
             if not strategy_config.get("enabled", True): continue
-            
             try:
                 htf_analysis = {}
                 merged_strat_config = {**getattr(sc, "default_config", {}), **strategy_config}
@@ -111,135 +101,161 @@ class MasterOrchestrator:
                             else:
                                 logger.warning(f"Strategy '{strategy_name}' on {timeframe} ignored HTF data for '{target_htf}' because it had too few rows ({rows_info}) or was invalid.")
                         else:
-                            logger.warning(f"Strategy '{strategy_name}' on {timeframe} requires HTF data for '{target_htf}', but it was not found.")
-                
+                             logger.warning(f"Strategy '{strategy_name}' on {timeframe} requires HTF data for '{target_htf}', but it was not found.")
                 isolated_primary_analysis = deepcopy(primary_analysis)
                 isolated_htf_analysis = deepcopy(htf_analysis)
                 instance = sc(isolated_primary_analysis, strategy_config, self.config, timeframe, symbol, htf_analysis=isolated_htf_analysis)
-                
                 signal_or_blueprint = instance.check_signal()
-
                 if signal_or_blueprint:
-                    # ✅ SURGICAL FIX 1: Intelligently process both blueprints and legacy signals
                     final_signal = signal_or_blueprint
-                    
-                    # Check if this is a blueprint that needs processing by BaseStrategy's engine
                     if "sl_logic" in final_signal and "risk_reward_ratio" not in final_signal:
                         logger.debug(f"Blueprint from '{strategy_name}' detected. Processing risk parameters...")
-                        risk_params = instance._calculate_smart_risk_management(
-                            entry_price=final_signal['entry_price'],
-                            direction=final_signal['direction'],
-                            sl_params=final_signal.get('sl_logic'),
-                            tp_logic=final_signal.get('tp_logic')
-                        )
+                        risk_params = instance._calculate_smart_risk_management(entry_price=final_signal['entry_price'], direction=final_signal['direction'], sl_params=final_signal.get('sl_logic'), tp_logic=final_signal.get('tp_logic'))
                         if risk_params:
                             final_signal.update(risk_params)
                         else:
                             logger.warning(f"Blueprint from '{strategy_name}' failed risk calculation and was discarded.")
-                            continue # Skip this failed blueprint and proceed to the next strategy
-                    
+                            continue
                     final_signal["strategy_name"] = instance.strategy_name
                     valid_signals.append(final_signal)
-
             except Exception as e:
                 logger.error(f"Error running strategy '{strategy_name}' on {timeframe}: {e}", exc_info=True)
-        
         if not valid_signals: return {"status": "NEUTRAL", "message": "No strategy conditions met.", "full_analysis": primary_analysis, "engine_version": self.ENGINE_VERSION}
-        
         min_rr = self.config.get("general", {}).get("min_risk_reward_ratio", 2.0)
         qualified_signals = [s for s in valid_signals if s.get("risk_reward_ratio", 0) >= min_rr]
-        
         if len(valid_signals) > len(qualified_signals):
             rejected_signals_info = [f"{s['strategy_name']}(R/R={s.get('risk_reward_ratio', 0):.2f})" for s in valid_signals if s not in qualified_signals]
             logger.warning(f"   - R/R FILTER on {symbol}@{timeframe}: Dropped {len(rejected_signals_info)} signal(s) failing min R/R of {min_rr}. Rejected: [{', '.join(rejected_signals_info)}]")
         elif valid_signals:
             logger.info(f"   - R/R FILTER on {symbol}@{timeframe}: All {len(valid_signals)} signal(s) passed min R/R of {min_rr}.")
-        
         if not qualified_signals: return {"status": "NEUTRAL", "message": "Signals found but failed R/R quality check.", "full_analysis": primary_analysis, "engine_version": self.ENGINE_VERSION}
-        
         best_signal = self._find_super_signal(qualified_signals, symbol, timeframe)
         if not best_signal:
             priority_list = self.config.get("strategy_priority", [])
             qualified_signals.sort(key=lambda s: priority_list.index(s.get("strategy_name")) if s.get("strategy_name") in priority_list else 99)
             best_signal = qualified_signals[0]
-            
             if len(qualified_signals) > 1:
                 contenders_by_priority = [s['strategy_name'] for s in qualified_signals]
                 logger.info(f"   - SIGNAL SELECTION on {symbol}@{timeframe}: No SuperSignal. Chose '{best_signal['strategy_name']}' based on priority. Priority Order: [{', '.join(contenders_by_priority)}]")
             else:
                  logger.info(f"   - SIGNAL SELECTION on {symbol}@{timeframe}: Only one qualified signal found. Proceeding with '{best_signal['strategy_name']}'.")
-
         ai_confirmation = await self._get_ai_confirmation(best_signal, primary_analysis, htf_context, symbol, timeframe)
-        
         if ai_confirmation is None:
             return {"status": "NEUTRAL", "message": "AI analysis failed or response was invalid.", "full_analysis": primary_analysis, "engine_version": self.ENGINE_VERSION}
-
         if ai_confirmation.get("signal", "").upper() == "HOLD":
             logger.warning(f"AI VETOED for {symbol}@{timeframe}. Sending notification...")
             try:
-                veto_message = SignalAdapter.format_vetoed_signal_for_telegram(
-                    base_signal=best_signal,
-                    ai_confirmation=ai_confirmation,
-                    symbol=symbol,
-                    timeframe=timeframe,
-                    engine_version=self.ENGINE_VERSION
-                )
+                veto_message = SignalAdapter.format_vetoed_signal_for_telegram(base_signal=best_signal, ai_confirmation=ai_confirmation, symbol=symbol, timeframe=timeframe, engine_version=self.ENGINE_VERSION)
                 await self.telegram_handler.send_message_async(veto_message)
             except Exception as e:
                 logger.error(f"Failed to send VETO notification for {symbol}@{timeframe}: {e}", exc_info=True)
-            
             return {"status": "NEUTRAL", "message": "Signal was vetoed by AI.", "full_analysis": primary_analysis, "engine_version": self.ENGINE_VERSION}
-
         return {"status": "SUCCESS", "symbol": symbol, "timeframe": timeframe, "base_signal": best_signal, "ai_confirmation": ai_confirmation, "full_analysis": primary_analysis, "engine_version": self.ENGINE_VERSION}
 
-    def _create_ai_mission_briefing(self, analysis: Dict[str, Any], htf_context: Dict[str, Any], timeframe: str) -> Dict[str, Any]:
-        briefing = {}; indicator_map = analysis.get('_indicator_map', {})
-        primary_ctx = {}
-        if key := indicator_map.get('adx'):
-            if adx := analysis.get(key): primary_ctx['ADX'] = adx.get('analysis', {}).get('summary')
-        if key := indicator_map.get('rsi'):
-            if rsi := analysis.get(key): primary_ctx['RSI'] = rsi.get('analysis', {}).get('position')
-        if key := indicator_map.get('macd'):
-            if macd := analysis.get(key): primary_ctx['MACD'] = macd.get('analysis', {}).get('context')
-        if key := indicator_map.get('bollinger'):
-            if bollinger := analysis.get(key): primary_ctx['Bollinger'] = bollinger.get('analysis', {}).get('position')
-        if key := indicator_map.get('whales'):
-            if whales := analysis.get(key): primary_ctx['Whales'] = (whales.get('analysis',{}).get('summary'))
-        briefing[f'Primary_TF_{timeframe}'] = primary_ctx
+    # ✅ SURGICAL UPGRADE: The entire method is rebuilt to create the Quantum Dashboard.
+    def _create_ai_mission_briefing(self, analysis: Dict[str, Any], htf_context: Dict[str, Any], timeframe: str, base_signal: Dict[str, Any]) -> Dict[str, Any]:
+        briefing = {}
         
-        htf_map_proxy = self.config.get("strategies", {}).get("TrendRiderPro", {}).get("htf_map", {})
-        target_htf = htf_map_proxy.get(timeframe)
+        # --- Helper function to safely get indicator data ---
+        def get_indicator_data(source_analysis, indicator_name):
+            indicator_map = source_analysis.get('_indicator_map', {})
+            if key := indicator_map.get(indicator_name):
+                return source_analysis.get(key)
+            return None
+
+        # --- Primary Timeframe Analysis ---
+        primary_ctx = {}
+        
+        # ADX
+        if adx := get_indicator_data(analysis, 'adx'):
+            adx_analysis = adx.get('analysis', {})
+            primary_ctx['ADX'] = {'summary': adx_analysis.get('summary'), 'percentile': adx_analysis.get('adx_percentile')}
+        # MACD
+        if macd := get_indicator_data(analysis, 'macd'):
+            macd_analysis = macd.get('analysis', {}).get('context', {})
+            primary_ctx['MACD'] = {'state': macd_analysis.get('histogram_state'), 'trend': macd_analysis.get('trend')}
+        # RSI
+        if rsi := get_indicator_data(analysis, 'rsi'):
+            rsi_analysis = rsi.get('analysis', {})
+            primary_ctx['RSI'] = {'position': rsi_analysis.get('position'), 'crossover': rsi_analysis.get('crossover_signal')}
+        # Stochastic
+        if stoch := get_indicator_data(analysis, 'stochastic'):
+            stoch_analysis = stoch.get('analysis', {})
+            primary_ctx['Stochastic'] = {'position': stoch_analysis.get('position'), 'crossover': stoch_analysis.get('crossover_signal', {}).get('direction')}
+        # Bollinger Bands
+        if bollinger := get_indicator_data(analysis, 'bollinger'):
+            bollinger_values = bollinger.get('values', {})
+            primary_ctx['Bollinger'] = {'position': bollinger.get('analysis', {}).get('position'), 'bw_percentile': bollinger_values.get('width_percentile')}
+        # Volume
+        if volume := get_indicator_data(analysis, 'volume'):
+            volume_analysis = volume.get('analysis', {})
+            primary_ctx['Volume'] = {'z_score': volume_analysis.get('z_score'), 'regime': volume_analysis.get('volume_regime')}
+        # Structure
+        if structure := get_indicator_data(analysis, 'structure'):
+             prox = structure.get('analysis', {}).get('analysis', {}).get('proximity', {})
+             primary_ctx['Structure'] = {'position': structure.get('analysis', {}).get('analysis', {}).get('position'), 'testing_support': prox.get('is_testing_support'), 'testing_resistance': prox.get('is_testing_resistance')}
+        
+        briefing[f'Primary_TF'] = primary_ctx
+        
+        # --- Higher Timeframe Analysis ---
+        # ✅ ARCHITECTURE FIX: Get htf_map from the actual strategy that generated the signal
+        strategy_name = base_signal.get("strategy_name")
+        htf_map = self.config.get("strategies", {}).get(strategy_name, {}).get("htf_map", {})
+        target_htf = htf_map.get(timeframe)
+        
         if target_htf and target_htf in htf_context:
-            htf_analysis = htf_context[target_htf]; htf_indicator_map = htf_analysis.get('_indicator_map', {}); htf_ctx = {}
-            if key := htf_indicator_map.get('adx'):
-                if adx := htf_analysis.get(key): htf_ctx['ADX'] = adx.get('analysis', {}).get('summary')
-            if key := htf_indicator_map.get('supertrend'):
-                if st := htf_analysis.get(key): htf_ctx['SuperTrend'] = st.get('analysis', {}).get('trend')
-            if key := htf_indicator_map.get('ichimoku'):
-                if ichi := htf_analysis.get(key): htf_ctx['Ichimoku'] = ichi.get('analysis', {}).get('trend_summary')
+            htf_analysis = htf_context[target_htf]
+            htf_ctx = {}
+            # Ichimoku
+            if ichi := get_indicator_data(htf_analysis, 'ichimoku'):
+                ichi_analysis = ichi.get('analysis', {})
+                htf_ctx['Ichimoku'] = {'summary': ichi_analysis.get('trend_summary'), 'position': ichi_analysis.get('price_position')}
+            # Supertrend
+            if st := get_indicator_data(htf_analysis, 'supertrend'):
+                htf_ctx['Supertrend'] = {'trend': st.get('analysis', {}).get('trend')}
+            # Stochastic
+            if stoch := get_indicator_data(htf_analysis, 'stochastic'):
+                stoch_analysis = stoch.get('analysis', {})
+                htf_ctx['Stochastic'] = {'position': stoch_analysis.get('position'), 'crossover': stoch_analysis.get('crossover_signal', {}).get('direction')}
+            # Structure
+            if structure := get_indicator_data(htf_analysis, 'structure'):
+                struct_analysis = structure.get('analysis', {}).get('analysis', {})
+                htf_ctx['Structure'] = {'position': struct_analysis.get('position'), 'nearest_support': self._safe_get(struct_analysis, ['proximity', 'nearest_support_details']), 'nearest_resistance': self._safe_get(struct_analysis, ['proximity', 'nearest_resistance_details'])}
+            # Pivots
+            if pivots := get_indicator_data(htf_analysis, 'pivots'):
+                 htf_ctx['Pivots'] = {'position': pivots.get('analysis', {}).get('position')}
+            # Divergence
+            if div := get_indicator_data(htf_analysis, 'divergence'):
+                div_analysis = div.get('analysis', {})
+                reg_bull = div_analysis.get('has_regular_bullish_divergence')
+                reg_bear = div_analysis.get('has_regular_bearish_divergence')
+                hid_bull = div_analysis.get('has_hidden_bullish_divergence')
+                hid_bear = div_analysis.get('has_hidden_bearish_divergence')
+                div_summary = {
+                    'regular': 'Bullish' if reg_bull else 'Bearish' if reg_bear else 'None',
+                    'hidden': 'Bullish' if hid_bull else 'Bearish' if hid_bear else 'None'
+                }
+                htf_ctx['Divergence'] = div_summary
+
             briefing[f'Higher_TF_{target_htf}'] = htf_ctx
+            
         return briefing
 
     async def _get_ai_confirmation(self, signal: Dict[str, Any], primary_analysis: Dict, htf_context: Dict, symbol: str, timeframe: str) -> Optional[Dict[str, Any]]:
+        # --- This method is 100% UNCHANGED, except for passing the base_signal to the briefing method ---
         cooldown_key = (symbol, timeframe); cooldown = self.config.get("general", {}).get("gemini_cooldown_seconds", 300); last_call_time = self.last_gemini_call_times.get(cooldown_key, 0)
         if (time.time() - last_call_time) < cooldown:
             logger.info(f"Gemini call for {symbol}@{timeframe} skipped due to cooldown.")
             return {"signal": "N/A", "confidence_percent": 0, "explanation_fa": "AI analysis skipped due to per-symbol cooldown."}
         
-        # ✅ SURGICAL FIX 2: Create a clean signal for the AI, removing blueprint-specific keys.
-        clean_signal_for_ai = {
-            key: value for key, value in signal.items() 
-            if key not in ['sl_logic', 'tp_logic']
-        }
+        clean_signal_for_ai = {key: value for key, value in signal.items() if key not in ['sl_logic', 'tp_logic']}
         
-        market_context = self._create_ai_mission_briefing(primary_analysis, htf_context, timeframe)
+        # ✅ UPGRADE: Pass the base_signal to get the correct htf_map
+        market_context = self._create_ai_mission_briefing(primary_analysis, htf_context, timeframe, base_signal=signal)
+        
         news_headlines = await self.news_fetcher.get_headlines(symbol)
         
-        prompt_context = {
-            "BASE_SIGNAL": clean_signal_for_ai, 
-            "MARKET_CONTEXT": market_context,
-            "NEWS_HEADLINES": news_headlines if news_headlines is not None else "News fetcher disabled or failed."
-        }
+        prompt_context = {"BASE_SIGNAL": clean_signal_for_ai, "MARKET_CONTEXT": market_context, "NEWS_HEADLINES": news_headlines if news_headlines is not None else "News fetcher disabled or failed."}
         json_data = json.dumps(prompt_context, indent=2, ensure_ascii=False, default=str)
         
         prompt_template = f"""
@@ -318,12 +334,10 @@ Here is the complete data package to analyze:
             if not isinstance(ai_response, dict):
                 logger.warning(f"AI response was not a dictionary. Response: {ai_response}")
                 ai_response = {}
-
             validated_signal = str(ai_response.get("signal", "HOLD")).upper()
             if validated_signal not in ["BUY", "SELL", "HOLD"]:
                 logger.warning(f"Invalid 'signal' value from AI: '{validated_signal}'. Defaulting to HOLD.")
                 validated_signal = "HOLD"
-
             confidence_val = ai_response.get("confidence_percent")
             if confidence_val is None:
                 confidence_val = ai_response.get("confidence")
@@ -331,26 +345,21 @@ Here is the complete data package to analyze:
             if not (0 <= validated_confidence <= 100):
                 logger.warning(f"Confidence '{validated_confidence}' out of range. Clamping to 0-100.")
                 validated_confidence = max(0, min(100, validated_confidence))
-
             explanation_fa = ai_response.get("explanation_fa", "AI response was incomplete or malformed.")
             opportunity_type = ai_response.get("opportunity_type", "Uncertain")
             confidence_drivers = ai_response.get("confidence_drivers", ["Incomplete Response"])
             improvement_suggestion = ai_response.get("improvement_suggestion", "")
-
             validated_response = {
-                "signal": validated_signal,
-                "confidence_percent": validated_confidence,
-                "opportunity_type": opportunity_type,
-                "confidence_drivers": confidence_drivers,
-                "explanation_fa": explanation_fa,
-                "improvement_suggestion": improvement_suggestion
+                "signal": validated_signal, "confidence_percent": validated_confidence,
+                "opportunity_type": opportunity_type, "confidence_drivers": confidence_drivers,
+                "explanation_fa": explanation_fa, "improvement_suggestion": improvement_suggestion
             }
             return validated_response
-            
         except Exception as e:
             logger.critical(f"FATAL: AI response could not be parsed even with safeguards. Error: {e}. Response: {ai_response}"); return None
 
     def _find_super_signal(self, signals: List[Dict[str, Any]], symbol: str, timeframe: str) -> Optional[Dict[str, Any]]:
+        # --- This method is 100% UNCHANGED ---
         min_confluence = self.config.get("general", {}).get("min_confluence_for_super_signal", 3)
         buy_signals = [s for s in signals if s.get("direction") == "BUY"]
         sell_signals = [s for s in signals if s.get("direction") == "SELL"]
@@ -364,7 +373,6 @@ Here is the complete data package to analyze:
         priority_list = self.config.get("strategy_priority", [])
         contributing_strategies.sort(key=lambda s: priority_list.index(s.get("strategy_name")) if s.get("strategy_name") in priority_list else 99)
         primary_signal = contributing_strategies[0]
-        
         super_signal = {
             "strategy_name": "SuperSignal Confluence", "direction": super_direction,
             "entry_price": primary_signal.get("entry_price"), "stop_loss": primary_signal.get("stop_loss"),
