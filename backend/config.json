@@ -940,7 +940,7 @@
       }
     },
     "BollingerBandsDirectedMaestro": {
-      "enabled": false,
+      "enabled": true,
       "direction": 0,
       "indicator_configs": {
         "ranging_divergence": {
@@ -954,7 +954,7 @@
       },
       "ranging_trigger_proximity_atr_mult": 0.75,
       "max_adx_percentile_for_ranging": 45,
-      "min_adx_percentile_for_trending": 55,
+      "min_adx_percentile_for_trending": 70,
       "squeeze_max_bw_percentile": 30,
       "min_squeeze_score": 3,
       "weights_squeeze": {
@@ -1002,7 +1002,7 @@
         "min_required_score": 2,
         "adx": {
           "weight": 1,
-          "min_percentile": 50
+          "min_percentile": 55
         },
         "supertrend": {
           "weight": 1
