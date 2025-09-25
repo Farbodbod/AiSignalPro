@@ -544,7 +544,7 @@
           "strong": 70
         },
         "strict_mode_requires_quality": "normal",
-        "adx_min_percentile_for_htf": 55
+        "adx_min_percentile_for_htf": 70
       },
       "timing_and_exhaustion_engine": {
         "enabled": true,
@@ -843,7 +843,7 @@
       "enabled": true,
       "market_regime_filter_enabled": true,
       "required_regime": "TRENDING",
-      "adx_percentile_threshold": 45,
+      "adx_percentile_threshold": 80,
       "outlier_candle_shield_enabled": true,
       "outlier_atr_multiplier": 3.5,
       "exhaustion_shield_enabled": true,
@@ -877,7 +877,7 @@
         "min_required_score": 2,
         "adx": {
           "weight": 1,
-          "min_percentile": 50
+          "min_percentile": 70
         },
         "supertrend": {
           "weight": 1
