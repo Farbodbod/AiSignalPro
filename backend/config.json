@@ -852,19 +852,19 @@
       "rsi_sell_percentile": 12,
       "cooldown_bars": 3,
       "min_momentum_score": {
-        "low_tf": 30,
-        "high_tf": 30
+        "low_tf": 90,
+        "high_tf": 70
       },
       "weights": {
-        "momentum_acceleration": 10,
-        "volume_catalyst": 8,
-        "volatility_expansion": 6,
-        "macd_aligned": 3,
-        "adx_strength": 1,
-        "htf_alignment": 3,
-        "candlestick": 1
+        "momentum_acceleration": 25,
+        "volume_catalyst": 20,
+        "volatility_expansion": 15,
+        "macd_aligned": 15,
+        "adx_strength": 5,
+        "htf_alignment": 15,
+        "candlestick": 5
       },
-      "volume_z_score_threshold": 1.5,
+      "volume_z_score_threshold": 2.0,
       "late_entry_atr_mult": 1.2,
       "htf_confirmation_enabled": true,
       "htf_map": {
@@ -1023,7 +1023,7 @@
           "R1": 3,
           "P": 3
         },
-        "magnet_proximity_percent": 1.5,
+        "magnet_proximity_percent": 0.75,
         "min_magnet_strength": 2,
         "percentile_thresholds": {
           "strong": 80,
@@ -1036,9 +1036,9 @@
             "weak": 1
           },
           "base_rr_multiples": [
-            1.8,
-            2.5,
-            3.0
+            1.5,
+            2.0,
+            2.5
           ]
         }
       }
