@@ -923,7 +923,7 @@
           "P": 3
         },
         "magnet_proximity_percent": 0.75,
-        "min_magnet_strength": 2,
+        "min_magnet_strength": 3,
         "percentile_thresholds": {
           "strong": 80,
           "developing": 40
