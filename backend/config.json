@@ -843,7 +843,7 @@
       "enabled": true,
       "market_regime_filter_enabled": true,
       "required_regime": "TRENDING",
-      "adx_percentile_threshold": 80,
+      "adx_percentile_threshold": 70,
       "outlier_candle_shield_enabled": true,
       "outlier_atr_multiplier": 3.5,
       "exhaustion_shield_enabled": true,
@@ -956,8 +956,8 @@
         }
       },
       "ranging_trigger_proximity_atr_mult": 0.75,
-      "max_adx_percentile_for_ranging": 40,
-      "min_adx_percentile_for_trending": 75,
+      "max_adx_percentile_for_ranging": 45,
+      "min_adx_percentile_for_trending": 70,
       "squeeze_max_bw_percentile": 30,
       "min_squeeze_score": 3,
       "weights_squeeze": {
