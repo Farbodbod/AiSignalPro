@@ -101,7 +101,7 @@
           "name": "ichimoku"
         },
         "macd": {
-          "name": "macd"
+          "name": "macd",
           "fast_period": 100,
           "slow_period": 200,
           "signal_period": 9
