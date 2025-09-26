@@ -980,7 +980,7 @@
       },
       "ranging_rsi_oversold": 30,
       "ranging_rsi_overbought": 70,
-      "min_trending_score": 10,
+      "min_trending_score": 12,
       "trending_rsi_zones": {
         "buy_min": 45,
         "buy_max": 65,
@@ -1005,7 +1005,7 @@
         "min_required_score": 2,
         "adx": {
           "weight": 1,
-          "min_percentile": 70
+          "min_percentile": 75
         },
         "supertrend": {
           "weight": 1
