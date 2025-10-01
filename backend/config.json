@@ -2,7 +2,7 @@
   "general": {
     "symbols_to_monitor": ["BTC/USDT", "ETH/USDT", "SOL/USDT", "XRP/USDT", "DOGE/USDT"],
     "timeframes_to_analyze": ["5m", "15m", "1h", "4h", "1d"],
-    "poll_interval_seconds": 300,
+    "poll_interval_seconds": 900,
     "max_concurrent_tasks": 5,
     "gemini_cooldown_seconds": 300,
     "logging_focus_symbol": "BTC/USDT",
