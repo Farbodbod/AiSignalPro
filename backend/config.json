@@ -84,7 +84,7 @@
       "enabled": true
     },
     "IchiMACDPro": {
-      "enabled": true,
+      "enabled": false,
       "market_regime_filter": {
         "enabled": true,
         "min_adx_percentile": 70.0
@@ -145,7 +145,7 @@
       }
     },
     "QuantumChannelSurfer": {
-      "enabled": true,
+      "enabled": false,
       "htf_confirmation_enabled": true,
       "htf_map": {
         "5m": "15m",
@@ -218,7 +218,7 @@
       }
     },
     "OracleXPro": {
-      "enabled": true,
+      "enabled": false,
       "htf_context_config": {
         "enabled": true,
         "min_adx_percentile": 60
@@ -291,7 +291,7 @@
       }
     },
     "ChandelierTrendRider": {
-      "enabled": true,
+      "enabled": false,
       "min_score": 13,
       "weights": {
         "htf_alignment": 4,
@@ -332,7 +332,7 @@
       }
     },
     "DivergenceSniperPro": {
-      "enabled": true,
+      "enabled": false,
       "min_score": 6,
       "weights": {
         "fortress_sr": 3,
@@ -425,7 +425,7 @@
       }
     },
     "ConfluenceSniper": {
-      "enabled": true,
+      "enabled": false,
       "min_confluence_score": 6,
       "fib_levels_to_watch": [
         "38.2%",
@@ -708,7 +708,7 @@
       }
     },
     "PivotConfluenceSniper": {
-      "enabled": true,
+      "enabled": false,
       "default_params": {
         "pivot_levels_to_check": [
           "R2",
@@ -1044,7 +1044,7 @@
       }
     },
     "TrendRiderPro": {
-      "enabled": true,
+      "enabled": false,
       "market_regime_filter_enabled": true,
       "required_regime": "TRENDING",
       "regime_adx_percentile_threshold": 70,
